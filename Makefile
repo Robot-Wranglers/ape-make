@@ -28,11 +28,12 @@ lua.tarball := lua-$(lua.version).tar.gz
 lua.url     := https://www.lua.org/ftp/$(lua.tarball)
 lua.sha256  := 4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
 
-# Upstream publishes one unversioned tarball, so the digest is the only pin and moves on release.
+# The ccrma tarball is a rolling snapshot, so s7 pins a commit archive from its gitlab instead.
 s7.version := 11.9
+s7.commit  := 6ce8ff093a6e1059c1f95f481286a9cf051f0a69
 s7.tarball := s7-$(s7.version).tar.gz
-s7.url     := https://ccrma.stanford.edu/software/s7/s7.tar.gz
-s7.sha256  := e27581e3d29a39e53a8439502ba7dd9a797474032528a69cb348bd247f105f5c
+s7.url     := https://cm-gitlab.stanford.edu/bil/s7/-/archive/$(s7.commit)/s7-$(s7.commit).tar.gz
+s7.sha256  := bdf49850444252e7ffada4b6497278697b335580d5611cb1f336a6084828b8fb
 
 micropython.version := 1.29.0
 micropython.tarball := micropython-$(micropython.version).tar.xz
