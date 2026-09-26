@@ -7,12 +7,12 @@ The cli prints a called function's result on stdout, so a builtin expansion carr
  #include <time.h>
  #include <ctype.h>
 +#include <unistd.h>
-
+ 
  #include "wasm3.h"
  #include "m3_api_libc.h"
 @@ -368,15 +369,15 @@
      if (result) return result;
-
+ 
      if (ret_count <= 0) {
 -        fprintf (stderr, "Result: <Empty Stack>\n");
 +        fprintf (stdout, "Result: <Empty Stack>\n");

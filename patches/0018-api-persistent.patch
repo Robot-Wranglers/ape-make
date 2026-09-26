@@ -11,7 +11,7 @@ row field is null for an engine without one, and no builtin is registered for it
 @@ -3,6 +3,9 @@
  #ifndef AMK_H
  #define AMK_H
-
+ 
 +#include <stdio.h>
 +
 +/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream. */
@@ -24,7 +24,7 @@ row field is null for an engine without one, and no builtin is registered for it
      unsigned int argv:1;
 +    int (*persist) (FILE *, int, char **);
    };
-
+ 
  extern const struct amk_engine amk_engines[];
 @@ -20,6 +24,7 @@
  extern int gawk_main (int argc, char **argv);
@@ -48,7 +48,7 @@ row field is null for an engine without one, and no builtin is registered for it
 @@ -2723,6 +2723,51 @@
    return o;
  }
-
+ 
 +/* $(name.persistent program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
 +static char *
 +func_persistent (char *o, char **argv, const char *funcname)
@@ -96,11 +96,13 @@ row field is null for an engine without one, and no builtin is registered for it
 +
  #define FT_ENTRY(_name, _min, _max, _exp, _func) \
    { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
-
-@@ -3105,5 +3150,17 @@
+ 
+@@ -3103,6 +3148,18 @@
+           f->len += 5;
+           f->minimum_args = 2;
            f->maximum_args = 3;
-           hash_insert (&function_table, f++);
-         }
++          hash_insert (&function_table, f++);
++        }
 +      if (e->persist)
 +        {
 +          char *name = xmalloc (strlen (e->name) + 12);
@@ -111,7 +113,6 @@ row field is null for an engine without one, and no builtin is registered for it
 +          f->minimum_args = 1;
 +          f->maximum_args = 2;
 +          f->expand_args = 1;
-+          hash_insert (&function_table, f++);
-+        }
+           hash_insert (&function_table, f++);
+         }
      }
- }

@@ -47,11 +47,10 @@ the BSDs lay out descriptor passing differently.
  static void print_data_base (void);
  static void print_version (void);
  static void decode_switches (int argc, const char **argv,
-@@ -300,6 +312,19 @@
- 
+@@ -301,6 +313,19 @@
  /* Whether or not .NOTINTERMEDIATE with no prerequisites was given.  */
  unsigned int no_intermediates;
-+
+ 
 +/* Nonzero in a resident dispatch child, which shares state with its parent.  */
 +unsigned int amk_child;
 +
@@ -64,9 +63,10 @@ the BSDs lay out descriptor passing differently.
 +
 +/* A dispatch child's connection back to its client, answered from die().  */
 +static int amk_conn = -1;
- 
++
  /* Count the number of commands we've invoked, that might change something in
     the filesystem.  Start with 1 so calloc'd memory never matches.  */
+ 
 @@ -1194,6 +1219,33 @@
    /* Useful for attaching debuggers, etc.  */
    SPIN ("main-entry");
@@ -101,19 +101,19 @@ the BSDs lay out descriptor passing differently.
  #ifdef HAVE_ATEXIT
    if (ANY_SET (check_io_state (), IO_STDOUT_OK))
      atexit (close_stdout);
-@@ -2905,6 +2957,12 @@
- 
+@@ -2906,6 +2958,12 @@
        O (fatal, NILF, _("No targets specified and no makefile found"));
      }
-+
+ 
 +#ifndef WINDOWS32
 +  /* Resident mode parks here and serves goals instead of running one.  */
 +  if (amk_serve_path != 0)
 +    amk_serve (amk_serve_path, read_files);
 +#endif
- 
++
    /* Shuffle prerequisites to catch makefiles with incomplete depends. */
  
+   shuffle_goaldeps_recursive (goals);
 @@ -3761,7 +3819,1091 @@
    printf (_("\n# Finished Make data base on %s\n"), ctime (&when));
  }
@@ -1206,26 +1206,27 @@ the BSDs lay out descriptor passing differently.
  clean_jobserver (int status)
  {
    /* Sanity: have we written all our jobserver tokens back?  If our
-@@ -3865,5 +4978,11 @@
+@@ -3864,6 +5006,12 @@
+           _x = chdir (directory_before_chdir);
          }
      }
- 
++
 +#ifndef WINDOWS32
 +  /* A dispatch child answers here, since a failing goal never returns.  */
 +  if (amk_child && amk_conn >= 0)
 +    amk_write_status (amk_conn, status);
 +#endif
-+
+ 
    exit (status);
  }
 --- a/src/makeint.h
 +++ b/src/makeint.h
-@@ -749,6 +749,8 @@
- extern char cmd_prefix;
+@@ -750,6 +750,8 @@
  
  extern unsigned int no_intermediates;
-+
-+extern unsigned int amk_child;
  
++extern unsigned int amk_child;
++
  #if HAVE_MKFIFO
  /* It seems that mkfifo() is not working correctly, or at least not the way
+    GNU make wants it to work, on GNU/Hurd and Cygwin so don't use it there.  */

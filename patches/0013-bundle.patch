@@ -8,11 +8,10 @@ if given -f with that member and -I with the payload root, so no shell is involv
 
 --- a/src/main.c
 +++ b/src/main.c
-@@ -1461,7 +1461,453 @@
- {
+@@ -1463,6 +1463,452 @@
  }
  #endif
-+
+ 
 +/* Payload bundle: write a copy of this binary whose payload carries a makefile
 +   program, and run that program when the caller names no makefile.  */
 +
@@ -223,7 +222,7 @@ if given -f with that member and -I with the payload root, so no shell is involv
 +  const char *base;
 +  char *tmp;
 +  int fd, r, i, e, reported = 0;
-
++
 +  if (n < 1)
 +    {
 +      fprintf (stderr, "amk: --bundle: names no makefile\n");
@@ -462,10 +461,10 @@ if given -f with that member and -I with the payload root, so no shell is involv
  #ifdef MK_OS_ZOS
  extern char **environ;
  #endif
-@@ -1559,6 +2005,25 @@
+@@ -1553,6 +1999,25 @@
          }
      }
-
+ 
 +  /* Bundle is settled ahead of the boot too, so a bundle can be bundled again.  */
 +  if (argc >= 2 && strcmp (argv[1], "--bundle") == 0)
 +    {
@@ -487,8 +486,8 @@ if given -f with that member and -I with the payload root, so no shell is involv
 +
    amk_payload_path ();
    amk_payload_boot (argc, argv);
-
-@@ -1585,6 +2050,12 @@
+ 
+@@ -1579,6 +2044,12 @@
        amk_serve_argc = argc;
        amk_serve_argv = argv;
      }
@@ -500,4 +499,4 @@ if given -f with that member and -I with the payload root, so no shell is involv
 +    amk_serve_argv = argv;
    }
  #endif
-
+ 

@@ -10,11 +10,11 @@ directly instead of running one.
 --- a/src/amk.h
 +++ b/src/amk.h
 @@ -19,5 +19,6 @@
-
+ 
  extern int gawk_main (int argc, char **argv);
  extern int jq_main (int argc, char **argv);
 +extern int lua_run_main (int argc, char **argv);
-
+ 
  #endif
 --- a/src/function.c
 +++ b/src/function.c
@@ -27,4 +27,4 @@ directly instead of running one.
 +#endif
      { 0, 0, 0, 0, 0, 0 }
    };
-
+ 

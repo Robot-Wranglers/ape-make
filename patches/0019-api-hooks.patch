@@ -7,10 +7,13 @@ the entry and routes an event to amk.on.<event> in its persistent state.
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -6,23 +6,46 @@
+@@ -4,8 +4,29 @@
+ #define AMK_H
+ 
  #include <stdio.h>
 +#include <sys/types.h>
-+
+ 
+-/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream. */
 +/* The events make announces, and what each carries: goals names the goal list, the recipe events name their target. */
 +enum amk_event
 +  {
@@ -30,31 +33,27 @@ the entry and routes an event to amk.on.<event> in its persistent state.
 +
 +extern const char *const amk_event_names[];
 +void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
-
--/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream. */
++
 +/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
  struct amk_engine
    {
      const char *name;
-     const char *aliases;
-     int (*main) (int, char **);
-     unsigned int dashdash:1;
+@@ -15,6 +36,7 @@
      unsigned int cmdline:1;
      unsigned int argv:1;
      int (*persist) (FILE *, int, char **);
 +    void (*hook) (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
    };
-
+ 
  extern const struct amk_engine amk_engines[];
- const struct amk_engine *amk_engine_by_name (const char *name);
- int amk_engine_called (const struct amk_engine *e, const char *word);
-
- extern int gawk_main (int argc, char **argv);
+@@ -25,6 +47,7 @@
  extern int jq_main (int argc, char **argv);
  extern int lua_run_main (int argc, char **argv);
  extern int lua_persist_main (FILE *out, int argc, char **argv);
 +extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
  extern int s7_run_main (int argc, char **argv);
+ extern int micropy_run_main (int argc, char **argv);
+ extern int wasm3_main (int argc, char **argv);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2500,7 +2500,7 @@
@@ -66,10 +65,12 @@ the entry and routes an event to amk.on.<event> in its persistent state.
  #endif
  #ifdef AMK_ENGINE_S7
      { "s7", 0, s7_run_main, 0, 0, 0 },
-@@ -2529,6 +2529,19 @@
+@@ -2527,6 +2527,19 @@
+     if (strlen (e->name) == n && memcmp (e->name, name, n) == 0)
+       return e;
    return NULL;
- }
-
++}
++
 +/* One name per event, in enum order, so a guest can key its subscribers by it.  */
 +const char *const amk_event_names[] = { "goals", "recipe_start", "recipe_end" };
 +
@@ -81,11 +82,9 @@ the entry and routes an event to amk.on.<event> in its persistent state.
 +  for (e = amk_engines; e->name; ++e)
 +    if (e->hook)
 +      e->hook (amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
-+}
-+
+ }
+ 
  /* Whether word is one of the row's multi-call names.  */
- int
- amk_engine_called (const struct amk_engine *e, const char *word)
 --- a/src/job.c
 +++ b/src/job.c
 @@ -27,6 +27,7 @@
@@ -93,14 +92,13 @@ the entry and routes an event to amk.on.<event> in its persistent state.
  #include "dep.h"
  #include "shuffle.h"
 +#include "amk.h"
-
+ 
  /* Default shell to use.  */
  #ifdef WINDOWS32
-@@ -1056,6 +1057,14 @@
-
+@@ -1057,6 +1058,14 @@
        /* Synchronize any remaining parallel output.  */
        output_dump (&c->output);
-+
+ 
 +      /* Every hook hears the recipe end with the last command's exit and the file's verdict.  */
 +      {
 +        struct amk_event_info info = { c->file->name, 0, exit_code, exit_sig, c->pid };
@@ -108,28 +106,29 @@ the entry and routes an event to amk.on.<event> in its persistent state.
 +                      : c->file->update_status == us_question ? "question" : "failed";
 +        amk_hook_fire (AMK_EVENT_RECIPE_END, &info);
 +      }
-
++
        /* At this point c->file->update_status is success or failed.  But
           c->file->command_state is still cs_running if all the commands
-@@ -1956,5 +1965,11 @@
+          ran; notice_finished_file looks for cs_running to tell it that
+@@ -1954,6 +1963,12 @@
+             }
+         }
      }
-
++
 +  /* The recipe is about to run: every hook hears it before the first line starts.  */
 +  {
 +    struct amk_event_info info = { c->file->name, "running", 0, 0, 0 };
 +    amk_hook_fire (AMK_EVENT_RECIPE_START, &info);
 +  }
-+
+ 
    /* The job is now primed.  Start it running.
       (This will notice if there is in fact no recipe.)  */
-   start_waiting_job (c);
 --- a/src/main.c
 +++ b/src/main.c
-@@ -3851,7 +3851,29 @@
-   /* Update the goals.  */
-
+@@ -3852,6 +3852,28 @@
+ 
    DB (DB_BASIC, (_("Updating goal targets....\n")));
-
+ 
 +  /* Every hook hears the goal list, space-joined, before the first goal is updated.  */
 +  {
 +    struct goaldep *g;

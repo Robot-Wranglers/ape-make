@@ -18,7 +18,7 @@ module writes to stdout is the expansion.
  extern int s7_run_main (int argc, char **argv);
  extern int micropy_run_main (int argc, char **argv);
 +extern int wasm3_main (int argc, char **argv);
-
+ 
  #endif
 --- a/src/function.c
 +++ b/src/function.c
@@ -31,4 +31,4 @@ module writes to stdout is the expansion.
 +#endif
      { 0, 0, 0, 0, 0, 0 }
    };
-
+ 

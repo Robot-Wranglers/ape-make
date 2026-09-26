@@ -6,18 +6,27 @@ write to a descriptor, not a file in a run directory.
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -33,2 +33,4 @@
+@@ -31,6 +31,8 @@
+ int amk_foreground (pid_t pid);
+ void amk_signal_spawned (int sig);
  void amk_reap_foreign (pid_t pid, int code, int sig);
 +int amk_mail_take (pid_t pid, char **buf, size_t *len);
 +int amk_mail_send (const char *s, size_t n);
  void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ void amk_engine_init (void);
 --- a/src/main.c
 +++ b/src/main.c
-@@ -27,2 +27,3 @@
+@@ -25,6 +25,7 @@
+ #include "debug.h"
+ #include "getopt.h"
  #include "shuffle.h"
 +#include <fcntl.h>
  #include "amk.h"
-@@ -5407,4 +5408,87 @@
+ 
+ /* The build passes the version and flavor as bare tokens; the banner and .AMK_VERSION read them as strings. */
+@@ -5406,7 +5407,90 @@
+ 
  static pid_t amk_live[AMK_SPAWNED];
  static struct { pid_t pid; int code; int sig; } amk_parked[AMK_SPAWNED];
 +/* Each job's mail: the read end of a pipe the job and its shells write, drained as it comes and handed over once the job is collected; inside a job, the write end.  */
@@ -26,7 +35,7 @@ write to a descriptor, not a file in a run directory.
 +static size_t amk_maillen[AMK_SPAWNED];
 +static struct { pid_t pid; char *buf; size_t len; } amk_mails[AMK_SPAWNED];
 +static int amk_mail_fd = -1;
-+
+ 
 +static void
 +amk_drain (unsigned int i) {
 +  char tmp[4096];
@@ -103,10 +112,12 @@ write to a descriptor, not a file in a run directory.
 +  }
 +  return amk_mail_fd >= 0 ? 0 : -1;
 +}
--
 +
  static int
-@@ -5419,5 +5502,9 @@
+ amk_live_drop (pid_t pid) {
+   unsigned int i;
+@@ -5418,8 +5502,12 @@
+ void
  amk_reap_foreign (pid_t pid, int code, int sig) {
    unsigned int i;
 -  if (!amk_live_drop (pid))
@@ -117,7 +128,9 @@ write to a descriptor, not a file in a run directory.
 +  amk_mail_finish (i, pid);
 +  amk_live_drop (pid);
    for (i = 0; i < AMK_SPAWNED; ++i)
-@@ -5482,20 +5545,39 @@
+     if (amk_parked[i].pid == 0) {
+       amk_parked[i].pid = pid;
+@@ -5482,22 +5570,41 @@
  amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
    unsigned int i;
    pid_t pid;
@@ -158,7 +171,9 @@ write to a descriptor, not a file in a run directory.
 +    define_variable_global ("AMK_MAIL", 8, fd, o_env, 0, NILF)->export = v_export;
 +  }
    if (foreground)
-@@ -5518,5 +5600,10 @@
+     amk_tty_give (getpid ());
+   if (stdout_path != NULL && freopen (stdout_path, "w", stdout) == NULL)
+@@ -5518,6 +5625,11 @@
    amk_forget_children ();
    memset (amk_live, 0, sizeof amk_live);
    memset (amk_parked, 0, sizeof amk_parked);
@@ -169,7 +184,8 @@ write to a descriptor, not a file in a run directory.
 +  }
    die (amk_run_goals (n, words));
  }
-@@ -5540,6 +5627,7 @@
+ 
+@@ -5540,7 +5652,8 @@
        pid_t pid;
        if (amk_live[i] == 0 || (want > 0 && amk_live[i] != want))
          continue;
@@ -178,10 +194,12 @@ write to a descriptor, not a file in a run directory.
 +      pid = waitpid (amk_live[i], &status, WUNTRACED | WNOHANG);
        if (pid < 0 && errno == EINTR)
          continue;
-@@ -5551,5 +5639,6 @@
+       if (pid <= 0)
+@@ -5551,6 +5664,7 @@
          *code = 0;
          *sig = WSTOPSIG (status);
        } else {
 +        amk_mail_finish (i, pid);
          amk_live_drop (pid);
          *stopped = 0;
+         *code = WIFEXITED (status) ? WEXITSTATUS (status) : 0;

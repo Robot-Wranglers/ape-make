@@ -6,11 +6,10 @@ given. It is settled ahead of the payload boot, so no distribution ever sees the
 
 --- a/src/main.c
 +++ b/src/main.c
-@@ -1259,7 +1259,121 @@
- {
+@@ -1261,6 +1261,120 @@
  }
  #endif
-+
+ 
 +/* Payload unpack: copy one payload member out to the host, so a distribution
 +   can hand a file it carries to a tool that only reads the filesystem.  */
 +
@@ -61,7 +60,7 @@ given. It is settled ahead of the payload boot, so no distribution ever sees the
 +      close (in);
 +      return MAKE_SUCCESS;
 +    }
-
++
 +  /* The scratch copy sits beside the destination, so the rename stays on one
 +     filesystem and a reader never sees a partial file.  */
 +  tmp = xmalloc (strlen (dest) + 32);
@@ -128,8 +127,8 @@ given. It is settled ahead of the payload boot, so no distribution ever sees the
  #ifdef MK_OS_ZOS
  extern char **environ;
  #endif
-@@ -1317,6 +1431,37 @@
- #endif
+@@ -1319,6 +1433,37 @@
+       }
      (void) base;
    }
 +
@@ -163,6 +162,6 @@ given. It is settled ahead of the payload boot, so no distribution ever sees the
 +          exit (r);
 +        }
 +    }
-
+ 
    amk_payload_boot (argc, argv);
-
+ 

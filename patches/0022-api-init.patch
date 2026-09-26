@@ -7,20 +7,20 @@ first goals event, so a distribution's guest-side code is loaded where the parse
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -35,4 +35,5 @@
+@@ -33,6 +33,7 @@
+ void amk_reap_foreign (pid_t pid, int code, int sig);
  void amk_forget_children (void);
  void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
 +void amk_engine_init (void);
--
-+
- extern int gawk_main (int argc, char **argv);
+ 
+ /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
+ struct amk_engine
 --- a/src/function.c
 +++ b/src/function.c
-@@ -2542,4 +2542,69 @@
+@@ -2542,6 +2542,71 @@
        e->hook (amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
  }
--
-+
+ 
 +/* The init chunk for a row: the environment's, as text or as the file an @ names, else the payload's; NULL when there is none.  */
 +static char *
 +amk_init_chunk (const struct amk_engine *e)
@@ -87,15 +87,17 @@ first goals event, so a distribution's guest-side code is loaded where the parse
 +}
 +
  /* Whether word is one of the row's multi-call names.  */
+ int
+ amk_engine_called (const struct amk_engine *e, const char *word)
 --- a/src/main.c
 +++ b/src/main.c
-@@ -3008,5 +3008,8 @@
-     int old_builtin_rules_flag = no_builtin_rules_flag;
+@@ -3009,6 +3009,9 @@
      int old_builtin_variables_flag = no_builtin_variables_flag;
      int old_arg_job_slots = arg_job_slots;
--
-+
+ 
 +    /* Each engine's init chunk runs first, so what it defines and subscribes is there for the parse and for every zygote request.  */
 +    amk_engine_init ();
 +
      /* Read all the makefiles.  */
+     read_files = read_all_makefiles (makefiles == 0 ? 0 : makefiles->list);
+ 

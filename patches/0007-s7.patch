@@ -16,7 +16,7 @@ splits any line past 1023 bytes.
  extern int jq_main (int argc, char **argv);
  extern int lua_run_main (int argc, char **argv);
 +extern int s7_run_main (int argc, char **argv);
-
+ 
  #endif
 --- a/src/function.c
 +++ b/src/function.c
@@ -29,4 +29,4 @@ splits any line past 1023 bytes.
 +#endif
      { 0, 0, 0, 0, 0, 0 }
    };
-
+ 

@@ -9,7 +9,7 @@ ahead of option decoding, so make never sees the guest's arguments.
 +++ b/src/main.c
 @@ -1221,6 +1221,30 @@
    SPIN ("main-entry");
-
+ 
  #ifndef WINDOWS32
 +  /* Multi-call: run under an engine's name, or with its flag first, the file is that engine; --list-engines names them.  */
 +  {

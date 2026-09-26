@@ -5,7 +5,9 @@
 A drop in replacement, but also with brand new superpowers.
 
 
-[Bundling & Distribution](#bundling--distribution) | [Guests](#guests) | [Resident Dispatch](#resident-dispatch) | [Payloads](#payloads) | [The load directive](#the-load-directive) | [Command line](#command-line) | [Running an ape](#running-an-ape) | [Developers](#developers)
+**Overview:** [Bundling & Distribution](#bundling--distribution) | [Standard Guests](#standard-guests) | [Special Guests](#special-guests) | [Zygote / Resident Mode](#resident-dispatch)
+
+**Details:** [Payloads](#payloads) | [The load directive](#the-load-directive) | [Command line](#command-line) | [Running an ape](#running-an-ape) | [Developers](#developers)
 
 ## Overview 
 
@@ -13,13 +15,17 @@ This build / fork starts from make-4.4.1 and creates one file that runs on Linux
 
 The main use-cases:
 
-1. **[Bundling & Distribution](#bundling--distribution):** Besides solving for *runs anywhere*, this also solves *bundles anything*.  APEs are bins and zip files at once, so `amk` is also a way to [distribute payloads](#payloads). Corollary: we can also *bundle and distribute* Makefiles-as-scripts. 
+1. **[Bundling & Distribution](#bundling--distribution):** Besides solving for *runs anywhere*, this also solves *bundles anything*.  APEs are bins and zip files at once, so `amk` is also a way to [distribute payloads](#payloads). Corollary: we can also *bundle and distribute* Makefile-as-scripts, and it works with more than one Makefile too.  Now you've got modules/libraries.
 
-1. **[Standard Guests](#standard-guests):** The other part of distribution is that the *rest* of the shell toolchain can also be APE'd and bundled.
+1. **[Standard Guests](#standard-guests)** are the other part of (1), meaning that the *rest* of the shell toolchain can also be APE'd riders.  Now you don't care which `awk` is available *or* which `make` is available, or if either are available.  Now you've got a portable shell-scripting environment, without containers.
 
-1. **[Special Guests](#special-guests):** *A polyglot VM in miniature.*  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.
+1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!**  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  Now you've got graal, without JDK.
 
-1. **[Zygote / Resident Mode](#resident-dispatch):**  Useful to avoid cold-start penalties in some circumstances.  Side-effect free?  Freeze a program, then run and re-run against the same base without a re-parse.
+1. **[Zygote / Resident Mode](#resident-dispatch):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Now you can opt in to trade the incremental computing model for massively improved recursion and FP.
+
+Put this stuff together, and it's a kind of *pseudo-compilation* over a make-dialect that can produce a platform-independent binary, can link libraries into something like Makefile-as-modules for code-reuse, and indeed even supports a kind of bidirectional FFI.  
+
+Have fun.
 
 ## Bundling & Distribution
 

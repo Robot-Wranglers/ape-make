@@ -19,7 +19,7 @@ of running one.
  extern int micropy_run_main (int argc, char **argv);
  extern int wasm3_main (int argc, char **argv);
 +extern int js_run_main (int argc, char **argv);
-
+ 
  #endif
 --- a/src/function.c
 +++ b/src/function.c
@@ -32,4 +32,4 @@ of running one.
 +#endif
      { 0, 0, 0, 0, 0, 0 }
    };
-
+ 

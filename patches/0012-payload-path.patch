@@ -6,11 +6,10 @@ AMK_NO_PATH in the environment turns it off; a build without a payload bin is un
 
 --- a/src/main.c
 +++ b/src/main.c
-@@ -1373,7 +1373,95 @@
-   return MAKE_FAILURE;
+@@ -1375,6 +1375,94 @@
  }
  #endif
-+
+ 
 +/* Payload tools: every member under the payload's bin directory is unpacked
 +   into a cache keyed by this binary, and that directory goes first on PATH,
 +   so a recipe finds the tools the build carries without being told.  */
@@ -43,7 +42,7 @@ AMK_NO_PATH in the environment turns it off; a build without a payload bin is un
 +    }
 +  if (!base || !*base)
 +    return;
-
++
 +  /* The key changes with the binary, so an upgrade never runs a stale tool.  */
 +  dir = xmalloc (strlen (base) + 64);
 +  sprintf (dir, "%s%s/amk/%lld-%lld/bin", base, sub,
@@ -102,11 +101,11 @@ AMK_NO_PATH in the environment turns it off; a build without a payload bin is un
  #ifdef MK_OS_ZOS
  extern char **environ;
  #endif
-@@ -1480,6 +1568,7 @@
+@@ -1465,6 +1553,7 @@
          }
      }
-
+ 
 +  amk_payload_path ();
    amk_payload_boot (argc, argv);
-
+ 
    /* Settle the resident role before any option decoding, since a client hands

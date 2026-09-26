@@ -8,7 +8,9 @@ the api as amk.spawn, amk.wait and amk.kill.
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -26,2 +26,7 @@
+@@ -24,6 +24,11 @@
+   };
+ 
  extern const char *const amk_event_names[];
 +/* The spawn api: a goal list run in a fork of this parsed image, the wait that collects it, and the parking make's own reaping hands a spawned pid to. */
 +pid_t amk_spawn_goals (int n, char **words);
@@ -16,9 +18,11 @@ the api as amk.spawn, amk.wait and amk.kill.
 +void amk_reap_foreign (pid_t pid, int code, int sig);
 +void amk_forget_children (void);
  void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ 
+ /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
 --- a/src/job.c
 +++ b/src/job.c
-@@ -27,4 +27,16 @@
+@@ -27,6 +27,18 @@
  #include "os.h"
  #include "dep.h"
  #include "shuffle.h"
@@ -35,9 +39,11 @@ the api as amk.spawn, amk.wait and amk.kill.
 +}
 +
  #include "amk.h"
+ 
+ /* Default shell to use.  */
 @@ -904,9 +916,11 @@
            break;
-
+ 
        if (c == 0)
 -        /* An unknown child died.
 -           Ignore it; it was inherited from our invoker.  */
@@ -47,7 +53,7 @@ the api as amk.spawn, amk.wait and amk.kill.
 +          amk_reap_foreign (pid, exit_code, exit_sig);
 +          continue;
 +        }
-
+ 
        DB (DB_JOBS, (exit_sig == 0 && exit_code == 0
                      ? _("Reaping winning child %p PID %s %s\n")
 --- a/src/main.c
@@ -55,7 +61,7 @@ the api as amk.spawn, amk.wait and amk.kill.
 @@ -5397,6 +5397,117 @@
    die (status);
  }
-
+ 
 +/* Spawned goal lists: the pids still out, and the ones make's own reaping collected before they were asked for.  */
 +
 +#define AMK_SPAWNED 64

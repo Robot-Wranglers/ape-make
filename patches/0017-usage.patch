@@ -7,10 +7,10 @@ The bug address goes: a report about amk is not one for make, and amk has no add
 
 --- a/src/main.c
 +++ b/src/main.c
-@@ -953,6 +953,40 @@
+@@ -941,6 +941,40 @@
  #endif
  }
-
+ 
 +/* The flags amk reads ahead of option decoding, in the order it reads them; the engine flags print themselves from the table.  */
 +static const char *const amk_usage[] =
 +  {
@@ -46,21 +46,23 @@ The bug address goes: a report about amk is not one for make, and amk has no add
 +}
 +
  /* Print a nice usage method and exit.  */
-
+ 
  static void NORETURN
-@@ -974,12 +1008,8 @@
+@@ -961,14 +995,10 @@
+ 
    for (cpp = usage; *cpp; ++cpp)
      fputs (_(*cpp), usageto);
 +  amk_print_usage (usageto);
-
+ 
 -  if (!remote_description || *remote_description == '\0')
 -    fprintf (usageto, _("\nThis program built for %s\n"), make_host);
 -  else
 -    fprintf (usageto, _("\nThis program built for %s (%s)\n"),
 -             make_host, remote_description);
+-
+-  fprintf (usageto, _("Report bugs to <bug-make@gnu.org>\n"));
 +  fprintf (usageto, _("\nThis program is amk %s%s (%s)\n"),
 +           AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
-
--  fprintf (usageto, _("Report bugs to <bug-make@gnu.org>\n"));
--
+ 
    die (bad ? MAKE_FAILURE : MAKE_SUCCESS);
+ }

@@ -5,19 +5,19 @@ $(file >) puts the final newline back when the output is written out.
 
 --- a/src/function.c
 +++ b/src/function.c
-@@ -2522,7 +2522,7 @@
+@@ -2553,7 +2553,7 @@
    _exit (status);
  }
-
+ 
 -/* Run a linked-in guest's main over the argv in a forked child, no exec: input, if any, becomes its stdin through a temp file, and its stdout is appended to o with its lines intact. */
 +/* Run a linked-in guest's main over the argv in a forked child, no exec: input, if any, becomes its stdin through a temp file, and its stdout is appended to o with its lines intact, less one trailing newline. */
  static char *
  func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
              int ac, char **av, const char *input)
-@@ -2607,6 +2607,13 @@
+@@ -2638,6 +2638,13 @@
    waitpid (pid, &st, 0);
    shell_completed (WIFEXITED (st) ? WEXITSTATUS (st) : 127, WIFSIGNALED (st) ? WTERMSIG (st) : 0);
-
+ 
 +  /* One trailing newline goes, as $(file <) drops it; any before it stay.  */
 +  if (i > 0 && buffer[i - 1] == '\n')
 +    {

@@ -8,10 +8,10 @@ minus one, the do-not-rebuild contract, so a makefile that guards a loadable wit
 @@ -250,7 +250,8 @@
      O (fatal, flocp,
         _("The 'load' operation is not supported on this platform"));
-
+ 
 -  return 0;
 +  /* Nothing is ever loadable here, so take the do-not-rebuild contract.  */
 +  return -1;
  }
-
+ 
  int

@@ -1,6 +1,6 @@
 # Patches
 
-A numbered series applied to make 4.4.1 in order with `patch -p1 -l`, by `make patch`.
+A numbered series applied to make 4.4.1 in order with GNU patch (`gpatch` on macOS) and `-p1 -l --fuzz=0`, by `make patch`.
 Each file opens with a note on what it does, and a guest's exceptions are written on the
 patch that adds that guest.
 

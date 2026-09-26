@@ -25,7 +25,7 @@ for MicroPython's version script to ask.
  extern int lua_run_main (int argc, char **argv);
  extern int s7_run_main (int argc, char **argv);
 +extern int micropy_run_main (int argc, char **argv);
-
+ 
  #endif
 --- a/src/function.c
 +++ b/src/function.c
@@ -38,4 +38,4 @@ for MicroPython's version script to ask.
 +#endif
      { 0, 0, 0, 0, 0, 0 }
    };
-
+ 

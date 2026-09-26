@@ -5,22 +5,32 @@ reported there and the job keeps the parent's stream. Lua exposes it as opts.std
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -27,3 +27,3 @@
+@@ -25,7 +25,7 @@
+ 
+ extern const char *const amk_event_names[];
  /* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
 -pid_t amk_spawn_goals (int n, char **words, int foreground);
 +pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
  int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
+ int amk_kill_child (pid_t pid, int sig);
+ int amk_foreground (pid_t pid);
 --- a/src/main.c
 +++ b/src/main.c
-@@ -5481,3 +5481,3 @@
+@@ -5479,7 +5479,7 @@
+ }
+ 
  pid_t
 -amk_spawn_goals (int n, char **words, int foreground) {
 +amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
    unsigned int i;
-@@ -5500,4 +5500,6 @@
+   pid_t pid;
+   for (i = 0; i < AMK_SPAWNED && amk_live[i] != 0; ++i)
+@@ -5500,6 +5500,8 @@
    setpgid (0, 0);
    if (foreground)
      amk_tty_give (getpid ());
 +  if (stdout_path != NULL && freopen (stdout_path, "w", stdout) == NULL)
 +    fprintf (stderr, "amk: spawn: cannot write %s: %s\n", stdout_path, strerror (errno));
-   amk_child = 1;
+   signal (SIGINT, fatal_error_signal);
+   signal (SIGTERM, fatal_error_signal);
+   signal (SIGHUP, fatal_error_signal);

@@ -13,7 +13,9 @@ amk.foreground.
 
 --- a/src/amk.h
 +++ b/src/amk.h
-@@ -26,7 +26,10 @@
+@@ -24,9 +24,12 @@
+   };
+ 
  extern const char *const amk_event_names[];
 -/* The spawn api: a goal list run in a fork of this parsed image, the wait that collects it, and the parking make's own reaping hands a spawned pid to. */
 -pid_t amk_spawn_goals (int n, char **words);
@@ -29,24 +31,28 @@ amk.foreground.
  void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
 --- a/src/commands.c
 +++ b/src/commands.c
-@@ -21,4 +21,5 @@
+@@ -21,6 +21,7 @@
  #include "variable.h"
  #include "job.h"
  #include "commands.h"
 +#include "amk.h"
  #ifdef WINDOWS32
-@@ -532,3 +533,4 @@
+ #include <windows.h>
+ #include "w32err.h"
+@@ -531,6 +532,7 @@
+ 
    temp_stdin_unlink ();
    osync_clear ();
 +  amk_signal_spawned (sig);
    jobserver_clear ();
+ 
+   /* A termination signal won't be sent to the entire
 --- a/src/main.c
 +++ b/src/main.c
-@@ -5447,22 +5447,65 @@
+@@ -5447,8 +5447,36 @@
    return MAKE_FAILURE;
  }
--
-+
+ 
 +/* Every spawned job is a process group, and one of them may hold the terminal.  */
 +static pid_t amk_tty_owner;
 +
@@ -81,11 +87,7 @@ amk.foreground.
    unsigned int i;
    pid_t pid;
    for (i = 0; i < AMK_SPAWNED && amk_live[i] != 0; ++i)
-     ;
-   if (i == AMK_SPAWNED)
-     return -1;
-   fflush (NULL);
-   pid = fork ();
+@@ -5460,9 +5488,24 @@
    if (pid < 0)
      return -1;
    if (pid > 0) {
@@ -110,11 +112,10 @@ amk.foreground.
    amk_child = 1;
    job_slots = 1;
    jobserver_auth = NULL;
-@@ -5473,9 +5507,9 @@
+@@ -5473,9 +5516,9 @@
    die (amk_run_goals (n, words));
  }
--
-+
+ 
 -/* A parked child first, then waitpid on the wanted pid, or on each live one in turn when any will do.  */
 +/* A parked child first, then waitpid on the wanted pid, or on each live one in turn when any will do; a stopped job is reported and stays live, and a finished terminal holder gives the terminal back.  */
  int
@@ -123,7 +124,7 @@ amk.foreground.
    unsigned int i;
    for (;;) {
      for (i = 0; i < AMK_SPAWNED; ++i)
-@@ -5484,6 +5518,7 @@
+@@ -5484,6 +5527,7 @@
          *code = amk_parked[i].code;
          *sig = amk_parked[i].sig;
          amk_parked[i].pid = 0;
@@ -131,7 +132,7 @@ amk.foreground.
          return 1;
        }
      for (i = 0; i < AMK_SPAWNED; ++i) {
-@@ -5491,15 +5526,24 @@
+@@ -5491,15 +5535,24 @@
        pid_t pid;
        if (amk_live[i] == 0 || (want > 0 && amk_live[i] != want))
          continue;
@@ -160,11 +161,10 @@ amk.foreground.
        return 1;
      }
      if (!block)
-@@ -5508,6 +5552,52 @@
+@@ -5508,6 +5561,52 @@
    }
  }
--
-+
+ 
 +int
 +amk_kill_child (pid_t pid, int sig) {
 +  return killpg (pid, sig);
@@ -214,10 +214,11 @@ amk.foreground.
  /* Opt-in staleness, for a makefile nothing else version-stamps.  A generator
     that names its artifacts by content needs none of this, since a changed
     program is a different path and its zygote cannot go stale.  AMK_WATCH arms
-@@ -5967,4 +6057,5 @@
+@@ -5967,6 +6066,7 @@
      {
        int err;
--
-+
+ 
 +      amk_sweep_spawned ();
        dying = 1;
+ 
+       if (print_version_flag)

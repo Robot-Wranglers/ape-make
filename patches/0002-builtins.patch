@@ -41,13 +41,13 @@ A row sits behind its engine define; everything else is always compiled.
  #include "commands.h"
  #include "debug.h"
 +#include "amk.h"
-
+ 
  #ifdef _AMIGA
  #include "amiga.h"
 @@ -2486,6 +2487,220 @@
-
+ 
  static char *func_call (char *o, char **argv, const char *funcname);
-
+ 
 +#include <fcntl.h>
 +#include <sys/wait.h>
 +
@@ -264,11 +264,11 @@ A row sits behind its engine define; everything else is always compiled.
 +
  #define FT_ENTRY(_name, _min, _max, _exp, _func) \
    { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
-
+ 
 @@ -2840,6 +3055,37 @@
    free (ent);
  }
-
+ 
 +/* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
 +static struct function_table_entry amk_function_entries[64];
 +
@@ -316,13 +316,13 @@ A row sits behind its engine define; everything else is always compiled.
  #include "getopt.h"
  #include "shuffle.h"
 +#include "amk.h"
-
+ 
  #include <assert.h>
  #ifdef _AMIGA
 @@ -1524,7 +1525,21 @@
  #endif
                             ;
-
+ 
 -    define_variable_cname (".FEATURES", features, o_default, 0);
 +    /* The engine names join the feature list, and the engines variable names that subset alone, both read from the engine table. */
 +    const struct amk_engine *e;
@@ -340,5 +340,5 @@ A row sits behind its engine define; everything else is always compiled.
 +    define_variable_cname (".ENGINES", engines, o_default, 0);
 +    free (all);
    }
-
+ 
    /* Configure GNU Guile support */

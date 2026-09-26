@@ -7,11 +7,10 @@ here also serves the usage trailer that patch 0017 adds.
 
 --- a/src/main.c
 +++ b/src/main.c
-@@ -26,6 +26,34 @@
- #include "getopt.h"
+@@ -27,6 +27,34 @@
  #include "shuffle.h"
  #include "amk.h"
-+
+ 
 +/* The build passes the version and flavor as bare tokens; the banner and .AMK_VERSION read them as strings. */
 +#define AMK_STR_(x) #x
 +#define AMK_STR(x) AMK_STR_(x)
@@ -39,9 +38,10 @@ here also serves the usage trailer that patch 0017 adds.
 +    }
 +  return names;
 +}
-
++
  #include <assert.h>
  #ifdef _AMIGA
+ # include <dos/dos.h>
 @@ -2345,6 +2373,7 @@
      sprintf (all, "%s %s", features, engines);
      define_variable_cname (".FEATURES", all, o_default, 0);
@@ -49,10 +49,11 @@ here also serves the usage trailer that patch 0017 adds.
 +    define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
      free (all);
    }
-
-@@ -4597,9 +4626,12 @@
+ 
+@@ -4596,11 +4625,14 @@
+ 
    printf ("%sGNU Make %s\n", precede, version_string);
-
+ 
 -  if (!remote_description || *remote_description == '\0')
 -    printf (_("%sBuilt for %s\n"), precede, make_host);
 -  else
@@ -66,5 +67,6 @@ here also serves the usage trailer that patch 0017 adds.
 +  printf (_("%sBuilt for %s (amk %s%s: %s)\n"),
 +          precede, make_host, AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
 +#endif
-
+ 
    /* Print this untranslated.  The coding standards recommend translating the
+      (C) to the copyright symbol, but this string is going to change every

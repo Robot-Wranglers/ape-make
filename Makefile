@@ -128,6 +128,8 @@ deps.files  := $(make.tarball) $(foreach e,$(engines),$($(e).tarball)) $(tools.f
 cosmocc.dir ?= $(HERE)cosmocc
 cosmocc.env = PATH="$(cosmocc.dir)/bin:$$PATH" CC=cosmocc AR=cosmoar RANLIB=cosmoranlib
 sha256   := $(shell command -v sha256sum 2>/dev/null || echo 'shasum -a 256')
+# GNU patch everywhere, strict: macOS names it gpatch, and a hunk that needs fuzz fails instead of landing near its mark.
+PATCH    ?= $(shell command -v gpatch 2>/dev/null || echo patch) --fuzz=0
 jobs     := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 # A consumer fits make to itself with a series of its own applied after this one; flavor names that build so it shares the guests but not the patched tree or the artifact.
 patch.dirs ?= patches
@@ -332,7 +334,7 @@ $(make.src): $(make.tarball) $(patch.dirs) $(patches)
 	tar xzf $(make.tarball) -C $@ --strip-components=1
 	for p in $(patches); do \
 	  $(call log, patch, applying $${p#$(HERE)}); \
-	  patch -d $@ -p1 -l -i "$$p" \
+	  $(PATCH) -d $@ -p1 -l -i "$$p" \
 	    || $(call die, patch, $${p#$(HERE)} does not apply to make $(make.version) -- rerun after make clean); \
 	done
 	touch $@
@@ -359,7 +361,7 @@ $(wasm3.src): $(wasm3.tarball) $(wildcard patches/wasm3/*.patch)
 	rm -rf $@ && mkdir -p src && tar xzf $(wasm3.tarball) -C src
 	for p in patches/wasm3/*.patch; do \
 	  $(call log, patch, applying $$p); \
-	  patch -d $@ -p1 -l -i "$(HERE)$$p" \
+	  $(PATCH) -d $@ -p1 -l -i "$(HERE)$$p" \
 	    || $(call die, patch, $$p does not apply to wasm3 $(wasm3.version)); \
 	done
 	touch $@
