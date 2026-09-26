@@ -1,0 +1,35 @@
+The js row in the engine table: $(js chunk[,input]) runs the chunk, JavaScript source
+text, whole with its input on stdin; what it prints is the result, and an uncaught error
+prints its message and stack on stderr. The row's name gives the --js flag; there is no
+multi-call name and no argv companion.
+
+QuickJS is a library plus a cli, and amk wants the library: the guest build skips qjs.c,
+qjsc.c and the two generator programs, and compiles guest/js_main.c in their place, which
+is where js_run_main lives. That entry point sets the engine up the way the qjs cli does,
+with the std and os modules bound as globals so a plain chunk reaches std.in and os.exec
+without an import; a chunk that is a module is detected and run as one, and a script
+chunk runs with the async flag so it may await at top level. QuickJS ships a Makefile
+that only builds its programs, so its guest rule compiles the sources directly instead
+of running one.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -23,5 +23,6 @@
+ extern int s7_run_main (int argc, char **argv);
+ extern int micropy_run_main (int argc, char **argv);
+ extern int wasm3_main (int argc, char **argv);
++extern int js_run_main (int argc, char **argv);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2511,6 +2511,9 @@
+ #ifdef AMK_ENGINE_WASM3
+     { "wasm", "wasm3", wasm3_main, 0, 1, 1 },
+ #endif
++#ifdef AMK_ENGINE_QUICKJS
++    { "js", 0, js_run_main, 0, 0, 0 },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+

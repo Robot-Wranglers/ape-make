@@ -1,0 +1,46 @@
+The cli prints a called function's result on stdout, so a builtin expansion carries it, and the repl prompt appears only on a terminal.
+
+--- a/platforms/app/main.c
++++ b/platforms/app/main.c
+@@ -9,6 +9,7 @@
+ #include <stdlib.h>
+ #include <time.h>
+ #include <ctype.h>
++#include <unistd.h>
+
+ #include "wasm3.h"
+ #include "m3_api_libc.h"
+@@ -368,15 +369,15 @@
+     if (result) return result;
+
+     if (ret_count <= 0) {
+-        fprintf (stderr, "Result: <Empty Stack>\n");
++        fprintf (stdout, "Result: <Empty Stack>\n");
+     }
+     for (int i = 0; i < ret_count; i++) {
+         switch (m3_GetRetType(func, i)) {
+-        case c_m3Type_i32:  fprintf (stderr, "Result: %" PRIi32 "\n", *(i32*)valptrs[i]);  break;
+-        case c_m3Type_i64:  fprintf (stderr, "Result: %" PRIi64 "\n", *(i64*)valptrs[i]);  break;
++        case c_m3Type_i32:  fprintf (stdout, "Result: %" PRIi32 "\n", *(i32*)valptrs[i]);  break;
++        case c_m3Type_i64:  fprintf (stdout, "Result: %" PRIi64 "\n", *(i64*)valptrs[i]);  break;
+ # if d_m3HasFloat
+-        case c_m3Type_f32:  fprintf (stderr, "Result: %" PRIf32 "\n", *(f32*)valptrs[i]);  break;
+-        case c_m3Type_f64:  fprintf (stderr, "Result: %" PRIf64 "\n", *(f64*)valptrs[i]);  break;
++        case c_m3Type_f32:  fprintf (stdout, "Result: %" PRIf32 "\n", *(f32*)valptrs[i]);  break;
++        case c_m3Type_f64:  fprintf (stdout, "Result: %" PRIf64 "\n", *(f64*)valptrs[i]);  break;
+ # endif
+         default: return "unknown return type";
+         }
+@@ -774,8 +775,10 @@
+     {
+         char cmd_buff[2048] = { 0, };
+         char* argv[32] = { 0, };
+-        fprintf(stdout, "wasm3> ");
+-        fflush(stdout);
++        if (isatty(0)) {
++            fprintf(stdout, "wasm3> ");
++            fflush(stdout);
++        }
+         if (!fgets(cmd_buff, sizeof(cmd_buff), stdin)) {
+             return 0;
+         }

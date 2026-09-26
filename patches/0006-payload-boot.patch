@@ -1,0 +1,99 @@
+Payload boot: when the zip payload holds __main__.sh, main.c hands control to that
+script with the binary's absolute path as its first argument. A recursive make routes
+back into this binary without booting again, an empty script is a payload that does
+not want to boot, and a host with no shell falls through to an ordinary make.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -1184,7 +1184,82 @@
+         perror_with_name (_("unlink (temporary file): "), nm);
+     }
+ }
++
++/* Payload boot: a distribution appends its own entry script to the binary and
++   this hands control to it, so the engine learns one filename and nothing about
++   whatever framework rides on top.  */
+
++#ifdef __COSMOPOLITAN__
++#include <cosmo.h>
++
++#define AMK_BOOT_SCRIPT "/zip/__main__.sh"
++
++static void
++amk_payload_boot (int argc, char **argv)
++{
++  char *script, **av;
++  size_t len = 0, cap = 1 << 16;
++  int fd, i, j;
++
++  /* Recursion routes back into this binary, so a child must not boot again.  */
++  if (getenv ("AMK_BOOTED"))
++    return;
++  EINTRLOOP (fd, open (AMK_BOOT_SCRIPT, O_RDONLY));
++  if (fd < 0)
++    return;
++  script = xmalloc (cap + 1);
++  while (1)
++    {
++      ssize_t r;
++      if (len == cap)
++        {
++          cap *= 2;
++          script = xrealloc (script, cap + 1);
++        }
++      EINTRLOOP (r, read (fd, script + len, cap - len));
++      if (r < 0)
++        {
++          close (fd);
++          free (script);
++          return;
++        }
++      if (r == 0)
++        break;
++      len += (size_t) r;
++    }
++  close (fd);
++  script[len] = '\0';
++  /* An empty script is a payload that does not want to boot; do not spawn.  */
++  if (len == 0)
++    {
++      free (script);
++      return;
++    }
++
++  /* The absolute self path becomes the script's argument zero, so it can read
++     its own payload after a directory change, and the caller's arguments
++     follow it.  */
++  av = xmalloc ((argc + 4) * sizeof *av);
++  i = 0;
++  av[i++] = (char *) "bash";
++  av[i++] = (char *) "-c";
++  av[i++] = script;
++  av[i++] = (char *) GetProgramExecutableName ();
++  for (j = 1; j < argc; ++j)
++    av[i++] = argv[j];
++  av[i] = NULL;
++  execvp ("bash", av);
++  /* No bash on the host: fall through and serve as an ordinary make.  */
++  free (av);
++  free (script);
++}
++#else
++static void
++amk_payload_boot (int argc UNUSED, char **argv UNUSED)
++{
++}
++#endif
++
+ #ifdef MK_OS_ZOS
+ extern char **environ;
+ #endif
+@@ -1238,6 +1313,8 @@
+     }
+   }
+
++  amk_payload_boot (argc, argv);
++
+   /* Settle the resident role before any option decoding, since a client hands
+      its own argv over untouched and never reads a makefile.  */
+   if (argc >= 3 && strcmp (argv[1], "--client") == 0)

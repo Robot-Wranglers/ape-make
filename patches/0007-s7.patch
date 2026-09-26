@@ -1,0 +1,32 @@
+The s7 row in the engine table: $(s7 chunk[,input]) runs the chunk whole with its input
+on stdin. An error inside a chunk reports on stderr and the call expands to nothing
+rather than failing the run. s7 has no cli name and no argv companion.
+
+s7 is the exception to the rename: it is one translation unit that ships no main of
+its own, so guest/s7_main.c supplies the only visible symbol. It builds with the c
+loader disabled, since the default under gcc reaches for dlopen, which an ape has not.
+That entry point also hands the chunk a string port over its input instead of s7's own
+stdin, whose read-line keeps the newline, answers an empty string at end of file, and
+splits any line past 1023 bytes.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -20,5 +20,6 @@
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
+ extern int lua_run_main (int argc, char **argv);
++extern int s7_run_main (int argc, char **argv);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2502,6 +2502,9 @@
+ #ifdef AMK_ENGINE_LUA
+     { "lua", 0, lua_run_main, 0, 0, 0 },
+ #endif
++#ifdef AMK_ENGINE_S7
++    { "s7", 0, s7_run_main, 0, 0, 0 },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+

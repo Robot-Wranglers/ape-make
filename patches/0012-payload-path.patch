@@ -1,0 +1,112 @@
+Payload tools: every member under the payload's bin directory is unpacked into a cache
+keyed by the binary's size and mtime, and that directory goes first on PATH before any
+makefile is read, so recipes, $(shell) and a payload's boot script all find the tools
+the build carries. A recursive make sees the directory already first and does nothing.
+AMK_NO_PATH in the environment turns it off; a build without a payload bin is unchanged.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -1373,7 +1373,95 @@
+   return MAKE_FAILURE;
+ }
+ #endif
++
++/* Payload tools: every member under the payload's bin directory is unpacked
++   into a cache keyed by this binary, and that directory goes first on PATH,
++   so a recipe finds the tools the build carries without being told.  */
++
++#ifdef __COSMOPOLITAN__
++#include <dirent.h>
++
++#define AMK_TOOLS_DIR "/zip/bin"
++
++static void
++amk_payload_path (void)
++{
++  const char *base, *sub, *path;
++  char *dir, *name, *dest, *next;
++  struct stat self;
++  struct dirent *e;
++  DIR *d;
++  size_t n;
++
++  if (getenv ("AMK_NO_PATH"))
++    return;
++  if (stat (GetProgramExecutableName (), &self) < 0)
++    return;
++  base = getenv ("XDG_CACHE_HOME");
++  sub = "";
++  if (!base || !*base)
++    {
++      base = getenv ("HOME");
++      sub = "/.cache";
++    }
++  if (!base || !*base)
++    return;
+
++  /* The key changes with the binary, so an upgrade never runs a stale tool.  */
++  dir = xmalloc (strlen (base) + 64);
++  sprintf (dir, "%s%s/amk/%lld-%lld/bin", base, sub,
++           (long long) self.st_size, (long long) self.st_mtime);
++
++  /* A recursive make inherits the directory from its parent and stops here.  */
++  path = getenv ("PATH");
++  n = strlen (dir);
++  if (path && strncmp (path, dir, n) == 0 && (path[n] == ':' || path[n] == '\0'))
++    {
++      free (dir);
++      return;
++    }
++
++  d = opendir (AMK_TOOLS_DIR);
++  if (!d)
++    {
++      free (dir);
++      return;
++    }
++  while ((e = readdir (d)) != NULL)
++    {
++      int r;
++      if (e->d_name[0] == '.')
++        continue;
++      name = xmalloc (strlen (e->d_name) + 5);
++      dest = xmalloc (n + strlen (e->d_name) + 2);
++      sprintf (name, "bin/%s", e->d_name);
++      sprintf (dest, "%s/%s", dir, e->d_name);
++      r = amk_ape_unpack (name, dest, 0);
++      free (name);
++      free (dest);
++      /* A tool that failed to land leaves PATH alone rather than half set.  */
++      if (r != MAKE_SUCCESS)
++        {
++          closedir (d);
++          free (dir);
++          return;
++        }
++    }
++  closedir (d);
++
++  next = xmalloc (n + (path ? strlen (path) : 0) + 2);
++  sprintf (next, "%s%s%s", dir, path && *path ? ":" : "", path ? path : "");
++  setenv ("PATH", next, 1);
++  free (next);
++  free (dir);
++}
++#else
++static void
++amk_payload_path (void)
++{
++}
++#endif
++
+ #ifdef MK_OS_ZOS
+ extern char **environ;
+ #endif
+@@ -1480,6 +1568,7 @@
+         }
+     }
+
++  amk_payload_path ();
+   amk_payload_boot (argc, argv);
+
+   /* Settle the resident role before any option decoding, since a client hands

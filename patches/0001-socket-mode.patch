@@ -1,0 +1,1231 @@
+Resident dispatch: a zygote parses once and forks a child per request over a unix
+socket. The two roles, the reply protocol, and the environment names AMK_ZYGOTE and
+AMK_REARM are documented in the block comment in main.c below. The cmsg layout block
+exists because Cosmopolitan carries the Linux cmsghdr on every host, and Darwin and
+the BSDs lay out descriptor passing differently.
+
+--- a/src/file.c
++++ b/src/file.c
+@@ -364,8 +364,10 @@
+   struct file **file_end;
+   int doneany = 0;
+ 
+-  /* If there's no way we will ever remove anything anyway, punt early.  */
+-  if (question_flag || touch_flag || all_secondary || no_intermediates)
++  /* If there's no way we will ever remove anything anyway, punt early.
++     A resident dispatch child shares these files with its parent.  */
++  if (question_flag || touch_flag || all_secondary || no_intermediates
++      || amk_child)
+     return;
+ 
+   if (sig && just_print_flag)
+--- a/src/main.c
++++ b/src/main.c
+@@ -46,6 +46,13 @@
+ # include <fcntl.h>
+ #endif
+ 
++#ifndef WINDOWS32
++# include <sys/socket.h>
++# include <sys/un.h>
++# include <sys/wait.h>
++# include <poll.h>
++#endif
++
+ #ifdef _AMIGA
+ int __stack = 20000; /* Make sure we have 20K of stack space */
+ #endif
+@@ -100,6 +107,11 @@
+ #endif
+ 
+ static void clean_jobserver (int status);
++static void amk_serve (const char *sockpath,
++                         struct goaldep *deps) NORETURN;
++static void amk_client (const char *sockpath, int argc,
++                          char **argv) NORETURN;
++static int amk_resident (int argc, char **argv);
+ static void print_data_base (void);
+ static void print_version (void);
+ static void decode_switches (int argc, const char **argv,
+@@ -300,6 +312,19 @@
+ 
+ /* Whether or not .NOTINTERMEDIATE with no prerequisites was given.  */
+ unsigned int no_intermediates;
++
++/* Nonzero in a resident dispatch child, which shares state with its parent.  */
++unsigned int amk_child;
++
++/* Socket named by --serve, parked on once the makefiles are read.  */
++static const char *amk_serve_path;
++
++/* The zygote's own argv, whose options a request may repeat and have dropped.  */
++static int amk_serve_argc;
++static char **amk_serve_argv;
++
++/* A dispatch child's connection back to its client, answered from die().  */
++static int amk_conn = -1;
+ 
+ /* Count the number of commands we've invoked, that might change something in
+    the filesystem.  Start with 1 so calloc'd memory never matches.  */
+@@ -1194,6 +1219,33 @@
+   /* Useful for attaching debuggers, etc.  */
+   SPIN ("main-entry");
+ 
++#ifndef WINDOWS32
++  /* Settle the resident role before any option decoding, since a client hands
++     its own argv over untouched and never reads a makefile.  */
++  if (argc >= 3 && strcmp (argv[1], "--client") == 0)
++    amk_client (argv[2], argc - 3, argv + 3);
++  if (argc >= 3 && strcmp (argv[1], "--serve") == 0) {
++    int i;
++    amk_serve_path = argv[2];
++    for (i = 3; i <= argc; ++i) argv[i - 2] = argv[i];
++    argc -= 2;
++    amk_serve_argc = argc;
++    amk_serve_argv = argv;
++  }
++  /* Resident is the two roles run against each other for one command: the
++     child parks on this same argv, so its options match the request exactly,
++     and the parent hands the command over and reaps on the way out.  */
++  if (argc >= 2 && strcmp (argv[1], "--resident") == 0) {
++    int i;
++    for (i = 2; i <= argc; ++i) argv[i - 1] = argv[i];
++    argc -= 1;
++    if (amk_resident (argc, argv)) {
++      amk_serve_argc = argc;
++      amk_serve_argv = argv;
++    }
++  }
++#endif
++
+ #ifdef HAVE_ATEXIT
+   if (ANY_SET (check_io_state (), IO_STDOUT_OK))
+     atexit (close_stdout);
+@@ -2905,6 +2957,12 @@
+ 
+       O (fatal, NILF, _("No targets specified and no makefile found"));
+     }
++
++#ifndef WINDOWS32
++  /* Resident mode parks here and serves goals instead of running one.  */
++  if (amk_serve_path != 0)
++    amk_serve (amk_serve_path, read_files);
++#endif
+ 
+   /* Shuffle prerequisites to catch makefiles with incomplete depends. */
+ 
+@@ -3761,7 +3819,1091 @@
+   printf (_("\n# Finished Make data base on %s\n"), ctime (&when));
+ }
+ 
++#ifndef WINDOWS32
++
++/* Resident dispatch.  A zygote reads the makefiles, parks on a unix socket at
++   the point where make would start updating goals, and forks a child per
++   request.  The request carries the client's cwd, argv, environment and three
++   standard descriptors, so the child runs as an ordinary make from there on
++   while the parent, which never executes a goal, stays pristine and reusable.
++
++   Two roles on one binary, both selected by argv so nothing in the environment
++   can trigger either:
++
++     amk --serve <socket> -f <program> [goal]
++     amk --client <socket> [-- <cold command>] <args>
++
++   A reply is two lines on the same connection: the child's pid, then its exit
++   status.  Pid zero means the parent answered without forking.  Status 75 says
++   the zygote declined, and the client then runs its own cold command, so a
++   refusal costs a fallback rather than a wrong answer.  A child declines when
++   the request carries any option the zygote does not already hold.
++
++   A client whose socket is missing runs cold at once, unless AMK_ZYGOTE names
++   a live pid that has yet to bind it; then the client waits in process, bounded,
++   so a loader can hand off the moment it forks the zygote.  */
++
++#define AMK_STALE     75
++#define AMK_MAXREQ    (4 * 1024 * 1024)
++#define AMK_MAXCONN   1024
++#define AMK_NFD       3
++
++/* Client mode runs before make is initialized, so its failures cannot go
++   through the usual reporting.  */
++
++static void amk_die (const char *what, const char *why) NORETURN;
++
+ static void
++amk_die (const char *what, const char *why) {
++  fprintf (stderr, "amk: %s: %s\n", what, why);
++  exit (MAKE_FAILURE);
++}
++
++static int
++amk_write_all (int fd, const void *buf, size_t len) {
++  const char *p = buf;
++  while (len > 0) {
++    ssize_t w = write (fd, p, len);
++    if (w < 0) { if (errno == EINTR) continue; return -1; }
++    p += w;
++    len -= (size_t) w;
++  }
++  return 0;
++}
++
++static int
++amk_read_all (int fd, void *buf, size_t len) {
++  char *p = buf;
++  while (len > 0) {
++    ssize_t r = read (fd, p, len);
++    if (r < 0) { if (errno == EINTR) continue; return -1; }
++    if (r == 0) return -1;
++    p += r;
++    len -= (size_t) r;
++  }
++  return 0;
++}
++
++static int
++amk_read_line (int fd, char *buf, size_t size) {
++  size_t len = 0;
++  for (;;) {
++    char c;
++    ssize_t r = read (fd, &c, 1);
++    if (r < 0) { if (errno == EINTR) continue; return 0; }
++    if (r == 0) return 0;
++    if (c == '\n') break;
++    if (len < size - 1) buf[len++] = c;
++  }
++  buf[len] = '\0';
++  return 1;
++}
++
++/* Make installs a fatal handler for the broken-pipe signal, so a departed
++   client must not take a finished child down before it exits on its own.  */
++
++static void
++amk_write_status (int fd, int status) {
++  char buf[32];
++  int len = sprintf (buf, "%d\n", status);
++  void (*prev) (int) = signal (SIGPIPE, SIG_IGN);
++  amk_write_all (fd, buf, (size_t) len);
++  signal (SIGPIPE, prev);
++}
++
++static void
++amk_put_u32 (char **p, size_t v) {
++  unsigned char *q = (unsigned char *) *p;
++  q[0] = (unsigned char) (v & 0xff);
++  q[1] = (unsigned char) ((v >> 8) & 0xff);
++  q[2] = (unsigned char) ((v >> 16) & 0xff);
++  q[3] = (unsigned char) ((v >> 24) & 0xff);
++  *p += 4;
++}
++
++static size_t
++amk_get_u32 (const char **p) {
++  const unsigned char *q = (const unsigned char *) *p;
++  *p += 4;
++  return (size_t) q[0] | ((size_t) q[1] << 8) | ((size_t) q[2] << 16)
++         | ((size_t) q[3] << 24);
++}
++
++/* Pack cwd, argv and the environment into one length-prefixed buffer.  */
++
++static char *
++amk_build_request (int argc, char **argv, size_t *lenp) {
++  PATH_VAR (cwd);
++  size_t need = 4 + 4 + 4;
++  int i, envc;
++  char *buf, *p;
++
++  if (getcwd (cwd, GET_PATH_MAX) == 0)
++    amk_die ("getcwd", strerror (errno));
++
++  need += strlen (cwd) + 1;
++  for (i = 0; i < argc; ++i) need += strlen (argv[i]) + 1;
++  for (envc = 0; environ[envc] != 0; ++envc) need += strlen (environ[envc]) + 1;
++
++  buf = xmalloc (need);
++  p = buf;
++  amk_put_u32 (&p, need - 4);
++  strcpy (p, cwd);
++  p += strlen (cwd) + 1;
++
++  amk_put_u32 (&p, (size_t) argc);
++  for (i = 0; i < argc; ++i) { strcpy (p, argv[i]); p += strlen (argv[i]) + 1; }
++
++  amk_put_u32 (&p, (size_t) envc);
++  for (i = 0; i < envc; ++i) { strcpy (p, environ[i]); p += strlen (environ[i]) + 1; }
++
++  *lenp = need;
++  return buf;
++}
++
++/* Cosmopolitan carries the Linux cmsghdr on every host, and the Darwin and
++   Berkeley kernels read their own 12-byte header instead, so on those hosts
++   the block is laid out by hand.  Every other build compiles the standard
++   path alone.  */
++
++#ifdef __COSMOPOLITAN__
++#define _COSMO_SOURCE 1
++#include "libc/dce.h"
++#define AMK_BSD_CMSG_LEN (12 + AMK_NFD * (int) sizeof (int))
++
++static int
++amk_bsd_cmsg (void) {
++  return IsBsd ();
++}
++
++static void
++amk_bsd_cmsg_pack (char *b, const int fds[AMK_NFD]) {
++  uint32_t clen = AMK_BSD_CMSG_LEN;
++  int32_t level = SOL_SOCKET, type = SCM_RIGHTS;
++  memcpy (b, &clen, 4);
++  memcpy (b + 4, &level, 4);
++  memcpy (b + 8, &type, 4);
++  memcpy (b + 12, fds, AMK_NFD * sizeof (int));
++}
++
++static int
++amk_bsd_cmsg_unpack (const char *b, size_t n, int fds[AMK_NFD]) {
++  uint32_t clen;
++  int32_t level, type;
++  if (n < AMK_BSD_CMSG_LEN) return 0;
++  memcpy (&clen, b, 4);
++  memcpy (&level, b + 4, 4);
++  memcpy (&type, b + 8, 4);
++  if (clen != AMK_BSD_CMSG_LEN || level != SOL_SOCKET || type != SCM_RIGHTS)
++    return 0;
++  memcpy (fds, b + 12, AMK_NFD * sizeof (int));
++  return 1;
++}
++#else
++#define AMK_BSD_CMSG_LEN 0
++static int amk_bsd_cmsg (void) { return 0; }
++static void amk_bsd_cmsg_pack (char *b, const int fds[AMK_NFD]) { (void) b; (void) fds; }
++static int amk_bsd_cmsg_unpack (const char *b, size_t n, int fds[AMK_NFD]) { (void) b; (void) n; (void) fds; return 0; }
++#endif
++
++/* Hand the request over with the three standard descriptors attached.  A
++   zygote that answered and closed before the send gives 0, not a signal.  */
++
++static int
++amk_send_request (int fd, const char *buf, size_t len) {
++  union { struct cmsghdr align; char b[CMSG_SPACE (AMK_NFD * sizeof (int))]; } cbuf;
++  int fds[AMK_NFD];
++  struct msghdr msg;
++  struct iovec iov;
++  struct cmsghdr *cm;
++  ssize_t sent;
++
++  fds[0] = STDIN_FILENO;
++  fds[1] = STDOUT_FILENO;
++  fds[2] = STDERR_FILENO;
++
++  memset (&msg, '\0', sizeof msg);
++  memset (&cbuf, '\0', sizeof cbuf);
++  iov.iov_base = (void *) buf;
++  iov.iov_len = len;
++  msg.msg_iov = &iov;
++  msg.msg_iovlen = 1;
++  msg.msg_control = cbuf.b;
++  if (amk_bsd_cmsg ()) {
++    msg.msg_controllen = AMK_BSD_CMSG_LEN;
++    amk_bsd_cmsg_pack (cbuf.b, fds);
++  } else {
++    msg.msg_controllen = CMSG_SPACE (AMK_NFD * sizeof (int));
++    cm = CMSG_FIRSTHDR (&msg);
++    cm->cmsg_level = SOL_SOCKET;
++    cm->cmsg_type = SCM_RIGHTS;
++    cm->cmsg_len = CMSG_LEN (AMK_NFD * sizeof (int));
++    memcpy (CMSG_DATA (cm), fds, sizeof fds);
++  }
++
++  for (;;) {
++    sent = sendmsg (fd, &msg, 0);
++    if (sent >= 0) break;
++    if (errno != EINTR) return 0;
++  }
++
++  /* Ancillary data rides the first sendmsg; any tail is plain stream.  */
++  if ((size_t) sent < len
++      && amk_write_all (fd, buf + sent, len - (size_t) sent) < 0)
++    return 0;
++  return 1;
++}
++
++/* Collect one request and its descriptors.  Returns 0 on a malformed one.  */
++
++static int
++amk_recv_request (int fd, char **bufp, int fds[AMK_NFD]) {
++  union { struct cmsghdr align; char b[CMSG_SPACE (AMK_NFD * sizeof (int))]; } cbuf;
++  char head[4];
++  const char *hp = head;
++  struct msghdr msg;
++  struct iovec iov;
++  struct cmsghdr *cm;
++  ssize_t r;
++  size_t len;
++  char *buf;
++
++  memset (&msg, '\0', sizeof msg);
++  memset (&cbuf, '\0', sizeof cbuf);
++  iov.iov_base = head;
++  iov.iov_len = sizeof head;
++  msg.msg_iov = &iov;
++  msg.msg_iovlen = 1;
++  msg.msg_control = cbuf.b;
++  msg.msg_controllen = sizeof cbuf.b;
++
++  do r = recvmsg (fd, &msg, 0); while (r < 0 && errno == EINTR);
++  if (r < 1) return 0;
++
++  if (amk_bsd_cmsg ()) {
++    if (!amk_bsd_cmsg_unpack (cbuf.b, msg.msg_controllen, fds))
++      return 0;
++  } else {
++    cm = CMSG_FIRSTHDR (&msg);
++    if (cm == 0 || cm->cmsg_level != SOL_SOCKET || cm->cmsg_type != SCM_RIGHTS
++        || cm->cmsg_len != CMSG_LEN (AMK_NFD * sizeof (int)))
++      return 0;
++    memcpy (fds, CMSG_DATA (cm), AMK_NFD * sizeof (int));
++  }
++
++  if ((size_t) r < sizeof head
++      && amk_read_all (fd, head + r, sizeof head - (size_t) r) < 0)
++    return 0;
++
++  len = amk_get_u32 (&hp);
++  if (len == 0 || len > AMK_MAXREQ) return 0;
++
++  buf = xmalloc (len);
++  if (amk_read_all (fd, buf, len) < 0) { free (buf); return 0; }
++
++  *bufp = buf;
++  return 1;
++}
++
++/* Names make maintains across recursion, which keep the zygote's values.  */
++
++static const char *const amk_env_managed[] =
++  {
++    "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKE_TERMOUT", "MAKE_TERMERR",
++    "MAKE_RESTARTS", "CURDIR"
++  };
++
++static int
++amk_env_is_managed (const char *name, size_t len)
++{
++  unsigned int i;
++
++  for (i = 0; i < sizeof amk_env_managed / sizeof *amk_env_managed; ++i)
++    if (strlen (amk_env_managed[i]) == len
++        && memcmp (name, amk_env_managed[i], len) == 0)
++      return 1;
++  return 0;
++}
++
++/* Drop what the zygote took from its own environment, so that a request's
++   environment matches a cold run instead of adding to the zygote's.  */
++
++static void
++amk_clear_zygote_env (void)
++{
++  unsigned int i;
++
++  for (i = 0; environ[i] != 0; ++i) {
++    size_t len = strcspn (environ[i], "=");
++    if (environ[i][len] == '=' && !amk_env_is_managed (environ[i], len))
++      undefine_variable_global (environ[i], len, o_env);
++  }
++}
++
++/* Names the caller lists in AMK_REARM: per-execution values a makefile
++   computes once at parse time, which a shared parse would otherwise freeze.  */
++
++static int
++amk_rearm_has (const char *set, const char *name, size_t len) {
++  const char *p = set;
++
++  if (set == 0)
++    return 0;
++  while (*p != '\0') {
++    size_t n;
++    p += strspn (p, " \t");
++    n = strcspn (p, " \t");
++    if (n == len && strncmp (p, name, len) == 0)
++      return 1;
++    p += n;
++  }
++  return 0;
++}
++
++static char *
++amk_env_value (const char *p, size_t envc, const char *key) {
++  size_t klen = strlen (key);
++  size_t i;
++
++  for (i = 0; i < envc; ++i) {
++    if (strncmp (p, key, klen) == 0 && p[klen] == '=')
++      return xstrdup (p + klen + 1);
++    p += strlen (p) + 1;
++  }
++  return 0;
++}
++
++/* Import the request environment the way make imports its own at startup, so
++   that a makefile assignment still outranks it unless -e was given.  A rearmed
++   name is the exception: the caller's value must beat the zygote's parse.  */
++
++static void
++amk_import_env (const char *p, size_t envc, const char *rearm) {
++  size_t i;
++
++  for (i = 0; i < envc; ++i) {
++    size_t len = strcspn (p, "=");
++    const char *val = p + len;
++    struct variable *v;
++
++    if (*val != '=' || amk_env_is_managed (p, len)) {
++      p += strlen (p) + 1;
++      continue;
++    }
++    ++val;
++
++    v = define_variable (p, len, val,
++                         amk_rearm_has (rearm, p, len) ? o_override : o_env, 1);
++    v->export = v_export;
++
++    /* A makefile SHELL must not reach subprocesses, per posix.  */
++    if (streq (v->name, "SHELL")) {
++      v->export = v_noexport;
++      shell_var.name = xstrdup ("SHELL");
++      shell_var.length = 5;
++      shell_var.value = xstrdup (val);
++    }
++    else if (streq (v->name, MAKELEVEL_NAME))
++      makelevel = make_toui (val, NULL);
++
++    p += strlen (p) + 1;
++  }
++}
++
++/* The zygote's own options, normalized so that a separated argument is joined
++   to its flag.  A request repeating one of these is asking for what the zygote
++   already is, so the token is dropped; anything else it cannot serve.  */
++
++#define AMK_ARGOPTS "fCoWImj"
++
++static char **amk_zopts;
++static int amk_nzopts;
++static char amk_zshort[64];
++
++static int
++amk_opt_takes_arg (const char *tok) {
++  return tok[2] == '\0' && strchr (AMK_ARGOPTS, tok[1]) != 0;
++}
++
++static void
++amk_zshort_add (const char *chars) {
++  size_t n = strlen (amk_zshort);
++  for (; *chars != '\0'; ++chars)
++    if (strchr (amk_zshort, *chars) == 0 && n + 1 < sizeof amk_zshort) {
++      amk_zshort[n++] = *chars;
++      amk_zshort[n] = '\0';
++    }
++}
++
++/* A run of short flags none of which takes an argument, so the letters can be
++   compared one at a time rather than as a whole token.  */
++
++static int
++amk_opt_is_cluster (const char *tok) {
++  const char *p;
++  for (p = tok + 1; *p != '\0'; ++p)
++    if (!isalpha ((unsigned char) *p) || strchr (AMK_ARGOPTS, *p) != 0)
++      return 0;
++  return tok[1] != '\0';
++}
++
++static void
++amk_zopts_note (const char *tok) {
++  if (tok[1] != '-' && amk_opt_is_cluster (tok))
++    amk_zshort_add (tok + 1);
++  else
++    amk_zopts[amk_nzopts++] = xstrdup (tok);
++}
++
++/* The zygote's effective options: its own argv, which carries the makefile, plus
++   MAKEFLAGS, which the makefiles themselves may set and which is therefore what
++   a recursive call site expands to.  */
++
++static void
++amk_zopts_init (void) {
++  struct variable *v;
++  int i;
++
++  amk_zopts = xmalloc (((size_t) amk_serve_argc + 64) * sizeof *amk_zopts);
++
++  for (i = 1; i < amk_serve_argc; ++i) {
++    const char *tok = amk_serve_argv[i];
++
++    if (tok[0] != '-' || tok[1] == '\0') continue;
++    if (amk_opt_takes_arg (tok) && i + 1 < amk_serve_argc) {
++      char *joined = xmalloc (strlen (tok) + strlen (amk_serve_argv[i + 1]) + 1);
++      sprintf (joined, "%s%s", tok, amk_serve_argv[++i]);
++      amk_zopts[amk_nzopts++] = joined;
++    }
++    else
++      amk_zopts_note (tok);
++  }
++
++  v = lookup_variable (STRING_SIZE_TUPLE ("MAKEFLAGS"));
++  if (v != 0 && v->value != 0) {
++    char *copy = xstrdup (v->value);
++    char *tok;
++
++    for (tok = strtok (copy, " \t"); tok != 0; tok = strtok (0, " \t")) {
++      /* Everything past the separator is a variable override, not a flag.  */
++      if (streq (tok, "--")) break;
++      if (tok[0] == '-') amk_zopts_note (tok);
++      else if (strchr (tok, '=') == 0) amk_zshort_add (tok);
++    }
++    free (copy);
++  }
++}
++
++static int
++amk_zopts_has (const char *tok) {
++  int i;
++
++  /* A cluster is satisfied letter by letter, so a request asking for less than
++     the zygote carries still matches.  */
++  if (tok[1] != '-' && amk_opt_is_cluster (tok)) {
++    const char *p;
++    for (p = tok + 1; *p != '\0'; ++p)
++      if (strchr (amk_zshort, *p) == 0) return 0;
++    return 1;
++  }
++
++  for (i = 0; i < amk_nzopts; ++i)
++    if (streq (amk_zopts[i], tok)) return 1;
++  return 0;
++}
++
++/* Walk a request's argv, joining a separated option argument.  Returns 0 when
++   the request carries an option the zygote does not already have.  */
++
++static void
++amk_refused (const char *tok) {
++  if (getenv ("AMK_DEBUG") != 0)
++    fprintf (stderr, "amk: refused, zygote has no %s (it holds -%s %s)\n",
++             tok, amk_zshort, amk_nzopts > 0 ? amk_zopts[0] : "");
++}
++
++static int
++amk_negotiate (const char *p, size_t argc) {
++  size_t i;
++
++  for (i = 0; i < argc; ++i) {
++    const char *tok = p;
++
++    p += strlen (p) + 1;
++    if (tok[0] != '-' || tok[1] == '\0') continue;
++
++    if (amk_opt_takes_arg (tok) && i + 1 < argc) {
++      char *joined = xmalloc (strlen (tok) + strlen (p) + 1);
++      int known;
++
++      sprintf (joined, "%s%s", tok, p);
++      p += strlen (p) + 1;
++      ++i;
++      known = amk_zopts_has (joined);
++      if (!known) amk_refused (joined);
++      free (joined);
++      if (!known) return 0;
++    }
++    else if (!amk_zopts_has (tok)) {
++      amk_refused (tok);
++      return 0;
++    }
++  }
++  return 1;
++}
++
++/* Adopt the request and run it in this process.  Never returns.  */
++
++static void amk_dispatch (int conn) NORETURN;
++
++static void
++amk_dispatch (int conn) {
++  int status = MAKE_SUCCESS;
++  int fds[AMK_NFD];
++  const char *p, *argp;
++  char *buf;
++  size_t argc, envc, i;
++
++  if (!amk_recv_request (conn, &buf, fds)) {
++    amk_write_status (conn, 0);
++    amk_write_status (conn, MAKE_FAILURE);
++    _exit (MAKE_FAILURE);
++  }
++
++  amk_write_status (conn, (int) getpid ());
++
++  /* Buffered parse-time output belongs to the zygote, not to this request.  */
++  fflush (NULL);
++
++  for (i = 0; i < AMK_NFD; ++i) {
++    dup2 (fds[i], (int) i);
++    if (fds[i] > STDERR_FILENO) close (fds[i]);
++  }
++
++  p = buf;
++  if (*p != '\0' && chdir (p) < 0)
++    pfatal_with_name (p);
++  p += strlen (p) + 1;
++
++  amk_child = 1;
++  amk_conn = conn;
++  goals = 0;
++  lastgoal = 0;
++  define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
++
++  /* Walk past argv to reach the environment, which is imported first so that
++     an argv override still outranks it.  */
++  argc = amk_get_u32 (&p);
++  argp = p;
++  for (i = 0; i < argc; ++i) p += strlen (p) + 1;
++  envc = amk_get_u32 (&p);
++
++  /* An option the zygote does not already carry means a different make, which
++     only the caller's own cold command can be.  */
++  if (!amk_negotiate (argp, argc)) {
++    amk_write_status (conn, AMK_STALE);
++    _exit (AMK_STALE);
++  }
++
++  amk_clear_zygote_env ();
++  {
++    char *rearm = amk_env_value (p, envc, "AMK_REARM");
++    char *aspid = amk_env_value (p, envc, "AMK_REARM_PID");
++
++    if (getenv ("AMK_DEBUG") != 0)
++      fprintf (stderr, "amk: rearm [%s] aspid [%s]\n",
++               rearm != 0 ? rearm : "", aspid != 0 ? aspid : "");
++
++    amk_import_env (p, envc, rearm);
++
++    /* A name whose value is this process rather than the caller's: only the
++       child knows it, so it is set here rather than promoted from the request.  */
++    if (aspid != 0) {
++      char pid[32];
++      const char *q = aspid;
++
++      sprintf (pid, "%d", (int) getpid ());
++      while (*q != '\0') {
++        size_t n;
++
++        q += strspn (q, " \t");
++        n = strcspn (q, " \t");
++        if (n == 0)
++          break;
++        define_variable (q, n, pid, o_override, 0);
++        q += n;
++      }
++    }
++    free (rearm);
++    free (aspid);
++  }
++
++  p = argp;
++  for (i = 0; i < argc; ++i) {
++    /* Options were matched against the zygote's own, so they are no-ops here.  */
++    if (p[0] == '-' && p[1] != '\0') {
++      if (amk_opt_takes_arg (p) && i + 1 < argc) { p += strlen (p) + 1; ++i; }
++      p += strlen (p) + 1;
++      continue;
++    }
++    handle_non_switch_argument (p, o_command);
++    p += strlen (p) + 1;
++  }
++
++  /* A request naming no goal means the default, which the zygote resolved for its
++     own argv before the fork and this child discarded along with the rest.  */
++  if (goals == 0 && default_goal_var != 0 && default_goal_var->value[0] != '\0') {
++    char *dg = allocated_variable_expand (default_goal_var->value);
++
++    if (dg != 0 && dg[0] != '\0')
++      handle_non_switch_argument (dg, o_command);
++    free (dg);
++  }
++
++  /* MAKEFLAGS was built before the hook point, so rebuild it for sub-makes.  */
++  define_makeflags (0);
++
++  /* A makefile may record its own command line by reading the parent process,
++     which under dispatch is the zygote rather than the caller.  Rebuild it from
++     the request, at an origin that outranks the parse-time assignment.  */
++  {
++    size_t need = strlen (amk_serve_argv[0]) + 1;
++    const char *q = argp;
++    char *cli, *w;
++
++    for (i = 0; i < argc; ++i) { need += strlen (q) + 1; q += strlen (q) + 1; }
++
++    cli = xmalloc (need);
++    w = cli + sprintf (cli, "%s", amk_serve_argv[0]);
++    q = argp;
++    for (i = 0; i < argc; ++i) { w += sprintf (w, " %s", q); q += strlen (q) + 1; }
++    define_variable_cname ("MAKE_CLI", cli, o_override, 0)->export = v_export;
++    free (cli);
++  }
++
++  if (goals != 0)
++    switch (update_goal_chain (goals)) {
++    case us_none:
++    case us_success:                      break;
++    case us_question: status = MAKE_TROUBLE; break;
++    case us_failed:   status = MAKE_FAILURE; break;
++    }
++
++  die (status);
++}
++
++/* Opt-in staleness, for a makefile nothing else version-stamps.  A generator
++   that names its artifacts by content needs none of this, since a changed
++   program is a different path and its zygote cannot go stale.  AMK_WATCH arms
++   it for hand-written makefiles, which are edited in place.  */
++
++struct amk_watch { const char *name; time_t mtime; };
++
++static struct amk_watch *amk_watched;
++static unsigned int amk_nwatched;
++
++static void
++amk_watch_init (struct goaldep *deps) {
++  const char *arm = getenv ("AMK_WATCH");
++  struct goaldep *d;
++  unsigned int n = 0;
++
++  if (arm == 0 || *arm == '\0' || streq (arm, "0")) return;
++
++  for (d = deps; d != 0; d = d->next) ++n;
++  if (n == 0) return;
++
++  amk_watched = xmalloc (n * sizeof *amk_watched);
++  for (d = deps; d != 0; d = d->next) {
++    const char *name = dep_name (d);
++    struct stat st;
++
++    amk_watched[amk_nwatched].name = name;
++    amk_watched[amk_nwatched].mtime
++      = stat (name, &st) == 0 ? st.st_mtime : (time_t) 0;
++    ++amk_nwatched;
++  }
++}
++
++static int
++amk_watch_stale (void) {
++  unsigned int i;
++
++  for (i = 0; i < amk_nwatched; ++i) {
++    struct stat st;
++    time_t now = stat (amk_watched[i].name, &st) == 0 ? st.st_mtime : (time_t) 0;
++    if (now != amk_watched[i].mtime) return 1;
++  }
++  return 0;
++}
++
++/* Serve requests on a unix socket, forking a child for each.  Never returns.  */
++
++static void
++amk_serve (const char *sockpath, struct goaldep *deps) {
++  struct { pid_t pid; int fd; } live[AMK_MAXCONN];
++  unsigned int nlive = 0;
++  struct sockaddr_un addr;
++  struct pollfd pfd;
++  int lfd;
++
++  amk_watch_init (deps);
++  amk_zopts_init ();
++
++  if (strlen (sockpath) >= sizeof addr.sun_path)
++    OS (fatal, NILF, _("socket path too long: %s"), sockpath);
++
++  lfd = socket (AF_UNIX, SOCK_STREAM, 0);
++  if (lfd < 0)
++    pfatal_with_name ("socket");
++
++  memset (&addr, '\0', sizeof addr);
++  addr.sun_family = AF_UNIX;
++  strcpy (addr.sun_path, sockpath);
++  unlink (sockpath);
++
++  if (bind (lfd, (struct sockaddr *) &addr, sizeof addr) < 0)
++    pfatal_with_name (sockpath);
++  if (listen (lfd, 64) < 0)
++    pfatal_with_name ("listen");
++
++  /* A zygote outlives whatever started it, so an inherited descriptor would be
++     held open for good and a caller waiting for end of stream on one would wait
++     forever.  The client supplies the standard three; the listener is ours.  */
++  {
++    int fd, top = (int) sysconf (_SC_OPEN_MAX);
++
++    if (top < 0 || top > 4096) top = 4096;
++    for (fd = 3; fd < top; ++fd)
++      if (fd != lfd) close (fd);
++  }
++
++  for (;;) {
++    unsigned int i;
++    pid_t done;
++    int conn;
++
++    pfd.fd = lfd;
++    pfd.events = POLLIN;
++    if (poll (&pfd, 1, 1000) < 0 && errno != EINTR)
++      pfatal_with_name ("poll");
++
++    /* Reap children and release the connections they answered on.  */
++    while ((done = waitpid (-1, NULL, WNOHANG)) > 0)
++      for (i = 0; i < nlive; ++i)
++        if (live[i].pid == done) {
++          close (live[i].fd);
++          live[i] = live[--nlive];
++          break;
++        }
++
++    /* A client that has gone takes its child with it.  The peek consumes
++       nothing and reports a live peer whether or not the child has read.  */
++    for (i = 0; i < nlive; ++i) {
++      char c;
++      if (recv (live[i].fd, &c, 1, MSG_PEEK | MSG_DONTWAIT) == 0)
++        kill (live[i].pid, SIGTERM);
++    }
++
++    if (!(pfd.revents & POLLIN)) continue;
++
++    conn = accept (lfd, NULL, NULL);
++    if (conn < 0) {
++      if (errno == EINTR || errno == ECONNABORTED) continue;
++      pfatal_with_name ("accept");
++    }
++
++    if (amk_watch_stale () || nlive == AMK_MAXCONN) {
++      amk_write_status (conn, 0);
++      amk_write_status (conn, nlive == AMK_MAXCONN ? MAKE_FAILURE : AMK_STALE);
++      close (conn);
++      continue;
++    }
++
++    /* Fork before reading, so a client that stalls blocks only its own
++       child rather than every request behind it.  */
++    fflush (NULL);
++    live[nlive].pid = fork ();
++    if (live[nlive].pid < 0)
++      pfatal_with_name ("fork");
++
++    if (live[nlive].pid == 0) { close (lfd); amk_dispatch (conn); }
++
++    live[nlive++].fd = conn;
++  }
++}
++
++/* The command to run when no zygote can serve the request.  After `--` the
++   caller supplied it outright; otherwise AMK_COLD names the make to prepend.  */
++
++static char **amk_cold_argv;
++
++static void amk_cold (int argc, char **argv) NORETURN;
++
++static void
++amk_cold (int argc, char **argv) {
++  const char *cold;
++  char **nargv;
++  char *spec, *tok;
++  int n = 0, i;
++
++  /* The client ignores a broken pipe; a cold make must not inherit that.  */
++  signal (SIGPIPE, SIG_DFL);
++
++  if (amk_cold_argv != 0) {
++    execvp (amk_cold_argv[0], amk_cold_argv);
++    amk_die (amk_cold_argv[0], strerror (errno));
++  }
++
++  cold = getenv ("AMK_COLD");
++  if (cold == 0 || *cold == '\0')
++    amk_die ("no zygote answered", "no command after -- and AMK_COLD unset");
++
++  spec = xstrdup (cold);
++  nargv = xmalloc ((strlen (spec) / 2 + (size_t) argc + 2) * sizeof *nargv);
++  for (tok = strtok (spec, " \t"); tok != 0; tok = strtok (0, " \t")) nargv[n++] = tok;
++  for (i = 0; i < argc; ++i) nargv[n++] = argv[i];
++  nargv[n] = 0;
++
++  execvp (nargv[0], nargv);
++  amk_die (nargv[0], strerror (errno));
++}
++
++/* The child this client is waiting on, and the signal it last passed along.  */
++
++static volatile sig_atomic_t amk_peer_pid;
++static volatile sig_atomic_t amk_peer_sig;
++
++static void
++amk_forward_signal (int sig) {
++  amk_peer_sig = sig;
++  if (amk_peer_pid > 0) kill ((pid_t) amk_peer_pid, sig);
++  else _exit (128 + sig);
++}
++
++/* An already-ignored signal stays ignored, as make does for its own.  */
++
++static void
++amk_catch (int sig) {
++  if (signal (sig, amk_forward_signal) == SIG_IGN)
++    signal (sig, SIG_IGN);
++}
++
++/* One run, resident: fork a zygote on this command's own argv, route the
++   command through it, and take the zygote down when the command is done.
++
++   The lifetime belongs here rather than to the zygote.  A trampoline has no
++   client at all between hops, so a zygote that exited when its last client
++   left would exit in that gap.  Every nested client is a descendant of the
++   request, so when the request returns there are none.
++
++   Returns nonzero in the child, which then falls through into an ordinary
++   parse and parks; the parent never returns.  */
++
++static char amk_run_dir[] = "/tmp/amk-resident.XXXXXX";
++static char amk_run_sock[sizeof amk_run_dir + 16];
++static pid_t amk_run_zygote;
++
++/* Idempotent, since a resident run may reach it by exit, by signal, or by the
++   client dying alongside its child.  */
++
++static void
++amk_resident_reap (void) {
++  if (amk_run_sock[0] == '\0')
++    return;
++  if (amk_run_zygote > 0) {
++    kill (amk_run_zygote, SIGTERM);
++    waitpid (amk_run_zygote, NULL, 0);
++    amk_run_zygote = 0;
++  }
++  unlink (amk_run_sock);
++  rmdir (amk_run_dir);
++  amk_run_sock[0] = '\0';
++}
++
++static void
++amk_resident_signal (int sig) {
++  amk_resident_reap ();
++  signal (sig, SIG_DFL);
++  raise (sig);
++}
++
++static int
++amk_resident (int argc, char **argv) {
++  const char *tmp = getenv ("TMPDIR");
++  unsigned int waited;
++  pid_t pid;
++
++  if (tmp != 0 && *tmp != '\0'
++      && strlen (tmp) + sizeof "/amk-resident.XXXXXX" <= sizeof amk_run_dir)
++    sprintf (amk_run_dir, "%s/amk-resident.XXXXXX", tmp);
++
++  /* Nowhere to put a socket is a reason to be an ordinary make, not to fail.  */
++  if (mkdtemp (amk_run_dir) == 0)
++    return 0;
++  sprintf (amk_run_sock, "%s/zygote.sock", amk_run_dir);
++
++  pid = fork ();
++  if (pid < 0) {
++    rmdir (amk_run_dir);
++    return 0;
++  }
++
++  if (pid == 0) {
++    /* The zygote answers on the socket and owns none of the caller's streams.  */
++    int null = open ("/dev/null", O_RDWR);
++    if (null >= 0) {
++      dup2 (null, STDIN_FILENO);
++      dup2 (null, STDOUT_FILENO);
++      dup2 (null, STDERR_FILENO);
++      if (null > STDERR_FILENO) close (null);
++    }
++    amk_serve_path = amk_run_sock;
++    return 1;
++  }
++
++  amk_run_zygote = pid;
++  atexit (amk_resident_reap);
++  signal (SIGINT, amk_resident_signal);
++  signal (SIGTERM, amk_resident_signal);
++  signal (SIGHUP, amk_resident_signal);
++
++  for (waited = 0; waited < 3000; ++waited) {
++    struct stat st;
++    int gone;
++
++    if (stat (amk_run_sock, &st) == 0)
++      break;
++    gone = waitpid (pid, NULL, WNOHANG) == pid;
++    if (gone) {
++      amk_run_zygote = 0;
++      rmdir (amk_run_dir);
++      return 0;
++    }
++    usleep (10000);
++  }
++
++  /* A zygote that never bound costs nothing but the saving.  */
++  {
++    struct stat st;
++    if (stat (amk_run_sock, &st) != 0) {
++      amk_resident_reap ();
++      return 0;
++    }
++  }
++
++  /* Recursion by path reaches the zygote through MAKE; a caller that recurses
++     by name instead reads AMK_CLIENT and prefixes its own command.  */
++  {
++    char *spec = xmalloc (strlen (argv[0]) * 2 + strlen (amk_run_sock) + 32);
++    sprintf (spec, "%s --client %s -- %s", argv[0], amk_run_sock, argv[0]);
++    setenv ("MAKE", spec, 1);
++    sprintf (spec, "%s --client %s -- ", argv[0], amk_run_sock);
++    setenv ("AMK_CLIENT", spec, 1);
++    free (spec);
++  }
++
++  /* A refusal re-runs the caller's own command as an ordinary make.  */
++  amk_cold_argv = argv;
++  amk_client (amk_run_sock, argc - 1, argv + 1);
++  return 0;
++}
++
++/* Connect to a zygote's socket, or return -1.  A socket that is not there yet
++   is retried in process while the pid in AMK_ZYGOTE is alive, for at most
++   ten seconds; any other failure, and a dead or absent zygote, answers at once.  */
++
++static int
++amk_connect (const char *sockpath) {
++  struct sockaddr_un addr;
++  const char *spec = getenv ("AMK_ZYGOTE");
++  pid_t zygote = spec != 0 ? (pid_t) atoi (spec) : 0;
++  int waited;
++
++  if (strlen (sockpath) >= sizeof addr.sun_path)
++    amk_die (sockpath, "socket path too long");
++
++  memset (&addr, '\0', sizeof addr);
++  addr.sun_family = AF_UNIX;
++  strcpy (addr.sun_path, sockpath);
++
++  for (waited = 0; ; ++waited) {
++    int fd = socket (AF_UNIX, SOCK_STREAM, 0);
++    int err;
++
++    if (fd < 0)
++      amk_die ("socket", strerror (errno));
++    if (connect (fd, (struct sockaddr *) &addr, sizeof addr) == 0)
++      return fd;
++    err = errno;
++    close (fd);
++    if (err != ENOENT || zygote <= 0 || waited >= 1000)
++      return -1;
++    if (kill (zygote, 0) < 0 && errno == ESRCH)
++      return -1;
++    usleep (10000);
++  }
++}
++
++/* Hand this command to a zygote and exit on its status.  Never returns.  */
++
++static void
++amk_client (const char *sockpath, int argc, char **argv) {
++  char line[64];
++  size_t len;
++  char *buf;
++  int fd;
++
++  /* A cold command after the separator is the caller's own fallback; the
++     request then repeats it without the program name the zygote already is.  */
++  if (argc >= 2 && strcmp (argv[0], "--") == 0) {
++    amk_cold_argv = argv + 1;
++    argv += 2;
++    argc -= 2;
++  }
++
++  /* A missing or dead socket is the same answer as a stale one.  */
++  fd = amk_connect (sockpath);
++  if (fd < 0)
++    amk_cold (argc, argv);
++
++  signal (SIGPIPE, SIG_IGN);
++  amk_catch (SIGINT);
++  amk_catch (SIGTERM);
++  amk_catch (SIGHUP);
++  amk_catch (SIGQUIT);
++
++  buf = amk_build_request (argc, argv, &len);
++  if (!amk_send_request (fd, buf, len))
++    amk_cold (argc, argv);
++  free (buf);
++
++  /* The pid line, then the status.  Waiting for end of stream instead would
++     cost a poll interval, since the parent holds its copy until it reaps.  */
++  if (!amk_read_line (fd, line, sizeof line))
++    amk_cold (argc, argv);
++  amk_peer_pid = (sig_atomic_t) atoi (line);
++
++  if (!amk_read_line (fd, line, sizeof line)) {
++    /* No status after a signal means the child died on it, so die alike.
++       Dying by signal skips the exit handlers, so a resident run reaps here.  */
++    if (amk_peer_sig) {
++      amk_resident_reap ();
++      signal ((int) amk_peer_sig, SIG_DFL);
++      raise ((int) amk_peer_sig);
++    }
++    exit (MAKE_FAILURE);
++  }
++
++  if (atoi (line) == AMK_STALE)
++    amk_cold (argc, argv);
++
++  exit (atoi (line));
++}
++
++#endif /* !WINDOWS32 */
++
++static void
+ clean_jobserver (int status)
+ {
+   /* Sanity: have we written all our jobserver tokens back?  If our
+@@ -3865,5 +4978,11 @@
+         }
+     }
+ 
++#ifndef WINDOWS32
++  /* A dispatch child answers here, since a failing goal never returns.  */
++  if (amk_child && amk_conn >= 0)
++    amk_write_status (amk_conn, status);
++#endif
++
+   exit (status);
+ }
+--- a/src/makeint.h
++++ b/src/makeint.h
+@@ -749,6 +749,8 @@
+ extern char cmd_prefix;
+ 
+ extern unsigned int no_intermediates;
++
++extern unsigned int amk_child;
+ 
+ #if HAVE_MKFIFO
+ /* It seems that mkfifo() is not working correctly, or at least not the way

@@ -1,0 +1,187 @@
+Mail: every spawned job gets a pipe to its parent. The job and every shell under it write
+the write end, named to recipes as AMK_MAIL and to a guest through amk_mail_send; the
+parent drains the read end while it waits and hands the text over once, through
+amk_mail_take, when the job is collected. A job's word to the loop that spawned it is a
+write to a descriptor, not a file in a run directory.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -33,2 +33,4 @@
+ void amk_reap_foreign (pid_t pid, int code, int sig);
++int amk_mail_take (pid_t pid, char **buf, size_t *len);
++int amk_mail_send (const char *s, size_t n);
+ void amk_forget_children (void);
+--- a/src/main.c
++++ b/src/main.c
+@@ -27,2 +27,3 @@
+ #include "shuffle.h"
++#include <fcntl.h>
+ #include "amk.h"
+@@ -5407,4 +5408,87 @@
+ static pid_t amk_live[AMK_SPAWNED];
+ static struct { pid_t pid; int code; int sig; } amk_parked[AMK_SPAWNED];
++/* Each job's mail: the read end of a pipe the job and its shells write, drained as it comes and handed over once the job is collected; inside a job, the write end.  */
++static int amk_mail[AMK_SPAWNED];
++static char *amk_mailbuf[AMK_SPAWNED];
++static size_t amk_maillen[AMK_SPAWNED];
++static struct { pid_t pid; char *buf; size_t len; } amk_mails[AMK_SPAWNED];
++static int amk_mail_fd = -1;
++
++static void
++amk_drain (unsigned int i) {
++  char tmp[4096];
++  ssize_t r;
++  int fd = amk_mail[i];
++  if (fd <= 0)
++    return;
++  for (;;) {
++    r = read (fd, tmp, sizeof tmp);
++    if (r > 0) {
++      amk_mailbuf[i] = xrealloc (amk_mailbuf[i], amk_maillen[i] + r + 1);
++      memcpy (amk_mailbuf[i] + amk_maillen[i], tmp, r);
++      amk_maillen[i] += r;
++      amk_mailbuf[i][amk_maillen[i]] = '\0';
++    } else if (r == 0) {
++      close (fd);
++      amk_mail[i] = 0;
++      return;
++    } else if (errno == EINTR) {
++      continue;
++    } else {
++      return;
++    }
++  }
++}
++
++/* A collected job's mail, read to its end and set aside under the pid for amk_mail_take.  */
++static void
++amk_mail_finish (unsigned int i, pid_t pid) {
++  unsigned int m;
++  amk_drain (i);
++  if (amk_mail[i] > 0) {
++    close (amk_mail[i]);
++    amk_mail[i] = 0;
++  }
++  for (m = 0; m < AMK_SPAWNED && amk_mails[m].pid != 0; ++m)
++    ;
++  if (m < AMK_SPAWNED) {
++    amk_mails[m].pid = pid;
++    amk_mails[m].buf = amk_mailbuf[i] != NULL ? amk_mailbuf[i] : xstrdup ("");
++    amk_mails[m].len = amk_maillen[i];
++  } else
++    free (amk_mailbuf[i]);
++  amk_mailbuf[i] = NULL;
++  amk_maillen[i] = 0;
++}
++
++/* What a collected job wrote, once; the caller owns the buffer.  */
++int
++amk_mail_take (pid_t pid, char **buf, size_t *len) {
++  unsigned int i;
++  for (i = 0; i < AMK_SPAWNED; ++i)
++    if (amk_mails[i].pid == pid) {
++      *buf = amk_mails[i].buf;
++      *len = amk_mails[i].len;
++      amk_mails[i].pid = 0;
++      amk_mails[i].buf = NULL;
++      return 1;
++    }
++  return 0;
++}
++
++/* A job writes its mail; outside a job there is none to write.  */
++int
++amk_mail_send (const char *s, size_t n) {
++  while (amk_mail_fd >= 0 && n > 0) {
++    ssize_t w = write (amk_mail_fd, s, n);
++    if (w < 0 && errno == EINTR)
++      continue;
++    if (w <= 0)
++      return -1;
++    s += w;
++    n -= w;
++  }
++  return amk_mail_fd >= 0 ? 0 : -1;
++}
+-
++
+ static int
+@@ -5419,5 +5502,9 @@
+ amk_reap_foreign (pid_t pid, int code, int sig) {
+   unsigned int i;
+-  if (!amk_live_drop (pid))
++  for (i = 0; i < AMK_SPAWNED && amk_live[i] != pid; ++i)
++    ;
++  if (i == AMK_SPAWNED)
+     return;
++  amk_mail_finish (i, pid);
++  amk_live_drop (pid);
+   for (i = 0; i < AMK_SPAWNED; ++i)
+@@ -5482,20 +5545,39 @@
+ amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
+   unsigned int i;
+   pid_t pid;
++  int p[2];
+   for (i = 0; i < AMK_SPAWNED && amk_live[i] != 0; ++i)
+     ;
+   if (i == AMK_SPAWNED)
+     return -1;
++  if (pipe (p) < 0)
++    return -1;
+   fflush (NULL);
+   pid = fork ();
+-  if (pid < 0)
++  if (pid < 0) {
++    close (p[0]);
++    close (p[1]);
+     return -1;
++  }
+   if (pid > 0) {
+     setpgid (pid, pid);
+     amk_live[i] = pid;
++    close (p[1]);
++    fcntl (p[0], F_SETFL, fcntl (p[0], F_GETFL) | O_NONBLOCK);
++    amk_mail[i] = p[0];
++    free (amk_mailbuf[i]);
++    amk_mailbuf[i] = NULL;
++    amk_maillen[i] = 0;
+     if (foreground)
+       amk_tty_give (pid);
+     return pid;
+   }
+   setpgid (0, 0);
++  close (p[0]);
++  amk_mail_fd = p[1];
++  {
++    char fd[16];
++    sprintf (fd, "%d", p[1]);
++    define_variable_global ("AMK_MAIL", 8, fd, o_env, 0, NILF)->export = v_export;
++  }
+   if (foreground)
+@@ -5518,5 +5600,10 @@
+   amk_forget_children ();
+   memset (amk_live, 0, sizeof amk_live);
+   memset (amk_parked, 0, sizeof amk_parked);
++  for (i = 0; i < AMK_SPAWNED; ++i) {
++    if (amk_mail[i] > 0)
++      close (amk_mail[i]);
++    amk_mail[i] = 0;
++  }
+   die (amk_run_goals (n, words));
+ }
+@@ -5540,6 +5627,7 @@
+       pid_t pid;
+       if (amk_live[i] == 0 || (want > 0 && amk_live[i] != want))
+         continue;
+-      pid = waitpid (amk_live[i], &status, WUNTRACED | ((block && want > 0) ? 0 : WNOHANG));
++      amk_drain (i);
++      pid = waitpid (amk_live[i], &status, WUNTRACED | WNOHANG);
+       if (pid < 0 && errno == EINTR)
+         continue;
+@@ -5551,5 +5639,6 @@
+         *code = 0;
+         *sig = WSTOPSIG (status);
+       } else {
++        amk_mail_finish (i, pid);
+         amk_live_drop (pid);
+         *stopped = 0;

@@ -1,0 +1,66 @@
+Usage: --help ends with the options amk adds. The engine flags print themselves from the
+engine table, one per row with its multi-call names, so an engine left out of a build
+leaves --help the way it leaves .FEATURES. The other flags are one array here, in the
+order main reads them; a patch that adds a flag adds its row. The trailer names amk, the
+flavor and the engines through the helper patch 0016 adds, in place of the configure host.
+The bug address goes: a report about amk is not one for make, and amk has no address yet.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -953,6 +953,40 @@
+ #endif
+ }
+
++/* The flags amk reads ahead of option decoding, in the order it reads them; the engine flags print themselves from the table.  */
++static const char *const amk_usage[] =
++  {
++    N_("  --list-engines              Print each engine: its name, then its multi-call names.\n"),
++    N_("  --serve SOCK ARGS...        Parse once and answer requests on SOCK as the zygote.\n"),
++    N_("  --client SOCK REQUEST...    Run REQUEST against a zygote; after --, a cold command for when it refuses.\n"),
++    N_("  --resident ARGS...          One command served by a zygote it starts and reaps itself.\n"),
++    N_("  --ape-unpack NAME [DEST]    Copy payload member NAME out and print its path; also -x NAME.\n"),
++    N_("  --force                     With --ape-unpack, overwrite a destination that exists.\n"),
++    N_("  --bundle FILES... --out DEST\n"),
++    N_("                              Write a copy of this program whose default entry is that makefile program.\n"),
++    NULL
++  };
++
++static void
++amk_print_usage (FILE *usageto)
++{
++  const struct amk_engine *e;
++  const char *const *cpp;
++  char flag[64];
++
++  fputs (_("\nOptions amk adds, each read ahead of the ones above:\n"), usageto);
++  for (e = amk_engines; e->name; ++e)
++    {
++      sprintf (flag, "--%s ARGS...", e->name);
++      fprintf (usageto, _("  %-27s Run the %s engine over the rest of the line"), flag, e->name);
++      if (e->aliases && *e->aliases)
++        fprintf (usageto, _("; the same as the command %s"), e->aliases);
++      fputs (".\n", usageto);
++    }
++  for (cpp = amk_usage; *cpp; ++cpp)
++    fputs (_(*cpp), usageto);
++}
++
+ /* Print a nice usage method and exit.  */
+
+ static void NORETURN
+@@ -974,12 +1008,8 @@
+   for (cpp = usage; *cpp; ++cpp)
+     fputs (_(*cpp), usageto);
++  amk_print_usage (usageto);
+
+-  if (!remote_description || *remote_description == '\0')
+-    fprintf (usageto, _("\nThis program built for %s\n"), make_host);
+-  else
+-    fprintf (usageto, _("\nThis program built for %s (%s)\n"),
+-             make_host, remote_description);
++  fprintf (usageto, _("\nThis program is amk %s%s (%s)\n"),
++           AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
+
+-  fprintf (usageto, _("Report bugs to <bug-make@gnu.org>\n"));
+-
+   die (bad ? MAKE_FAILURE : MAKE_SUCCESS);

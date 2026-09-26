@@ -1,0 +1,30 @@
+The lua row in the engine table: $(lua chunk[,input]) runs the chunk whole with its
+input on stdin, and what it prints is the result. Lua has no cli name and no argv
+companion, so the row carries only its entry point.
+
+Lua is the one guest with no main to rename. amk wants the library, so the guest build
+skips lua.c and luac.c and compiles guest/lua_main.c in their place, which is where
+lua_run_main lives. Lua also ships no configure, so its guest rule compiles the sources
+directly instead of running one.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -19,5 +19,6 @@
+
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
++extern int lua_run_main (int argc, char **argv);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2499,6 +2499,9 @@
+ #ifdef AMK_ENGINE_JQ
+     { "jq", "jq", jq_main, 0, 0, 1 },
+ #endif
++#ifdef AMK_ENGINE_LUA
++    { "lua", 0, lua_run_main, 0, 0, 0 },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+

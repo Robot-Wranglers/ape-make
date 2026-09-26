@@ -1,0 +1,55 @@
+# A pushed v-prefixed tag builds amk through build.yml, then publishes the binary and its digest as a GitHub Release.
+name: Release
+on:
+  workflow_dispatch: {}
+  push:
+    tags: [ "v*" ]
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  # A manual run on a branch is a dry run: it builds and smokes, and this job is skipped.
+  publish:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download amk
+        uses: actions/download-artifact@v4
+        with:
+          name: amk-default
+      - name: Stage assets
+        run: |
+          mkdir -p dist
+          install -m 0755 amk dist/amk
+          cd dist && sha256sum amk > amk.sha256
+          cat amk.sha256
+      - name: Release notes
+        run: |
+          {
+            echo "amk ${GITHUB_REF_NAME}: one actually portable make with the guests linked in."
+            echo
+            echo '```bash'
+            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/amk"
+            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/amk.sha256"
+            echo 'sha256sum -c amk.sha256 && chmod +x amk'
+            echo '```'
+            echo
+            echo 'Inputs are pinned by version and digest in the Makefile at this tag.'
+          } > notes.md
+      - name: Create release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "amk ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --verify-tag \
+            dist/amk dist/amk.sha256

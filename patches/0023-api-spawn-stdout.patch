@@ -1,0 +1,26 @@
+Spawn stdout: a spawned job may write its standard output to a file instead of the
+parent's stream, so a caller can read what a goal printed once the job is collected. The
+path is opened in the child before its goals run; a path that cannot be opened is
+reported there and the job keeps the parent's stream. Lua exposes it as opts.stdout.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -27,3 +27,3 @@
+ /* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
+-pid_t amk_spawn_goals (int n, char **words, int foreground);
++pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
+ int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
+--- a/src/main.c
++++ b/src/main.c
+@@ -5481,3 +5481,3 @@
+ pid_t
+-amk_spawn_goals (int n, char **words, int foreground) {
++amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
+   unsigned int i;
+@@ -5500,4 +5500,6 @@
+   setpgid (0, 0);
+   if (foreground)
+     amk_tty_give (getpid ());
++  if (stdout_path != NULL && freopen (stdout_path, "w", stdout) == NULL)
++    fprintf (stderr, "amk: spawn: cannot write %s: %s\n", stdout_path, strerror (errno));
+   amk_child = 1;

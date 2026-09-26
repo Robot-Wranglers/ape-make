@@ -1,0 +1,34 @@
+The wasm row in the engine table. A wasm module is a file rather than program text, so
+the row takes the command-line shape: the builtin's first argument, the module path and
+its arguments, is split as a shell would, and the argv companion puts wasm3's own
+options such as the function to call ahead of it. The row's name is wasm3, so the
+multi-call name gives the whole interpreter with its repl, and the flag is --wasm.
+
+wasm3 is built the way its cosmopolitan script builds it: every file under source with
+the cli's main.c, the built-in wasi rather than the libuv one, static allocation, and
+typed references. Its main is renamed and kept visible like gawk's, and its exit is
+routed to amk_exit, so a module's exit code becomes the child's status. Function results
+from the argv companion print on stderr, the way the cli prints them, so only what the
+module writes to stdout is the expansion.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -22,5 +22,6 @@
+ extern int lua_run_main (int argc, char **argv);
+ extern int s7_run_main (int argc, char **argv);
+ extern int micropy_run_main (int argc, char **argv);
++extern int wasm3_main (int argc, char **argv);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2508,6 +2508,9 @@
+ #ifdef AMK_ENGINE_MICROPY
+     { "micropy", 0, micropy_run_main, 0, 0, 0 },
+ #endif
++#ifdef AMK_ENGINE_WASM3
++    { "wasm", "wasm3", wasm3_main, 0, 1, 1 },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+

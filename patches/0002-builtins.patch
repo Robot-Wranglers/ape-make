@@ -1,0 +1,344 @@
+The engine table and the pieces every engine shares. src/amk.h declares a row: the
+builtin name, which is also the feature word and the --flag, the multi-call names, the
+entry point, and the argv shape. function.c holds the table with the awk and jq rows,
+one func_engine that builds a guest's argv the way its row says, and the loader that
+registers $(name) and $(name.argv) from the rows when the function table is built, so
+a row is the whole registration. amk_exit is the one interception a guest's exit is
+routed to, func_guest forks and runs a guest over its input, and amk_split_argv splits
+an option list the way a shell would. main.c reads the rows into .FEATURES and .ENGINES.
+A row sits behind its engine define; everything else is always compiled.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -0,0 +1,23 @@
++/* The engine table: one row per linked-in guest, and the one place that says which exist.  */
++
++#ifndef AMK_H
++#define AMK_H
++
++struct amk_engine
++  {
++    const char *name;
++    const char *aliases;
++    int (*main) (int, char **);
++    unsigned int dashdash:1;
++    unsigned int cmdline:1;
++    unsigned int argv:1;
++  };
++
++extern const struct amk_engine amk_engines[];
++const struct amk_engine *amk_engine_by_name (const char *name);
++int amk_engine_called (const struct amk_engine *e, const char *word);
++
++extern int gawk_main (int argc, char **argv);
++extern int jq_main (int argc, char **argv);
++
++#endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -22,6 +22,7 @@
+ #include "os.h"
+ #include "commands.h"
+ #include "debug.h"
++#include "amk.h"
+
+ #ifdef _AMIGA
+ #include "amiga.h"
+@@ -2486,6 +2487,220 @@
+
+ static char *func_call (char *o, char **argv, const char *funcname);
+
++#include <fcntl.h>
++#include <sys/wait.h>
++
++/* Each row: the builtin name, the multi-call names, the entry point, and the argv shape.  */
++const struct amk_engine amk_engines[] =
++  {
++#ifdef AMK_ENGINE_GAWK
++    { "awk", "awk gawk", gawk_main, 1, 0, 1 },
++#endif
++#ifdef AMK_ENGINE_JQ
++    { "jq", "jq", jq_main, 0, 0, 1 },
++#endif
++    { 0, 0, 0, 0, 0, 0 }
++  };
++
++/* The row for a builtin name, with or without its .argv suffix.  */
++const struct amk_engine *
++amk_engine_by_name (const char *name)
++{
++  const struct amk_engine *e;
++  size_t n = strcspn (name, ".");
++  for (e = amk_engines; e->name; ++e)
++    if (strlen (e->name) == n && memcmp (e->name, name, n) == 0)
++      return e;
++  return NULL;
++}
++
++/* Whether word is one of the row's multi-call names.  */
++int
++amk_engine_called (const struct amk_engine *e, const char *word)
++{
++  const char *p = e->aliases;
++  size_t n = strlen (word);
++  while (p && *p)
++    {
++      size_t len = strcspn (p, " ");
++      if (len == n && memcmp (p, word, n) == 0)
++        return 1;
++      p += len;
++      while (*p == ' ')
++        ++p;
++    }
++  return 0;
++}
++
++/* A guest's exit inside the forked child: flush its own output and leave without libc's stream cleanup, which would seek the parent's open makefile. */
++void
++amk_exit (int status)
++{
++  fflush (stdout);
++  fflush (stderr);
++  _exit (status);
++}
++
++/* Run a linked-in guest's main over the argv in a forked child, no exec: input, if any, becomes its stdin through a temp file, and its stdout is appended to o with its lines intact. */
++static char *
++func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
++            int ac, char **av, const char *input)
++{
++  int out[2];
++  char tmpl[PATH_MAX];
++  const char *tmpdir = getenv ("TMPDIR");
++  int infd = -1;
++  pid_t pid;
++  char *buffer;
++  size_t maxlen = 4096, i = 0;
++  int st = 0;
++
++  if (input != NULL)
++    {
++      const char *s = input;
++      size_t n = strlen (s);
++      snprintf (tmpl, sizeof tmpl, "%s/%sin.XXXXXX", tmpdir && *tmpdir ? tmpdir : "/tmp", funcname);
++      infd = mkstemp (tmpl);
++      if (infd < 0)
++        OSSS (fatal, NILF, _("$(%s ...): cannot create %s: %s"), funcname, tmpl, strerror (errno));
++      while (n > 0)
++        {
++          ssize_t w = write (infd, s, n);
++          if (w <= 0)
++            break;
++          s += w;
++          n -= w;
++        }
++      lseek (infd, 0, SEEK_SET);
++    }
++
++  if (pipe (out) < 0)
++    OSS (fatal, NILF, _("$(%s ...): pipe: %s"), funcname, strerror (errno));
++
++  fflush (stdout);
++  fflush (stderr);
++  pid = fork ();
++  if (pid < 0)
++    OSS (fatal, NILF, _("$(%s ...): fork: %s"), funcname, strerror (errno));
++  if (pid == 0)
++    {
++      if (infd >= 0)
++        dup2 (infd, 0);
++      else
++        {
++          int nul = open ("/dev/null", O_RDONLY);
++          if (nul >= 0)
++            dup2 (nul, 0);
++        }
++      dup2 (out[1], 1);
++      close (out[0]);
++      close (out[1]);
++      optind = 0;
++      amk_exit (guest_main (ac, av));
++    }
++
++  close (out[1]);
++  if (infd >= 0)
++    {
++      close (infd);
++      unlink (tmpl);
++    }
++
++  buffer = xmalloc (maxlen + 1);
++  while (1)
++    {
++      ssize_t r;
++      if (i == maxlen)
++        {
++          maxlen += 4096;
++          buffer = xrealloc (buffer, maxlen + 1);
++        }
++      r = read (out[0], buffer + i, maxlen - i);
++      if (r < 0 && errno == EINTR)
++        continue;
++      if (r <= 0)
++        break;
++      i += r;
++    }
++  close (out[0]);
++  waitpid (pid, &st, 0);
++  shell_completed (WIFEXITED (st) ? WEXITSTATUS (st) : 127, WIFSIGNALED (st) ? WTERMSIG (st) : 0);
++
++  if (i > 0)
++    o = variable_buffer_output (o, buffer, i);
++  free (buffer);
++  return o;
++}
++
++/* Split a list in place into av as a shell would, honoring quotes and backslashes and expanding nothing; returns the count, and the buffer stays the caller's. */
++static int
++amk_split_argv (char *args, char **av, int max)
++{
++  int ac = 0;
++  char *p = args;
++  char *w = args;
++  while (ac < max)
++    {
++      char quote = 0;
++      while (*p == ' ' || *p == '\t')
++        ++p;
++      if (!*p)
++        break;
++      av[ac++] = w;
++      while (*p && (quote || (*p != ' ' && *p != '\t')))
++        {
++          if (!quote && (*p == '\'' || *p == '"'))
++            quote = *p++;
++          else if (*p == quote)
++            {
++              quote = 0;
++              ++p;
++            }
++          else
++            {
++              if (*p == '\\' && p[1] && (!quote || (quote == '"' && (p[1] == '"' || p[1] == '\\'))))
++                ++p;
++              *w++ = *p++;
++            }
++        }
++      if (*p)
++        ++p;
++      *w++ = '\0';
++    }
++  return ac;
++}
++
++/* Every engine builtin: $(name program[,input]) and $(name.argv options,program[,input]), the argv built the way the row says. */
++static char *
++func_engine (char *o, char **argv, const char *funcname)
++{
++  const struct amk_engine *e = amk_engine_by_name (funcname);
++  char *av[64];
++  char *opts = NULL;
++  char *args = NULL;
++  int ac = 1;
++  av[0] = (char *) e->name;
++  if (strchr (funcname, '.'))
++    {
++      opts = xstrdup (*argv++);
++      ac += amk_split_argv (opts, av + ac, 30);
++    }
++  if (e->dashdash)
++    av[ac++] = (char *) "--";
++  if (e->cmdline)
++    {
++      args = xstrdup (argv[0]);
++      ac += amk_split_argv (args, av + ac, 62 - ac);
++    }
++  else
++    av[ac++] = argv[0];
++  av[ac] = NULL;
++  o = func_guest (o, funcname, e->main, ac, av, argv[1]);
++  free (opts);
++  free (args);
++  return o;
++}
++
+ #define FT_ENTRY(_name, _min, _max, _exp, _func) \
+   { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
+
+@@ -2840,6 +3055,37 @@
+   free (ent);
+ }
+
++/* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
++static struct function_table_entry amk_function_entries[64];
++
++static void
++amk_load_engine_functions (void)
++{
++  const struct amk_engine *e;
++  struct function_table_entry *f = amk_function_entries;
++  for (e = amk_engines; e->name; ++e)
++    {
++      f->fptr.func_ptr = func_engine;
++      f->name = e->name;
++      f->len = strlen (e->name);
++      f->minimum_args = 1;
++      f->maximum_args = 2;
++      f->expand_args = 1;
++      hash_insert (&function_table, f++);
++      if (e->argv)
++        {
++          char *name = xmalloc (f[-1].len + 6);
++          sprintf (name, "%s.argv", e->name);
++          *f = f[-1];
++          f->name = name;
++          f->len += 5;
++          f->minimum_args = 2;
++          f->maximum_args = 3;
++          hash_insert (&function_table, f++);
++        }
++    }
++}
++
+ void
+ hash_init_function_table (void)
+ {
+@@ -2848,4 +3094,5 @@
+              function_table_entry_hash_cmp);
+   hash_load (&function_table, function_table_init,
+              FUNCTION_TABLE_ENTRIES, sizeof (struct function_table_entry));
++  amk_load_engine_functions ();
+ }
+--- a/src/main.c
++++ b/src/main.c
+@@ -25,6 +25,7 @@
+ #include "debug.h"
+ #include "getopt.h"
+ #include "shuffle.h"
++#include "amk.h"
+
+ #include <assert.h>
+ #ifdef _AMIGA
+@@ -1524,7 +1525,21 @@
+ #endif
+                            ;
+
+-    define_variable_cname (".FEATURES", features, o_default, 0);
++    /* The engine names join the feature list, and the engines variable names that subset alone, both read from the engine table. */
++    const struct amk_engine *e;
++    char engines[256] = "";
++    char *all;
++    for (e = amk_engines; e->name; ++e)
++      {
++        if (*engines)
++          strcat (engines, " ");
++        strcat (engines, e->name);
++      }
++    all = xmalloc (strlen (features) + strlen (engines) + 2);
++    sprintf (all, "%s %s", features, engines);
++    define_variable_cname (".FEATURES", all, o_default, 0);
++    define_variable_cname (".ENGINES", engines, o_default, 0);
++    free (all);
+   }
+
+   /* Configure GNU Guile support */

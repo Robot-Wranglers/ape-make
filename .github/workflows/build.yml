@@ -1,0 +1,106 @@
+# Build amk from a clean tree, smoke it, and keep it as a workflow artifact; release.yml calls this.
+name: Build
+on:
+  workflow_dispatch: {}
+  workflow_call: {}
+  push:
+    branches: [ "main" ]
+    paths-ignore: ['**.md', '**.png', '**.svg']
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore: ['**.md', '**.png', '**.svg']
+permissions:
+  contents: read
+jobs:
+  # One build per engine set: the default, and the default with the opt-in engine added.
+  build:
+    name: Build amk (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [ default, wasm3 ]
+        include:
+          - name: default
+            with: ''
+          - name: wasm3
+            with: wasm3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across engine sets.
+      - name: Cache downloads and toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            *.tar.gz
+            *.tar.xz
+            *.zip
+            cosmocc
+          key: deps-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+      - name: Fetch and verify inputs
+        run: make deps with=${{ matrix.with }}
+      - name: Unpack and patch
+        run: make patch with=${{ matrix.with }}
+      - name: Build
+        run: make build with=${{ matrix.with }}
+      - name: Smoke
+        run: make smoke with=${{ matrix.with }}
+      - name: Land the deliverable
+        run: |
+          mkdir -p dist
+          install -m 0755 out/amk dist/amk
+      # The portable job runs the wasm checks against the modules wasm3 ships, so they travel with the binary.
+      - name: Add the wasm test modules
+        if: matrix.with == 'wasm3'
+        run: |
+          install -m 0644 src/wasm3-*/test/wasi/simple/test.wasm dist/test.wasm
+          install -m 0644 src/wasm3-*/test/lang/fib32.wasm dist/fib32.wasm
+      - name: Upload amk
+        uses: actions/upload-artifact@v4
+        with:
+          name: amk-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # One file runs everywhere: prove it on hosts that never built it.
+  portable:
+    name: Run ${{ matrix.name }} on ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest ]
+        name: [ default, wasm3 ]
+        include:
+          - name: default
+            with: ''
+            features: awk jq lua s7 bash micropy
+          - name: wasm3
+            with: wasm3
+            features: awk jq lua s7 bash micropy wasm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download amk
+        uses: actions/download-artifact@v4
+        with:
+          name: amk-${{ matrix.name }}
+      # A host with no ape loader registered cannot exec the file directly; sh runs the bootstrap.
+      - name: Version
+        run: sh ./amk --version
+      - name: Builtins
+        run: sh ./amk -f smoke.mk builtins engines='${{ matrix.features }}' wasm.test=test.wasm
+      - name: Guests by flag
+        run: |
+          sh ./amk --awk 'BEGIN { print "awk by flag: ok" }'
+          printf '{"n":41}' | sh ./amk --jq -c .n+1
+          sh ./amk --bash -c 'echo "bash by flag: ${BASH_VERSION}"'
+      - name: wasm3 by flag
+        if: matrix.with == 'wasm3'
+        run: |
+          sh ./amk --wasm --func fib fib32.wasm 20 2>&1 | grep -x 'Result: 6765'

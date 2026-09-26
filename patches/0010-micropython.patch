@@ -1,0 +1,41 @@
+The micropy row in the engine table: $(micropy chunk[,input]) runs the chunk, Python
+source text, whole with its input on stdin; what it prints is the result, an uncaught
+exception prints its traceback on stderr, and a sys.exit ends the chunk with that
+status. MicroPython has no cli name and no argv companion.
+
+MicroPython is a port rather than a program: upstream ships the interpreter as a tree of
+sources that each port configures and builds through the makefiles under py/. The port
+is guest/micropy.mk, with mpconfigport.h and mphalport.h beside it, laid out the way
+ports/unix is; the guest rule runs it from guest/ with the compiler, the build tree and
+the guest flags on the command line, and it generates the string and module tables
+before compiling the core, the extension modules and guest/micropy_main.c, which is
+where micropy_run_main lives along with the hal: stdout and stderr by write, the clocks,
+the sleep, and the entropy behind os.urandom. The os and time modules are the unix
+port's own two files, included by name from the config. The gc scans registers through
+setjmp and non-local return goes through setjmp too, so one source serves both
+architectures without their assembly. The unpack takes the parts of the release tarball
+that the build needs and leaves the other ports and vendored libraries in the archive,
+and the version string is passed in from the pin, since the tarball carries no history
+for MicroPython's version script to ask.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -21,5 +21,6 @@
+ extern int jq_main (int argc, char **argv);
+ extern int lua_run_main (int argc, char **argv);
+ extern int s7_run_main (int argc, char **argv);
++extern int micropy_run_main (int argc, char **argv);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2505,6 +2505,9 @@
+ #ifdef AMK_ENGINE_S7
+     { "s7", 0, s7_run_main, 0, 0, 0 },
+ #endif
++#ifdef AMK_ENGINE_MICROPY
++    { "micropy", 0, micropy_run_main, 0, 0, 0 },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+

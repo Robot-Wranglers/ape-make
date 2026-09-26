@@ -1,0 +1,117 @@
+Persistent state: a row may carry a persist entry beside its main. Where main runs in a
+forked child with a fresh state every call, persist runs in this process against one
+state kept for its life, so what one $(name.persistent) call leaves behind the next
+finds. The result is what the entry writes to the stream it is given, trimmed the way
+every builtin's output is, and its return is the status. A zygote's fork carries the
+state, so each request starts from what the parse left. Lua takes the entry here; the
+row field is null for an engine without one, and no builtin is registered for it.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -3,6 +3,9 @@
+ #ifndef AMK_H
+ #define AMK_H
+
++#include <stdio.h>
++
++/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream. */
+ struct amk_engine
+   {
+     const char *name;
+@@ -11,6 +14,7 @@
+     unsigned int dashdash:1;
+     unsigned int cmdline:1;
+     unsigned int argv:1;
++    int (*persist) (FILE *, int, char **);
+   };
+
+ extern const struct amk_engine amk_engines[];
+@@ -20,6 +24,7 @@
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
+ extern int lua_run_main (int argc, char **argv);
++extern int lua_persist_main (FILE *out, int argc, char **argv);
+ extern int s7_run_main (int argc, char **argv);
+ extern int micropy_run_main (int argc, char **argv);
+ extern int wasm3_main (int argc, char **argv);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2500,7 +2500,7 @@
+     { "jq", "jq", jq_main, 0, 0, 1 },
+ #endif
+ #ifdef AMK_ENGINE_LUA
+-    { "lua", 0, lua_run_main, 0, 0, 0 },
++    { "lua", 0, lua_run_main, 0, 0, 0, lua_persist_main },
+ #endif
+ #ifdef AMK_ENGINE_S7
+     { "s7", 0, s7_run_main, 0, 0, 0 },
+@@ -2723,6 +2723,51 @@
+   return o;
+ }
+
++/* $(name.persistent program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
++static char *
++func_persistent (char *o, char **argv, const char *funcname)
++{
++  const struct amk_engine *e = amk_engine_by_name (funcname);
++  char *av[4];
++  char *buffer;
++  size_t len;
++  long end;
++  FILE *out;
++  int ac = 2;
++  int rc;
++
++  av[0] = (char *) e->name;
++  av[1] = argv[0];
++  if (argv[1] != NULL)
++    av[ac++] = argv[1];
++  av[ac] = NULL;
++
++  out = tmpfile ();
++  if (out == NULL)
++    OSS (fatal, NILF, _("$(%s ...): tmpfile: %s"), funcname, strerror (errno));
++  rc = e->persist (out, ac, av);
++  fflush (out);
++  end = ftell (out);
++  len = end > 0 ? (size_t) end : 0;
++  buffer = xmalloc (len + 1);
++  rewind (out);
++  if (len > 0 && fread (buffer, 1, len, out) != len)
++    OSS (fatal, NILF, _("$(%s ...): read back: %s"), funcname, strerror (errno));
++  fclose (out);
++  shell_completed (rc, 0);
++
++  if (len > 0 && buffer[len - 1] == '\n')
++    {
++      --len;
++      if (len > 0 && buffer[len - 1] == '\r')
++        --len;
++    }
++  if (len > 0)
++    o = variable_buffer_output (o, buffer, len);
++  free (buffer);
++  return o;
++}
++
+ #define FT_ENTRY(_name, _min, _max, _exp, _func) \
+   { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
+
+@@ -3105,5 +3150,17 @@
+           f->maximum_args = 3;
+           hash_insert (&function_table, f++);
+         }
++      if (e->persist)
++        {
++          char *name = xmalloc (strlen (e->name) + 12);
++          sprintf (name, "%s.persistent", e->name);
++          f->fptr.func_ptr = func_persistent;
++          f->name = name;
++          f->len = strlen (name);
++          f->minimum_args = 1;
++          f->maximum_args = 2;
++          f->expand_args = 1;
++          hash_insert (&function_table, f++);
++        }
+     }
+ }

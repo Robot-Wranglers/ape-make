@@ -1,0 +1,21 @@
+An ape cannot dlopen, so nothing is ever loadable. Stock make answers a failed -load
+with zero, which asks the caller to rebuild the object and try again; this answers
+minus one, the do-not-rebuild contract, so a makefile that guards a loadable with
+-load continues without it instead of looping. A plain load still fails as unsupported.
+
+--- a/src/load.c
++++ b/src/load.c
+@@ -246,11 +246,12 @@
+ int
+ load_file (const floc *flocp, struct file *file UNUSED, int noerror)
+ {
+   if (! noerror)
+     O (fatal, flocp,
+        _("The 'load' operation is not supported on this platform"));
+
+-  return 0;
++  /* Nothing is ever loadable here, so take the do-not-rebuild contract.  */
++  return -1;
+ }
+
+ int

@@ -1,0 +1,138 @@
+Sink: an engine's persist entry writes its result to a sink the make side passes in,
+rather than to a stdio stream. A persistent call's sink appends straight into the
+expansion make is building, at the call's place, so a result costs no temp file, no
+read-back and no copy, and has no size limit; the trailing newline every builtin drops
+comes off by stepping back in that buffer. The init chunk's sink is stderr. The guest
+declares the one-field struct itself and keeps no header of make's.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -37,7 +37,14 @@
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ void amk_engine_init (void);
+-
++
+-/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
++/* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
++struct amk_sink
++  {
++    void (*write) (struct amk_sink *, const char *, size_t);
++  };
++extern struct amk_sink amk_sink_stderr;
++
++/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the sink; hook, when a row has one, hears every event as its name and the info fields. */
+ struct amk_engine
+   {
+     const char *name;
+@@ -46,6 +53,6 @@
+     unsigned int dashdash:1;
+     unsigned int cmdline:1;
+     unsigned int argv:1;
+-    int (*persist) (FILE *, int, char **);
++    int (*persist) (struct amk_sink *, int, char **);
+     void (*hook) (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+   };
+@@ -57,7 +64,7 @@
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
+ extern int lua_run_main (int argc, char **argv);
+-extern int lua_persist_main (FILE *out, int argc, char **argv);
++extern int lua_persist_main (struct amk_sink *out, int argc, char **argv);
+ extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int s7_run_main (int argc, char **argv);
+ extern int micropy_run_main (int argc, char **argv);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2602,7 +2602,7 @@
+         av[0] = (char *) e->name;
+         av[1] = chunk;
+         av[2] = NULL;
+-        e->persist (stderr, 2, av);
++        e->persist (&amk_sink_stderr, 2, av);
+         free (chunk);
+       }
+ }
+@@ -2801,15 +2801,38 @@
+   return o;
+ }
+-
++
++/* The expansion being built, as a sink: what an engine writes lands in make's own buffer at the call's place, with no copy between.  */
++extern char *variable_buffer;
++
++struct amk_expand_sink
++  {
++    struct amk_sink base;
++    char *o;
++  };
++
++static void
++amk_expand_write (struct amk_sink *s, const char *p, size_t n)
++{
++  struct amk_expand_sink *e = (struct amk_expand_sink *) s;
++  e->o = variable_buffer_output (e->o, p, n);
++}
++
++static void
++amk_stderr_write (struct amk_sink *s, const char *p, size_t n)
++{
++  (void) s;
++  fwrite (p, 1, n, stderr);
++}
++
++struct amk_sink amk_sink_stderr = { amk_stderr_write };
++
+ /* $(name.persistent program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
+ static char *
+ func_persistent (char *o, char **argv, const char *funcname)
+ {
+   const struct amk_engine *e = amk_engine_by_name (funcname);
++  struct amk_expand_sink sink;
+   char *av[4];
+-  char *buffer;
+-  size_t len;
+-  long end;
+-  FILE *out;
++  size_t start = o - variable_buffer;
+   int ac = 2;
+   int rc;
+@@ -2820,28 +2843,18 @@
+     av[ac++] = argv[1];
+   av[ac] = NULL;
+-
++
+-  out = tmpfile ();
+-  if (out == NULL)
+-    OSS (fatal, NILF, _("$(%s ...): tmpfile: %s"), funcname, strerror (errno));
+-  rc = e->persist (out, ac, av);
+-  fflush (out);
+-  end = ftell (out);
+-  len = end > 0 ? (size_t) end : 0;
+-  buffer = xmalloc (len + 1);
+-  rewind (out);
+-  if (len > 0 && fread (buffer, 1, len, out) != len)
+-    OSS (fatal, NILF, _("$(%s ...): read back: %s"), funcname, strerror (errno));
+-  fclose (out);
++  sink.base.write = amk_expand_write;
++  sink.o = o;
++  rc = e->persist (&sink.base, ac, av);
+   shell_completed (rc, 0);
++  o = sink.o;
+-
++
+-  if (len > 0 && buffer[len - 1] == '\n')
++  /* One trailing newline goes, as for every builtin; the buffer may have moved, so the start is an offset.  */
++  if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')
+     {
+-      --len;
+-      if (len > 0 && buffer[len - 1] == '\r')
+-        --len;
++      --o;
++      if ((size_t) (o - variable_buffer) > start && o[-1] == '\r')
++        --o;
+     }
+-  if (len > 0)
+-    o = variable_buffer_output (o, buffer, len);
+-  free (buffer);
+   return o;
+ }

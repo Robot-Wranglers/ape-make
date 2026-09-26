@@ -1,0 +1,17 @@
+# Weekly cold fetch of every pinned input, so a pin that drifted upstream is noticed before a release build.
+name: Pins
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Fetch and verify every pin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch and verify inputs
+        run: make deps

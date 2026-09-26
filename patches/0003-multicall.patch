@@ -1,0 +1,40 @@
+Multi-call: run under one of an engine's names, or with its --flag first, the binary is
+that guest. Both come from the engine table: a row's aliases are its names, and every
+row answers the flag spelled from its builtin name, so --lua and --s7 hand the rest of
+the line to that engine's entry point the same way --awk does. --list-engines prints one
+row per line, the builtin name and then its names, if any. The dispatch sits in main.c
+ahead of option decoding, so make never sees the guest's arguments.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -1221,6 +1221,30 @@
+   SPIN ("main-entry");
+
+ #ifndef WINDOWS32
++  /* Multi-call: run under an engine's name, or with its flag first, the file is that engine; --list-engines names them.  */
++  {
++    const char *base = strrchr (argv[0], '/');
++    const struct amk_engine *e;
++    base = base ? base + 1 : argv[0];
++    if (argc >= 2 && strcmp (argv[1], "--list-engines") == 0)
++      {
++        for (e = amk_engines; e->name; ++e)
++          printf ("%s%s%s\n", e->name, e->aliases ? "\t" : "", e->aliases ? e->aliases : "");
++        exit (0);
++      }
++    for (e = amk_engines; e->name; ++e)
++      {
++        if (amk_engine_called (e, base))
++          exit (e->main (argc, argv));
++        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && strcmp (argv[1] + 2, e->name) == 0)
++          {
++            argv[1] = (char *) e->name;
++            exit (e->main (argc - 1, argv + 1));
++          }
++      }
++    (void) base;
++  }
++
+   /* Settle the resident role before any option decoding, since a client hands
+      its own argv over untouched and never reads a makefile.  */
+   if (argc >= 3 && strcmp (argv[1], "--client") == 0)

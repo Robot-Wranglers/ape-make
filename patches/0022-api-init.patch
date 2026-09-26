@@ -1,0 +1,101 @@
+Init: every engine with a persist entry runs one chunk in its persistent state before the
+makefiles are read. The chunk comes from AMK_<NAME>_INIT, a chunk or an @path, else from
+the payload's __init__.<name>; a payload without one is the normal case and says nothing,
+a named path that cannot be read says so. Output goes to stderr. A zygote runs it once
+and every request inherits the result, and a hook the chunk registers is in place for the
+first goals event, so a distribution's guest-side code is loaded where the parse lives.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -35,4 +35,5 @@
+ void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
++void amk_engine_init (void);
+-
++
+ extern int gawk_main (int argc, char **argv);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2542,4 +2542,69 @@
+       e->hook (amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
+ }
+-
++
++/* The init chunk for a row: the environment's, as text or as the file an @ names, else the payload's; NULL when there is none.  */
++static char *
++amk_init_chunk (const struct amk_engine *e)
++{
++  char var[64], path[64];
++  const char *env, *file = NULL;
++  char *chunk = NULL, *p;
++  FILE *f;
++  size_t len = 0, cap = 4096;
++
++  sprintf (var, "AMK_%s_INIT", e->name);
++  for (p = var + 4; *p != '_'; ++p)
++    if (*p >= 'a' && *p <= 'z')
++      *p -= 'a' - 'A';
++  env = getenv (var);
++  if (env != NULL && *env == '@')
++    file = env + 1;
++  else if (env != NULL && *env != '\0')
++    return xstrdup (env);
++  else
++    {
++      sprintf (path, "/zip/__init__.%s", e->name);
++      file = path;
++    }
++  f = fopen (file, "r");
++  if (f == NULL)
++    {
++      if (file != path)
++        OSS (error, NILF, _("%s: cannot read %s"), var, file);
++      return NULL;
++    }
++  chunk = xmalloc (cap + 1);
++  while (1)
++    {
++      len += fread (chunk + len, 1, cap - len, f);
++      if (len < cap)
++        break;
++      cap *= 2;
++      chunk = xrealloc (chunk, cap + 1);
++    }
++  chunk[len] = '\0';
++  fclose (f);
++  return chunk;
++}
++
++/* Every row with a persist entry runs its init chunk, once, with print on stderr.  */
++void
++amk_engine_init (void)
++{
++  const struct amk_engine *e;
++  for (e = amk_engines; e->name; ++e)
++    if (e->persist)
++      {
++        char *chunk = amk_init_chunk (e);
++        char *av[3];
++        if (chunk == NULL)
++          continue;
++        av[0] = (char *) e->name;
++        av[1] = chunk;
++        av[2] = NULL;
++        e->persist (stderr, 2, av);
++        free (chunk);
++      }
++}
++
+ /* Whether word is one of the row's multi-call names.  */
+--- a/src/main.c
++++ b/src/main.c
+@@ -3008,5 +3008,8 @@
+     int old_builtin_rules_flag = no_builtin_rules_flag;
+     int old_builtin_variables_flag = no_builtin_variables_flag;
+     int old_arg_job_slots = arg_job_slots;
+-
++
++    /* Each engine's init chunk runs first, so what it defines and subscribes is there for the parse and for every zygote request.  */
++    amk_engine_init ();
++
+     /* Read all the makefiles.  */

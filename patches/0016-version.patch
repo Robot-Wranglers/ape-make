@@ -1,0 +1,70 @@
+Version banner: the first line stays GNU Make 4.4.1 for everything that parses it, and the
+second names amk, its version, the flavor when the build has one, and the engines linked in,
+read from the engine table. An ape runs on either architecture, so that line says so in
+place of the configure host. The build passes AMK_VERSION and AMK_FLAVOR as bare tokens;
+the same version is .AMK_VERSION for a makefile, beside .ENGINES. The engine list helper
+here also serves the usage trailer that patch 0017 adds.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -26,6 +26,34 @@
+ #include "getopt.h"
+ #include "shuffle.h"
+ #include "amk.h"
++
++/* The build passes the version and flavor as bare tokens; the banner and .AMK_VERSION read them as strings. */
++#define AMK_STR_(x) #x
++#define AMK_STR(x) AMK_STR_(x)
++#ifndef AMK_VERSION
++#define AMK_VERSION dev
++#endif
++#ifdef AMK_FLAVOR
++#define AMK_FLAVOR_STR " " AMK_STR(AMK_FLAVOR)
++#else
++#define AMK_FLAVOR_STR ""
++#endif
++
++/* The engine names from the table, space separated, for the banner and the usage trailer.  */
++static const char *
++amk_engine_list (void)
++{
++  static char names[256];
++  const struct amk_engine *e;
++  names[0] = '\0';
++  for (e = amk_engines; e->name; ++e)
++    {
++      if (names[0])
++        strcat (names, " ");
++      strcat (names, e->name);
++    }
++  return names;
++}
+
+ #include <assert.h>
+ #ifdef _AMIGA
+@@ -2345,6 +2373,7 @@
+     sprintf (all, "%s %s", features, engines);
+     define_variable_cname (".FEATURES", all, o_default, 0);
+     define_variable_cname (".ENGINES", engines, o_default, 0);
++    define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
+     free (all);
+   }
+
+@@ -4597,9 +4626,12 @@
+   printf ("%sGNU Make %s\n", precede, version_string);
+
+-  if (!remote_description || *remote_description == '\0')
+-    printf (_("%sBuilt for %s\n"), precede, make_host);
+-  else
+-    printf (_("%sBuilt for %s (%s)\n"),
+-            precede, make_host, remote_description);
++  /* An ape runs on either architecture, so its banner says so instead of naming the build host. */
++#ifdef __COSMOPOLITAN__
++  printf (_("%sBuilt for x86_64 and aarch64 as an actually portable executable (amk %s%s: %s)\n"),
++          precede, AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
++#else
++  printf (_("%sBuilt for %s (amk %s%s: %s)\n"),
++          precede, make_host, AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
++#endif
+
+   /* Print this untranslated.  The coding standards recommend translating the
