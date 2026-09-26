@@ -53,10 +53,25 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pytest
       - name: Test
         run: make test with=${{ matrix.with }}
+      # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.
+      - name: Docker image
+        run: make build.docker with=${{ matrix.with }}
+      - name: Smoke the image
+        run: make smoke.docker with=${{ matrix.with }}
+      # A tarball, since upload-artifact drops the alias symlinks and the exec bits the context needs.
+      - name: Pack the image context
+        run: tar -C build/docker -cf docker-context.tar amd64 arm64
+      - name: Upload the image context
+        uses: actions/upload-artifact@v5
+        with:
+          name: docker-context-${{ matrix.name }}
+          path: docker-context.tar
+          if-no-files-found: error
+          retention-days: 14
       - name: Land the deliverable
         run: |
           mkdir -p dist
-          install -m 0755 out/amk dist/amk
+          install -m 0755 out/bin/amk dist/amk
       # The portable job runs the wasm checks against the modules wasm3 ships, so they travel with the binary.
       - name: Add the wasm test modules
         if: matrix.with == 'wasm3'
@@ -83,10 +98,10 @@ jobs:
         include:
           - name: default
             with: ''
-            features: awk jq lua s7 bash micropy
+            features: awk jq lua s7 micropy js
           - name: wasm3
             with: wasm3
-            features: awk jq lua s7 bash micropy wasm
+            features: awk jq lua s7 micropy wasm js
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -104,7 +119,8 @@ jobs:
         run: |
           sh ./amk --awk 'BEGIN { print "awk by flag: ok" }'
           printf '{"n":41}' | sh ./amk --jq -c .n+1
-          sh ./amk --bash -c 'echo "bash by flag: ${BASH_VERSION}"'
+      - name: Payload tools first on PATH
+        run: sh ./amk -f smoke.mk path tools='sed bash'
       - name: wasm3 by flag
         if: matrix.with == 'wasm3'
         run: |

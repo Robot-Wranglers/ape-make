@@ -668,7 +668,7 @@ test.native: $(artifact.host)
 	$(call log, test.native, pytest under tests/ against $(artifact.host))
 	env AMK_BIN=$(abspath $(artifact.host)) $(pytest) tests $(pytest.args)
 
-# The image: docker execs an entrypoint without a shell and an ape needs one, so the context holds the fat ape assimilated to a native ELF per arch, and the Dockerfile copies its platform's.
+# The image: docker execs an entrypoint without the shell an ape needs, so the context holds a native executable per arch; BuildKit is required, since the legacy builder leaves the target arch empty.
 docker.dir    := build/docker$(suffix)
 docker.arches := amd64 arm64
 docker.image  ?= amk
@@ -682,7 +682,7 @@ docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/u
 build.docker: $(docker.dir)/.context
 	@# The image from the artifact make build lands, for this platform, tagged $(docker.image):$(docker.tag).
 	$(call log, build.docker, building $(docker.image):$(docker.tag) from $(docker.dir))
-	docker build -q -f Dockerfile --target amk -t $(docker.image):$(docker.tag) $(docker.dir) >/dev/null
+	DOCKER_BUILDKIT=1 docker build -q -f Dockerfile --target amk -t $(docker.image):$(docker.tag) $(docker.dir) >/dev/null
 	$(call log, build.docker, image $(docker.image):$(docker.tag) is ready -- $(docker.dir) is its context for every arch)
 $(docker.dir)/.context: $(artifact.ape) $(cosmocc.dir)/bin/cosmocc
 	$(call log, build.docker, assimilating $(artifact.ape) to an ELF for each of $(docker.arches))
@@ -695,10 +695,10 @@ $(docker.dir)/.context: $(artifact.ape) $(cosmocc.dir)/bin/cosmocc
 
 smoke.docker: build.docker
 	@# The same smoke, run inside the image against the amk it installs, from this checkout mounted as the work tree.
-	$(call log, smoke.docker, make smoke inside $(docker.image):$(docker.tag) with unzip and procps added)
-	docker build -q -f Dockerfile --target smoke -t $(docker.image):$(docker.tag)-smoke $(docker.dir) >/dev/null
+	$(call log, smoke.docker, make smoke inside $(docker.image):$(docker.tag) driven by a stock make as on the host)
+	DOCKER_BUILDKIT=1 docker build -q -f Dockerfile --target smoke -t $(docker.image):$(docker.tag)-smoke $(docker.dir) >/dev/null
 	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(HERE):$(HERE)" -w "$(HERE)" \
-	  $(docker.image):$(docker.tag)-smoke smoke $(docker.smoke.args)
+	  --entrypoint make $(docker.image):$(docker.tag)-smoke smoke $(docker.smoke.args)
 	$(call log, smoke.docker, the image passes smoke)
 
 st status: stat

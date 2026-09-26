@@ -125,7 +125,7 @@ def test_a_background_reader_stops_until_foregrounded(amk, tmp_path):
     os.setsid()
     fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
-  p = subprocess.Popen(["sh", "-c", '"$0" "$@"', str(amk), "-s", "-f", str(mk), "driver"],
+  p = subprocess.Popen(["sh", "-c", 'exec "$0" "$@"', str(amk), "-s", "-f", str(mk), "driver"],
                        cwd=tmp_path, stdin=slave, stdout=slave, stderr=slave,
                        preexec_fn=own_the_terminal)
   os.close(slave)

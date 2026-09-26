@@ -11,5 +11,6 @@
 /out/
 /dist/
 __pycache__
-# Local notes.
+# Local notes and agent state.
 /scratch/
+.claude/

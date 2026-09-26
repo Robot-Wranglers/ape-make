@@ -31,11 +31,11 @@ def _binary():
 
 
 def sh(binary, args, cwd=None, env=None, timeout=300, stdin=None):
-  """Run a binary through a shell, which is the only way an ape execs on macOS."""
+  """Run a binary through a shell, which is the only way an ape execs without a loader registered; exec keeps the pid the binary's, since dash on Linux otherwise forks it a child."""
   full = dict(os.environ)
   full.update(env or {})
   return subprocess.run(
-    ["sh", "-c", '"$0" "$@"', str(binary), *args],
+    ["sh", "-c", 'exec "$0" "$@"', str(binary), *args],
     capture_output=True, text=True, cwd=cwd, env=full, timeout=timeout, input=stdin,
   )
 
@@ -44,7 +44,7 @@ def popen(binary, args, cwd=None, env=None, **kw):
   """The background form of `sh`, for a zygote or a run that a test will signal."""
   full = dict(os.environ)
   full.update(env or {})
-  return subprocess.Popen(["sh", "-c", '"$0" "$@"', str(binary), *args],
+  return subprocess.Popen(["sh", "-c", 'exec "$0" "$@"', str(binary), *args],
                           cwd=cwd, env=full, **kw)
 
 
