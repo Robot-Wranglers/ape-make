@@ -178,6 +178,29 @@ second := $(awk $(value awk.second),alpha beta gamma)
 not protect a comma the way parentheses do, and the last argument, the input, may hold
 any commas.
 
+#### Defining a target in an engine
+
+`define.<engine> name` says the body is a program for that engine, and that the name is a
+target that runs it. make stores a plain define of that name, and beside it a phony target
+whose recipe is `@$(info $(<engine> ${name}))`: what the program prints is what the target
+prints.
+
+```make
+define.lua greet
+print("hello from " .. _VERSION)
+endef
+
+define.s7 answer
+(display (* 6 7))
+endef
+```
+
+`amk greet answer` prints `hello from Lua 5.4` and `42`, and `$(greet)` is still the
+program text for any other use. The target is phony, so a file called `greet` does not stop
+it, and it does not become the default goal by coming first: the first real rule keeps that.
+The word after `define.` must name an engine in the build, and one that does not is an
+error at that line.
+
 #### awk and jq
 
 `$(awk.argv argv,program[,input])` and `$(jq.argv argv,program[,input])` put the tool's

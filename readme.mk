@@ -14,6 +14,8 @@ readme: check
 	$(if $(filter lua,$(.FEATURES)),test "$(count)" = "9")
 	$(if $(filter s7,$(.FEATURES)),test "$(answer.s7)" = "42")
 	$(if $(filter s7,$(.FEATURES)),test "$(big)" = "2432902008176640000")
+	$(if $(filter lua,$(.FEATURES)),test "$$($(MAKE) -s -f ../../readme.mk greet)" = "hello from Lua 5.4")
+	$(if $(filter s7,$(.FEATURES)),test "$$($(MAKE) -s -f ../../readme.mk answer)" = "42")
 	$(if $(filter micropy,$(.FEATURES)),test "$(answer.py)" = "7")
 	$(if $(filter micropy,$(.FEATURES)),test "$(top)" = "bob")
 	$(if $(filter js,$(.FEATURES)),test "$(answer.js)" = "42")

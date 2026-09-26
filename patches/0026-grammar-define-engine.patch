@@ -1,0 +1,103 @@
+Define for an engine: `define.<engine> name` through `endef` stores an ordinary define
+of that name, then enters a phony target of the same name whose recipe hands the body to
+the engine's builtin and prints what comes back, as `name:; @$(info $(<engine> ${name}))`
+would. The engine word is looked up on the table, so a name with no row in this build is
+an error at the define; the target is entered while the makefiles are still being read,
+the only time make accepts a new rule, and it never becomes the default goal.
+
+--- a/src/read.c
++++ b/src/read.c
+@@ -15,6 +15,7 @@
+ this program.  If not, see <https://www.gnu.org/licenses/>.  */
+
+ #include "makeint.h"
++#include "amk.h"
+
+ #include <assert.h>
+
+@@ -66,6 +67,10 @@
+     unsigned int override_v:1;
+     unsigned int private_v:1;
+     enum variable_export export_v ENUM_BITFIELD (2);
++    /* A define.<engine> names the row the body is written for; the word is kept so an unknown one can be reported where it stands.  */
++    const struct amk_engine *engine_v;
++    const char *engine_word;
++    size_t engine_wlen;
+   };
+
+ /* Types of "words" that can be read in a makefile.  */
+@@ -143,6 +148,9 @@
+                          struct ebuffer *ebuf);
+ static struct variable *do_define (char *name, enum variable_origin origin,
+                                    struct ebuffer *ebuf);
++static void define_engine_target (const struct variable *v,
++                                  const struct vmodifiers *vmod,
++                                  const floc *flocp);
+ static int conditional_line (char *line, size_t len, const floc *flocp);
+ static void check_specials (struct nameseq *filep, int set_default);
+ static void check_special_file (struct file *filep, const floc *flocp);
+@@ -539,6 +547,20 @@
+           p = next_token (p2);
+           break;
+         }
++      else if (!targvar && wlen > 7 && memcmp (p, "define.", 7) == 0)
++        {
++          /* A define for an engine: the body is that engine's program, and the name becomes a target that runs it.  */
++          const struct amk_engine *e;
++          for (e = amk_engines; e->name; ++e)
++            if (strlen (e->name) == wlen - 7 && memcmp (e->name, p + 7, wlen - 7) == 0)
++              break;
++          vmod->define_v = 1;
++          vmod->engine_v = e->name ? e : NULL;
++          vmod->engine_word = p;
++          vmod->engine_wlen = wlen;
++          p = next_token (p2);
++          break;
++        }
+       else if (!targvar && word1eq ("undefine"))
+         {
+           /* We can't have modifiers after 'undefine' */
+@@ -747,7 +769,11 @@
+             continue;
+           }
+           else if (vmod.define_v)
+-            v = do_define (p, origin, ebuf);
++            {
++              v = do_define (p, origin, ebuf);
++              if (vmod.engine_word)
++                define_engine_target (v, &vmod, fstart);
++            }
+           else
+             v = try_variable_definition (fstart, p, origin, 0);
+
+@@ -3547,3 +3573,30 @@
+   *stringp = p;
+   return new;
+ }
++
++/* The target behind a define for an engine: phony, named as the variable, with a recipe that hands the body to the engine's builtin and prints what comes back.  */
++static void
++define_engine_target (const struct variable *v, const struct vmodifiers *vmod,
++                      const floc *flocp)
++{
++  static const char shape[] = ".PHONY: %s\n%s:; @$(info $(%s ${%s}))\n";
++  const char *engine;
++  char *text;
++  int no_goal_yet = default_goal_var->value[0] == '\0';
++
++  if (vmod->engine_v == NULL)
++    {
++      char *word = xstrndup (vmod->engine_word, vmod->engine_wlen);
++      OS (fatal, flocp, _("'%s' names no engine in this build"), word);
++    }
++
++  engine = vmod->engine_v->name;
++  text = xmalloc (sizeof shape + 3 * strlen (v->name) + strlen (engine));
++  sprintf (text, shape, v->name, v->name, engine, v->name);
++  eval_buffer (text, flocp);
++  free (text);
++
++  /* A define is not a rule, so it does not take the default goal the way the first rule would.  */
++  if (no_goal_yet)
++    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
++}

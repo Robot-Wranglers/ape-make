@@ -15,7 +15,7 @@ jobs:
   # One build per engine set: the default, and the default with the opt-in engine added.
   build:
     name: Build amk (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -27,10 +27,10 @@ jobs:
             with: wasm3
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across engine sets.
       - name: Cache downloads and toolchain
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             *.tar.gz
@@ -62,7 +62,7 @@ jobs:
       - name: Pack the image context
         run: tar -C build/docker -cf docker-context.tar amd64 arm64
       - name: Upload the image context
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: docker-context-${{ matrix.name }}
           path: docker-context.tar
@@ -79,7 +79,7 @@ jobs:
           install -m 0644 src/wasm3-*/test/wasi/simple/test.wasm dist/test.wasm
           install -m 0644 src/wasm3-*/test/lang/fib32.wasm dist/fib32.wasm
       - name: Upload amk
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: amk-${{ matrix.name }}
           path: dist/*
@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest ]
+        os: [ ubuntu-24.04, ubuntu-24.04-arm, macos-latest ]
         name: [ default, wasm3 ]
         include:
           - name: default
@@ -105,9 +105,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Download amk
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: amk-${{ matrix.name }}
       # Artifacts drop the mode, and the bootstrap finds itself by command -v, which on macOS skips a file that is not executable.

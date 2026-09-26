@@ -30,10 +30,12 @@ patch that adds that guest.
 | `0023-api-spawn-stdout.patch` | a spawned job's standard output to a file the caller names, so what a goal printed can be read once the job is collected |
 | `0024-api-mail.patch` | a pipe from every spawned job to its parent, written by recipes through `AMK_MAIL` and by the job's guest, read whole by the parent once the job is collected |
 | `0025-api-sink.patch` | an engine's persist entry writes to a sink make passes in, and a persistent call's sink appends straight into the expansion make is building: no temp file, no copy, no size limit |
+| `0026-grammar-define-engine.patch` | `define.<engine> name` through `endef`: the define is stored as usual, and a phony target of that name hands the body to the engine and prints the result |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,
-and its contract is the part a guest author reads.
+and its contract is the part a guest author reads. A `grammar` patch changes what a
+makefile can say: a new directive or a new form of one, read by the parser itself.
 
 ## Overlays
 
