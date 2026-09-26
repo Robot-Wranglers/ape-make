@@ -15,7 +15,7 @@ import pytest
 from conftest import sh
 
 reader = "\n".join([
-  "$(info seen=[$(lua.persistent print(seen))])",
+  "$(info seen=[$(lua.exec print(seen))])",
   "all:",
   "\t@true",
   "",
@@ -29,6 +29,54 @@ def test_the_environment_chunk_runs_before_the_parse(amk, tmp_path):
   mk = tmp_path / "reader.mk"
   mk.write_text(reader)
   r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_LUA_INIT": init_text}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[7]" in r.stdout, r.stdout + r.stderr
+  assert "goals=all" in r.stderr, r.stderr
+
+
+@pytest.mark.engines("micropy")
+def test_the_micropy_environment_chunk_runs_before_the_parse(amk, tmp_path):
+  mk = tmp_path / "reader-py.mk"
+  mk.write_text("\n".join([
+    "$(info seen=[$(micropy.exec print(seen))])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  chunk = "import amk, sys; seen = 7; amk.on['goals'] = lambda e: sys.stderr.write('goals=' + e['target'] + '\\n')"
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_MICROPY_INIT": chunk}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[7]" in r.stdout, r.stdout + r.stderr
+  assert "goals=all" in r.stderr, r.stderr
+
+
+@pytest.mark.engines("js")
+def test_the_js_environment_chunk_runs_before_the_parse(amk, tmp_path):
+  mk = tmp_path / "reader-js.mk"
+  mk.write_text("\n".join([
+    "$(info seen=[$(js.exec print(seen))])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  chunk = "var seen = 7; amk.on.goals = e => std.err.puts('goals=' + e.target + '\\n')"
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_JS_INIT": chunk}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[7]" in r.stdout, r.stdout + r.stderr
+  assert "goals=all" in r.stderr, r.stderr
+
+
+@pytest.mark.engines("s7")
+def test_the_s7_environment_chunk_runs_before_the_parse(amk, tmp_path):
+  mk = tmp_path / "reader-s7.mk"
+  mk.write_text("\n".join([
+    "$(info seen=[$(s7.exec (display seen))])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  chunk = "(define seen 7) (set! (amk-on 'goals) (lambda (e) (format *stderr* \"goals=~A~%\" (e 'target))))"
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_S7_INIT": chunk}, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert "seen=[7]" in r.stdout, r.stdout + r.stderr
   assert "goals=all" in r.stderr, r.stderr
@@ -51,7 +99,7 @@ def test_an_at_path_names_the_chunk_and_a_missing_one_says_so(amk, tmp_path):
 @pytest.mark.engines("lua")
 def test_a_zygote_runs_it_once_for_every_request(amk, tmp_path, zygote):
   mk = tmp_path / "served.mk"
-  mk.write_text("\n".join(["show:", "\t@echo seen=$(lua.persistent print(seen))", ""]))
+  mk.write_text("\n".join(["show:", "\t@echo seen=$(lua.exec print(seen))", ""]))
   sock = zygote(["-f", str(mk)], cwd=tmp_path)
   r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)
   assert r.returncode == 0, r.stdout + r.stderr
@@ -61,7 +109,7 @@ def test_a_zygote_runs_it_once_for_every_request(amk, tmp_path, zygote):
 @pytest.mark.engines("lua")
 def test_a_zygote_started_with_the_chunk_serves_it(amk, tmp_path, zygote, monkeypatch):
   mk = tmp_path / "served.mk"
-  mk.write_text("\n".join(["show:", "\t@echo seen=$(lua.persistent print(seen))", ""]))
+  mk.write_text("\n".join(["show:", "\t@echo seen=$(lua.exec print(seen))", ""]))
   monkeypatch.setenv("AMK_LUA_INIT", "seen = 'zygote'")
   sock = zygote(["-f", str(mk)], cwd=tmp_path)
   monkeypatch.delenv("AMK_LUA_INIT")

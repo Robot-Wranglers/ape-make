@@ -22,7 +22,7 @@ patch that adds that guest.
 | `0015-quickjs.patch` | `$(js)` |
 | `0016-version.patch` | the second line of `--version` names amk, its version, the flavor and the engines, and `.AMK_VERSION` carries the version |
 | `0017-usage.patch` | `--help` ends with the options amk adds: the engine flags from the table, the rest from one array a new flag joins |
-| `0018-api-persistent.patch` | a persist entry on the row, and `$(name.persistent)` for every row that has one: the engine in this process against a state kept for its life; Lua takes it |
+| `0018-api-persistent.patch` | a persist entry on the row, and `$(name.exec)` for every row that has one: the engine in this process against a state kept for its life; Lua takes it |
 | `0019-api-hooks.patch` | the events make announces, the goal list and each recipe's start and end, and a hook entry on the row that hears them; Lua routes them to `amk.on` |
 | `0020-api-spawn.patch` | a goal list run in a fork of this parsed image, and the wait that collects it even when make's own reaping saw it first; Lua exposes them as `amk.spawn` and `amk.wait` |
 | `0021-api-signals.patch` | every spawned job a process group with make's fatal handlers of its own and no hold on a served request's connection: fatal signals forwarded, a running job swept at exit, the terminal handed to a foreground job and taken back, a stopped job reported; Lua adds the foreground option, `amk.kill` over the group and `amk.foreground` |
@@ -30,10 +30,47 @@ patch that adds that guest.
 | `0023-api-spawn-stdout.patch` | a spawned job's standard output to a file the caller names, so what a goal printed can be read once the job is collected |
 | `0024-api-mail.patch` | a pipe from every spawned job to its parent, written by recipes through `AMK_MAIL` and by the job's guest, read whole by the parent once the job is collected |
 | `0025-api-sink.patch` | an engine's persist entry writes to a sink make passes in, and a persistent call's sink appends straight into the expansion make is building: no temp file, no copy, no size limit |
+| `0026-grammar-define-engine.patch` | `define.<engine> name` through `endef`: the define is stored as usual, and a phony target of that name hands the body to the engine and prints the result |
+| `0027-api-var.patch` | the guest handle's make side: a variable read that tells undefined from empty, a predicate for whether make has built its tables, a variable write and an eval, and the queue that carries a forked guest's writes back to the parent |
+| `0028-micropy-persistent.patch` | the micropy row gains persist and hook entries, so its persistent form, init chunk, and hooks run against one interpreter kept for the make process |
+| `0033-api-job-stdin.patch` | `$(job.stdin text)` feeds the command on its recipe line through a pipe bound to that line of that target, and an engine flag followed by a lone dash reads its program from standard input |
+| `0032-api-goal.patch` | the value channel: `$(goal name)` brings a goal up to date in a fork and answers its value file, and a define for an engine keeps its output in that file and reruns only when a value it references is newer |
+| `0031-s7-persistent.patch` | the s7 row gains persist and hook entries, so its persistent and import forms, init chunk, and hooks run against one interpreter kept for the make process |
+| `0030-js-persistent.patch` | the js row gains persist and hook entries, so its persistent and import forms, init chunk, and hooks run against one runtime kept for the make process |
+| `0029-api-export.patch` | every row with a persist entry also answers `<name>.import`, through the same entry, which learns the builtin's name from its first argument and imports what the chunk left in its namespace |
+| `0035-main-goal.patch` | a target named `__main__` is the default goal when the makefile named none itself: it replaces make's first-rule pick, never a value a makefile or `AMK_GOAL` assigned, at both places the default is read |
+| `0034-prelude.patch` | the payload's `__init__.mk` read before any makefile, like a `MAKEFILES` entry: silent when missing, never the default goal, out of `MAKEFILE_LIST` once read, skipped by `AMK_NO_PRELUDE`; the member itself holds the defaults every makefile under amk would otherwise repeat |
+| `0036-api-require.patch` | `$(amk.require names...)`: fatal, in red on a terminal, when a name is not in `.FEATURES` |
+| `0037-api-dedent.patch` | `$(amk.dedent text)` and `$(amk.val.dedent name)`, compose.mk's block dedent in C |
+| `0038-api-star.patch` | a `*` twin of each engine builtin that takes a variable's name and dedents its value |
+| `0039-grammar-at.patch` | `<name>.import.target` and the `@builtin` line above a define; `define.<name>` removed |
+| `0040-api-bindings.patch` | `<name>.__fxns__` and `<name>.__vars__`, read by `amk.fxns?` and `amk.vars?`; `?` in function names |
+| `0041-recurse-amk.patch` | a recipe line using `amk` or `make` is recursive, like one using the make command variable |
+| `0042-import-fork.patch` | an imported target's job is a fork of make with no exec, so the guest handle reads make state in it |
+| `0043-grammar-goal-ref.patch` | an imported body reaches its engine as written, and `@name@` in it is a goal reference in any case: an edge, and the value's raw text |
+| `0044-import-kept.patch` | an imported target keeps a value only where a body names it, and the value directory is touched only then; any other runs every time on the job's own input and output |
+| `0045-api-version.patch` | `<name>.__version__` for every engine in the build: the version of the tarball it was built from |
+| `0046-api-jq-store.patch` | a persist entry on the jq row: a store of named JSON values held for the life of the process, and `$(jq.exec op name prog)` runs a program over one of them through libjq with no fork, or `filter` over an input; the entry is `guest/jq_main.c`, compiled beside jq's objects, and its shell side `guest/amk.sh` rides in the payload's `bin/` |
+| `0047-api-call.patch` | the recipe-time call: `AMK_CALL` and `AMK_REPLY`, a request pipe and a reply pipe every make process names to its recipes and every spawned job gets a pair of, answered from the jq store while make waits on children, line framed with a count; a tagged request is answered into a private FIFO under `AMK_REPLY_DIR`, the directory remade when a sibling hop took it down; a sub-make or job forwards up the pair it inherited, so a run shares one store |
+| `0048-mail-over-client.patch` | a request carries the caller's mail pipe as a fourth descriptor, so a served request a hop made through the client writes `AMK_MAIL` into the pipe the loop drains; a caller without one sends stderr in the slot and drops the name |
+| `0049-serve-across-restart.patch` | a zygote whose parse remakes an included file keeps its serve words through make's re-exec, so it parks after the restart instead of running its goal and exiting unbound |
+| `0050-api-exit-code.patch` | a guest names the status the process leaves with and die uses it in place of make's own, so a loop run as a recipe carries its marked code past make's exit 2 for a failed goal; Lua adds `amk.exit_code` |
+| `0051-spawn-goals-global.patch` | a job spawned while a recipe expands defines its command goals in the global variable set, not the expanding target's, so every target of the job reads its own `MAKECMDGOALS` |
+| `0052-spawn-rearm-pid.patch` | a spawned job rearms the names `AMK_REARM_PID` lists to its own pid as a served child does, in the global set, so a makefile that recorded its process at parse answers for the job |
+| `0053-guest-input-pipe.patch` | a builtin call's input reaches the guest through a pipe the parent feeds between reads of its output, with `SIGPIPE` ignored for the feed, instead of a temp file under `TMPDIR` per call |
+| `0054-client-waits-for-the-parse.patch` | a client whose zygote is alive but has yet to bind waits for as long as the zygote lives, not ten seconds, so a long cold parse is not joined by a second cold parser |
+| `0055-child-goals.patch` | a served request and a spawned job take their goals through the same three steps, where each had its own copy: drop the inherited goals, rebuild `MAKEFLAGS`, run; no behavior changes |
+| `0057-star-args.patch` | every argument of a star twin may name a variable and becomes its dedented value, any other passes as written; the argv forms gain twins and `amk.dedent*` follows the same rule |
+| `0058-api-handle-call.patch` | `amk_call`, the handle's call: a make function or macro run with each value as one whole argument, never split or expanded; a builtin that expands its own arguments reads values back as written; too few or an unknown name answers an error the guest raises |
+| `0059-bindings-args.patch` | `$(amk.fxns? ...)` and `$(amk.vars? ...)` take their engines as any number of arguments, as `amk.require` does |
+| `0061-api-acall.patch` | the deferred call: `amk_call_begin` runs the handle's call in a fork and names the descriptor its result arrives on, `amk_call_end` collects the text or the error and applies the writes the child queued; the forked call closes every socket it inherited; every guest spells it `amk.acall`, awaited through its own reactor where it has one |
+| `0062-call-pairs.patch` | every recipe child gets its own call pair at spawn, dup'd onto the descriptors `AMK_CALL` and `AMK_REPLY` name, served while make waits for children or for a jobserver token, and dropped with the child; a forked guest's and a deferred call's writes ride a pipe read by one collector beside the child's output, and a printed goal's value comes up the job's mail; the tagged reply FIFOs, their directory, the temp file queues, and `amk_mkfifo` are gone |
+| `0063-api-namespace.patch` | make holds one table from (engine, namespace) to an opaque state, `main` included, and a row supplies only `open`, `run`, `hook` and, for the store, `filter`, with `ops` naming its operations; `$(<name>.<op> program)` runs one in `main` with one argument, `$(<name>.ns ns, op[, program])` in a created namespace, and `create` opens a state and makes a handle `ns.op` with its star twin per operation; a star `.ns` call dereferences only its program; jq answers `get`, `update` and `load` over one JSON value, the language rows `exec` and `import`; an engine whose `open` answers null past its one state, as micropy's does, refuses `create`; `amk_func_add` is make's one table from a guest function to its state; the call channel's line is translated beside `amk_call_answer`, and the stateless `$(jq program,input)` runs in this process |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,
-and its contract is the part a guest author reads.
+and its contract is the part a guest author reads. A `grammar` patch changes what a
+makefile can say: a new directive or a new form of one, read by the parser itself.
 
 ## Overlays
 

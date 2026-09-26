@@ -1,0 +1,806 @@
+Namespaces: make holds one table from (engine, namespace) to an opaque state, main
+included, and a row supplies only the primitives that differ by interpreter: open a fresh
+state, run one operation's program in a state with its output to make's sink, hear an event
+in a state, and, for the store, filter an input text with no state. $(<name>.<op> program)
+runs the operation in main with one argument, so the program keeps its commas;
+$(<name>.ns ns, op[, program]) runs it in a named namespace; create makes a namespace with
+a state of its own, held by that one engine, and a handle ns.op with its star twin per
+operation. A call on a namespace never created is fatal, as is a create by a second engine,
+one that would shadow a make function, or one on an engine whose open answers null, as
+micropython's does past its one state. A star call to .ns dereferences only its program.
+The language rows take exec and import; jq takes get, update and load, and its state is one
+JSON value. A guest's amk.func goes through amk_func_add, one table from function name to
+the state that defined it behind a trampoline make registers, which refuses a name another
+state holds. The call channel's translation lives beside amk_call_answer: the operation,
+the name and the program off the line, a name made on first use, dump as get of the whole
+value, load reading its file here, and filter run in this process, as the stateless
+$(jq program,input) now is too. No guest parses a request line or sees a namespace name.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -94,7 +94,7 @@
+ extern struct amk_sink amk_sink_stderr;
+ int amk_call_forward (const char *line, struct amk_sink *out);
+
+-/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the sink; hook, when a row has one, hears every event as its name and the info fields. */
++/* The kept-state primitives, when a row has them: open gives a fresh opaque state, or null when the engine cannot open another; run executes one operation's program in a state, its output to the sink, and answers the status; hook hears every event in the given state; filter, when a row has one, runs a program over an input text with no state. ops names the operations make registers over run, space-separated. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
+ struct amk_engine
+   {
+     const char *name;
+@@ -103,29 +103,45 @@
+     unsigned int dashdash:1;
+     unsigned int cmdline:1;
+     unsigned int argv:1;
+-    int (*persist) (struct amk_sink *, int, char **);
+-    void (*hook) (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
++    void *(*open) (void);
++    int (*run) (void *state, struct amk_sink *out, const char *op, const char *prog);
++    void (*hook) (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
++    int (*filter) (struct amk_sink *out, const char *prog, const char *input);
++    const char *ops;
+   };
+
+ extern const struct amk_engine amk_engines[];
+ const struct amk_engine *amk_engine_by_name (const char *name);
+ int amk_engine_called (const struct amk_engine *e, const char *word);
+
++/* The call channel's way into the store: one operation on a namespace, made on first use, and the stateless filter.  */
++int amk_store_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
++int amk_store_filter (struct amk_sink *out, const char *prog, const char *input);
++
++/* A guest's make function: fn answers make's call with the state it was defined in; a name make has already is refused with -1, a name this state defined before is rebound with 1, and a new one answers 0. */
++int amk_func_add (const char *name, void *state, char *(*fn) (void *state, const char *name, unsigned int argc, char **argv));
++
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
+-extern int jq_persist_main (struct amk_sink *out, int argc, char **argv);
++extern void *jq_open (void);
++extern int jq_run (void *state, struct amk_sink *out, const char *op, const char *prog);
++extern int jq_filter (struct amk_sink *out, const char *prog, const char *input);
+ extern int lua_run_main (int argc, char **argv);
+-extern int lua_persist_main (struct amk_sink *out, int argc, char **argv);
+-extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
++extern void *lua_open (void);
++extern int lua_run (void *state, struct amk_sink *out, const char *op, const char *prog);
++extern void lua_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int s7_run_main (int argc, char **argv);
+-extern int s7_persist_main (struct amk_sink *out, int argc, char **argv);
+-extern void s7_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+-extern int micropy_persist_main (struct amk_sink *out, int argc, char **argv);
+-extern void micropy_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
++extern void *s7_open (void);
++extern int s7_run (void *state, struct amk_sink *out, const char *op, const char *prog);
++extern void s7_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int micropy_run_main (int argc, char **argv);
++extern void *micropy_open (void);
++extern int micropy_run (void *state, struct amk_sink *out, const char *op, const char *prog);
++extern void micropy_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int wasm3_main (int argc, char **argv);
+-extern int js_persist_main (struct amk_sink *out, int argc, char **argv);
+-extern void js_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int js_run_main (int argc, char **argv);
++extern void *js_open (void);
++extern int js_run (void *state, struct amk_sink *out, const char *op, const char *prog);
++extern void js_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+
+ #endif
+--- a/src/function.c
++++ b/src/function.c
+@@ -2499,22 +2499,22 @@
+     { "awk", "awk gawk", gawk_main, 1, 0, 1 },
+ #endif
+ #ifdef AMK_ENGINE_JQ
+-    { "jq", "jq", jq_main, 0, 0, 1, jq_persist_main },
++    { "jq", "jq", jq_main, 0, 0, 1, jq_open, jq_run, 0, jq_filter, "get update load" },
+ #endif
+ #ifdef AMK_ENGINE_LUA
+-    { "lua", 0, lua_run_main, 0, 0, 0, lua_persist_main, lua_hook_main },
++    { "lua", 0, lua_run_main, 0, 0, 0, lua_open, lua_run, lua_hook, 0, "exec import" },
+ #endif
+ #ifdef AMK_ENGINE_S7
+-    { "s7", 0, s7_run_main, 0, 0, 0, s7_persist_main, s7_hook_main },
++    { "s7", 0, s7_run_main, 0, 0, 0, s7_open, s7_run, s7_hook, 0, "exec import" },
+ #endif
+ #ifdef AMK_ENGINE_MICROPY
+-    { "micropy", 0, micropy_run_main, 0, 0, 0, micropy_persist_main, micropy_hook_main },
++    { "micropy", 0, micropy_run_main, 0, 0, 0, micropy_open, micropy_run, micropy_hook, 0, "exec import" },
+ #endif
+ #ifdef AMK_ENGINE_WASM3
+     { "wasm", "wasm3", wasm3_main, 0, 1, 1 },
+ #endif
+ #ifdef AMK_ENGINE_QUICKJS
+-    { "js", 0, js_run_main, 0, 0, 0, js_persist_main, js_hook_main },
++    { "js", 0, js_run_main, 0, 0, 0, js_open, js_run, js_hook, 0, "exec import" },
+ #endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+@@ -2534,14 +2534,20 @@
+ /* One name per event, in enum order, so a guest can key its subscribers by it.  */
+ const char *const amk_event_names[] = { "goals", "recipe_start", "recipe_end" };
+
+-/* Every row with a hook entry hears the event, in table order.  */
++static void *amk_ns_state (const struct amk_engine *e, const char *name, int open);
++
++/* Every row with a hook entry hears the event in its main state, in table order; an engine whose main never opened hears nothing.  */
+ void
+ amk_hook_fire (enum amk_event event, const struct amk_event_info *info)
+ {
+   const struct amk_engine *e;
+   for (e = amk_engines; e->name; ++e)
+     if (e->hook)
+-      e->hook (amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
++      {
++        void *state = amk_ns_state (e, "main", 0);
++        if (state != NULL)
++          e->hook (state, amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
++      }
+ }
+
+ /* The init chunk for a row: the environment's, as text or as the file an @ names, else the payload's; NULL when there is none.  */
+@@ -2589,22 +2595,21 @@
+   return chunk;
+ }
+
+-/* Every row with a persist entry runs its init chunk, once, with print on stderr.  */
++/* Every row with a run entry runs its init chunk, once, in main, with print on stderr.  */
+ void
+ amk_engine_init (void)
+ {
+   const struct amk_engine *e;
+   for (e = amk_engines; e->name; ++e)
+-    if (e->persist)
++    if (e->run)
+       {
+         char *chunk = amk_init_chunk (e);
+-        char *av[3];
++        void *state;
+         if (chunk == NULL)
+           continue;
+-        av[0] = (char *) e->name;
+-        av[1] = chunk;
+-        av[2] = NULL;
+-        e->persist (&amk_sink_stderr, 2, av);
++        state = amk_ns_state (e, "main", 1);
++        if (state != NULL)
++          e->run (state, &amk_sink_stderr, "exec", chunk);
+         free (chunk);
+       }
+ }
+@@ -2765,7 +2770,9 @@
+   return ac;
+ }
+
+-/* Every engine builtin: $(name program[,input]) and $(name.argv options,program[,input]), the argv built the way the row says. */
++static char *amk_filter_expand (char *o, const struct amk_engine *e, const char *prog, const char *input);
++
++/* Every engine builtin: $(name program[,input]) and $(name.argv options,program[,input]), the argv built the way the row says; a row with a filter runs the plain form in this process. */
+ static char *
+ func_engine (char *o, char **argv, const char *funcname)
+ {
+@@ -2774,6 +2781,8 @@
+   char *opts = NULL;
+   char *args = NULL;
+   int ac = 1;
++  if (e->filter && strchr (funcname, '.') == NULL)
++    return amk_filter_expand (o, e, argv[0], argv[1]);
+   av[0] = (char *) e->name;
+   if (strchr (funcname, '.'))
+     {
+@@ -2846,7 +2855,29 @@
+
+ struct amk_sink amk_sink_stderr = { amk_stderr_write };
+
+-/* The engine whose persistent call is running, so a function registered during it is credited to that engine.  */
++/* The stateless filter of a row that has one, run in this process over the input text, its output at the call's place less one trailing newline.  */
++static char *
++amk_filter_expand (char *o, const struct amk_engine *e, const char *prog, const char *input)
++{
++  struct amk_expand_sink sink;
++  size_t start = o - variable_buffer;
++  int rc;
++
++  sink.base.write = amk_expand_write;
++  sink.o = o;
++  rc = e->filter (&sink.base, prog, input != NULL ? input : "");
++  shell_completed (rc, 0);
++  o = sink.o;
++  if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')
++    {
++      --o;
++      if ((size_t) (o - variable_buffer) > start && o[-1] == '\r')
++        --o;
++    }
++  return o;
++}
++
++/* The engine whose kept-state call is running, so a function registered during it is credited to that engine.  */
+ static const char *amk_binding_engine;
+
+ /* A name appended once to an engine's ledger of what it gave make, its fxns or its vars.  */
+@@ -2900,41 +2931,140 @@
+   return o;
+ }
+
+-/* $(name.exec program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
++static char *func_star (char *o, char **argv, const char *funcname);
++
++/* The namespaces so far, each held by one engine with the state its operations run in: main exists for every engine and joins on first use, every other name is one engine's, and handles says whether create has made its ns.op functions.  */
++struct amk_ns
++  {
++    char *name;
++    const struct amk_engine *engine;
++    void *state;
++    unsigned int handles:1;
++  };
++static struct amk_ns *amk_nss;
++static unsigned int amk_nss_len;
++
++/* The row for a name, under one engine or, with none given, any.  */
++static struct amk_ns *
++amk_ns_find (const struct amk_engine *e, const char *name)
++{
++  unsigned int i;
++  for (i = 0; i < amk_nss_len; ++i)
++    if ((e == NULL || amk_nss[i].engine == e) && streq (amk_nss[i].name, name))
++      return &amk_nss[i];
++  return NULL;
++}
++
++/* The engine a name other than main belongs to, or null.  */
++static const struct amk_engine *
++amk_ns_owner (const char *name)
++{
++  struct amk_ns *ns = streq (name, "main") ? NULL : amk_ns_find (NULL, name);
++  return ns != NULL ? ns->engine : NULL;
++}
++
++static struct amk_ns *
++amk_ns_add (const struct amk_engine *e, const char *name)
++{
++  amk_nss = xrealloc (amk_nss, (amk_nss_len + 1) * sizeof *amk_nss);
++  amk_nss[amk_nss_len].name = xstrdup (name);
++  amk_nss[amk_nss_len].engine = e;
++  amk_nss[amk_nss_len].state = NULL;
++  amk_nss[amk_nss_len].handles = 0;
++  return &amk_nss[amk_nss_len++];
++}
++
++/* The state a namespace runs in, opened on first use when open says so; null when it was never opened and open is off, or when the engine cannot open it.  */
++static void *
++amk_ns_state (const struct amk_engine *e, const char *name, int open)
++{
++  struct amk_ns *ns = amk_ns_find (e, name);
++  if (ns == NULL)
++    {
++      if (!open || !streq (name, "main"))
++        return NULL;
++      ns = amk_ns_add (e, name);
++    }
++  if (ns->state == NULL && open)
++    ns->state = e->open ();
++  return ns->state;
++}
++
++/* One operation in a state, credited to its engine while it runs.  */
++static int
++amk_state_run (const struct amk_engine *e, void *state, struct amk_sink *out, const char *op, const char *prog)
++{
++  const char *outer = amk_binding_engine;
++  int rc;
++  amk_binding_engine = e->name;
++  rc = e->run (state, out, op, prog);
++  amk_binding_engine = outer;
++  return rc;
++}
++
++/* A namespace is one word that the store's request line carries unquoted.  */
++static int
++amk_ns_valid (const char *name)
++{
++  size_t n = strlen (name);
++  return n > 0 && n < 200 && strpbrk (name, " \t\n'\"\\") == NULL;
++}
++
++/* Whether word is one of the row's operations.  */
++static int
++amk_engine_has_op (const struct amk_engine *e, const char *word)
++{
++  const char *p = e->ops, *w;
++  size_t wlen;
++  if (p == NULL)
++    return 0;
++  while ((w = find_next_token (&p, &wlen)) != NULL)
++    if (wlen == strlen (word) && memcmp (w, word, wlen) == 0)
++      return 1;
++  return 0;
++}
++
++/* An argument with the blanks around it cut off in place.  */
+ static char *
+-func_persistent (char *o, char **argv, const char *funcname)
++amk_trim (char *s)
+ {
+-  const struct amk_engine *e = amk_engine_by_name (funcname);
++  char *end;
++  while (ISSPACE (*s))
++    s++;
++  end = s + strlen (s);
++  while (end > s && ISSPACE (end[-1]))
++    *--end = '\0';
++  return s;
++}
++
++/* One operation in one namespace, in this process with no fork, so what one call leaves in the namespace the next call finds.  */
++static char *
++amk_ns_run (char *o, const struct amk_engine *e, const char *ns, const char *op, const char *prog, const char *funcname)
++{
+   struct amk_expand_sink sink;
+-  char *av[4];
+   size_t start = o - variable_buffer;
+-  int ac = 2;
+   int rc;
+
+-  av[0] = (char *) e->name;
+-  av[1] = argv[0];
+-  if (strchr (funcname, '.'))
+-    av[0] = (char *) funcname;
+-  if (argv[1] != NULL)
+-    av[ac++] = argv[1];
+-  av[ac] = NULL;
+-
+   sink.base.write = amk_expand_write;
+   sink.o = o;
+-  {
+-    const char *outer = amk_binding_engine;
+-    amk_binding_engine = e->name;
+-    /* A forwarder has no store of its own: the store engine's call goes up the channel, and only the line travels.  */
+-    if (amk_call_forwarding () && streq (e->name, AMK_STORE_ENGINE))
+-      {
+-        if (argv[1] != NULL)
+-          OS (error, NILF, _("$(%s ...): the input does not travel the call channel"), funcname);
+-        rc = amk_call_forward (argv[0], &sink.base);
+-      }
+-    else
+-      rc = e->persist (&sink.base, ac, av);
+-    amk_binding_engine = outer;
+-  }
++  /* A forwarder has no store of its own: the store engine's call goes up the channel as a request line, which a load's text cannot ride.  */
++  if (streq (e->name, AMK_STORE_ENGINE) && amk_call_forwarding ())
++    {
++      char *line;
++      if (streq (op, "load"))
++        OS (error, NILF, _("$(%s ...): a load's text does not travel the call channel"), funcname);
++      line = xmalloc (strlen (op) + strlen (ns) + strlen (prog) + 3);
++      sprintf (line, "%s %s %s", op, ns, prog);
++      rc = amk_call_forward (line, &sink.base);
++      free (line);
++    }
++  else
++    {
++      void *state = amk_ns_state (e, ns, 1);
++      if (state == NULL)
++        OSS (fatal, reading_file, _("%s: cannot open a %s state"), funcname, e->name);
++      rc = amk_state_run (e, state, &sink.base, op, prog);
++    }
+   shell_completed (rc, 0);
+   o = sink.o;
+
+@@ -2947,7 +3077,7 @@
+     }
+
+   /* An import's names that are not functions are the variables it gave make.  */
+-  if (strlen (funcname) > 7 && strcmp (funcname + strlen (funcname) - 7, ".import") == 0)
++  if (streq (op, "import"))
+     {
+       char *names = xstrndup (variable_buffer + start, o - variable_buffer - start);
+       const char *p = names, *w;
+@@ -2963,6 +3093,220 @@
+       free (names);
+     }
+   return o;
++}
++
++/* $(eng.op program): the operation in main.  */
++static char *
++func_op (char *o, char **argv, const char *funcname)
++{
++  const struct amk_engine *e = amk_engine_by_name (funcname);
++  return amk_ns_run (o, e, "main", funcname + strlen (e->name) + 1, argv[0], funcname);
++}
++
++/* A handle, ns.op: the operation in the namespace it was made for.  */
++static char *
++func_handle (char *o, char **argv, const char *funcname)
++{
++  const char *dot = strrchr (funcname, '.');
++  char *ns = xstrndup (funcname, dot - funcname);
++  o = amk_ns_run (o, amk_ns_owner (ns), ns, dot + 1, argv[0], funcname);
++  free (ns);
++  return o;
++}
++
++/* One handle, ns.op, or its star twin.  */
++static void
++amk_handle_add (const char *ns, const char *op, size_t oplen, int star)
++{
++  struct function_table_entry *f = xcalloc (sizeof *f);
++  char *name = xmalloc (strlen (ns) + oplen + 3);
++  sprintf (name, "%s.%.*s%s", ns, (int) oplen, op, star ? "*" : "");
++  f->fptr.func_ptr = star ? func_star : func_handle;
++  f->name = name;
++  f->len = strlen (name);
++  f->minimum_args = 1;
++  f->maximum_args = 1;
++  f->expand_args = 1;
++  hash_insert (&function_table, f);
++}
++
++/* create: the namespace held by the engine with a state of its own, and a handle with its star twin for each of the engine's operations; a second create by the same engine changes nothing. Main opens first, so an engine with one state keeps it there and refuses the second.  */
++static void
++amk_ns_create (const struct amk_engine *e, const char *ns, const char *funcname)
++{
++  const struct amk_engine *owner = amk_ns_owner (ns);
++  struct amk_ns *row = owner == e ? amk_ns_find (e, ns) : NULL;
++  const char *p, *w;
++  size_t wlen;
++
++  if (streq (ns, "main") || (row != NULL && row->handles))
++    return;
++  if (owner != NULL && owner != e)
++    OSSS (fatal, reading_file, _("%s: namespace %s belongs to %s"), funcname, ns, owner->name);
++  if (row == NULL)
++    {
++      if (amk_ns_state (e, "main", 1) == NULL)
++        OSS (fatal, reading_file, _("%s: cannot open a %s state"), funcname, e->name);
++      row = amk_ns_add (e, ns);
++      row->state = e->open ();
++      if (row->state == NULL)
++        OSS (fatal, reading_file, _("%s: create is not supported for %s"), funcname, e->name);
++    }
++  for (p = e->ops; (w = find_next_token (&p, &wlen)) != NULL;)
++    {
++      char *name = xmalloc (strlen (ns) + wlen + 3);
++      sprintf (name, "%s.%.*s", ns, (int) wlen, w);
++      if (amk_function_exists (name))
++        OSS (fatal, reading_file, _("%s: %s is a make function already"), funcname, name);
++      strcat (name, "*");
++      if (amk_function_exists (name))
++        OSS (fatal, reading_file, _("%s: %s is a make function already"), funcname, name);
++      free (name);
++    }
++  row->handles = 1;
++  for (p = e->ops; (w = find_next_token (&p, &wlen)) != NULL;)
++    {
++      amk_handle_add (ns, w, wlen, 0);
++      amk_handle_add (ns, w, wlen, 1);
++    }
++}
++
++/* The call channel's operation on a store namespace, made with a state on first use and no handles; a name another engine holds, or an operation the store lacks, answers the usage status.  */
++int
++amk_store_call (struct amk_sink *out, const char *op, const char *ns, const char *prog)
++{
++  const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
++  const struct amk_engine *owner;
++  struct amk_ns *row;
++
++  if (e == NULL || e->run == NULL)
++    {
++      fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
++      return 2;
++    }
++  if (!amk_engine_has_op (e, op))
++    {
++      fprintf (stderr, "amk: call: unknown operation %s; one of get, update, load, dump, filter\n", op);
++      return 2;
++    }
++  if (!amk_ns_valid (ns))
++    {
++      fprintf (stderr, "amk: call: %s: namespace \"%s\" is not a name\n", op, ns);
++      return 2;
++    }
++  owner = amk_ns_owner (ns);
++  if (owner != NULL && owner != e)
++    {
++      fprintf (stderr, "amk: call: namespace %s belongs to %s\n", ns, owner->name);
++      return 2;
++    }
++  row = amk_ns_find (e, ns);
++  if (row == NULL)
++    row = amk_ns_add (e, ns);
++  if (row->state == NULL)
++    row->state = e->open ();
++  if (row->state == NULL)
++    {
++      fprintf (stderr, "amk: call: cannot open a %s state\n", e->name);
++      return 2;
++    }
++  return amk_state_run (e, row->state, out, op, prog);
++}
++
++/* The call channel's filter: the store's stateless run over the input text.  */
++int
++amk_store_filter (struct amk_sink *out, const char *prog, const char *input)
++{
++  const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
++  if (e == NULL || e->filter == NULL)
++    {
++      fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
++      return 2;
++    }
++  return e->filter (out, prog, input != NULL ? input : "");
++}
++
++/* The functions guests defined, each with the state that answers it, so make's call lands in the namespace that made it.  */
++struct amk_func
++  {
++    char *name;
++    void *state;
++    char *(*fn) (void *state, const char *name, unsigned int argc, char **argv);
++  };
++static struct amk_func *amk_funcs;
++static unsigned int amk_funcs_len;
++
++static struct amk_func *
++amk_func_find (const char *name)
++{
++  unsigned int i;
++  for (i = 0; i < amk_funcs_len; ++i)
++    if (streq (amk_funcs[i].name, name))
++      return &amk_funcs[i];
++  return NULL;
++}
++
++/* Every guest function enters make as this one, which hands the call to the state that defined the name.  */
++static char *
++amk_func_dispatch (const char *name, unsigned int argc, char **argv)
++{
++  struct amk_func *f = amk_func_find (name);
++  return f != NULL ? f->fn (f->state, name, argc, argv) : NULL;
++}
++
++int
++amk_func_add (const char *name, void *state, char *(*fn) (void *state, const char *name, unsigned int argc, char **argv))
++{
++  struct amk_func *f = amk_func_find (name);
++  if (f != NULL)
++    {
++      if (f->state != state)
++        return -1;
++      f->fn = fn;
++      return 1;
++    }
++  if (amk_function_exists (name))
++    return -1;
++  amk_funcs = xrealloc (amk_funcs, (amk_funcs_len + 1) * sizeof *amk_funcs);
++  amk_funcs[amk_funcs_len].name = xstrdup (name);
++  amk_funcs[amk_funcs_len].state = state;
++  amk_funcs[amk_funcs_len].fn = fn;
++  amk_funcs_len++;
++  define_new_function (NILF, name, 0, 0, 0, amk_func_dispatch);
++  return 0;
++}
++
++/* $(eng.ns name, op[, program]): the operation in a created namespace or main, or create, which makes the namespace and its handles.  */
++static char *
++func_ns (char *o, char **argv, const char *funcname)
++{
++  const struct amk_engine *e = amk_engine_by_name (funcname);
++  const struct amk_engine *owner;
++  char *ns = amk_trim (argv[0]);
++  char *op = amk_trim (argv[1]);
++
++  if (!amk_ns_valid (ns))
++    OSS (fatal, reading_file, _("%s: namespace \"%s\" is not a name"), funcname, ns);
++  if (streq (op, "create"))
++    {
++      if (argv[2] != NULL)
++        OS (fatal, reading_file, _("%s: create takes no program"), funcname);
++      amk_ns_create (e, ns, funcname);
++      return o;
++    }
++  if (!amk_engine_has_op (e, op))
++    OSSS (fatal, reading_file, _("%s: expected an op, got \"%s\"; one of %s create"), funcname, op, e->ops);
++  if (argv[2] == NULL)
++    OSS (fatal, reading_file, _("%s %s: no program"), funcname, op);
++  if (!streq (ns, "main"))
++    {
++      owner = amk_ns_owner (ns);
++      if (owner == NULL)
++        OSS (fatal, reading_file, _("%s: namespace %s was never created"), funcname, ns);
++      if (owner != e)
++        OSSS (fatal, reading_file, _("%s: namespace %s belongs to %s"), funcname, ns, owner->name);
++    }
++  return amk_ns_run (o, e, ns, op, argv[2], funcname);
+ }
+
+ /* One star argument: the dedented unexpanded value of the variable it names, or null when it names none and passes as written.  */
+@@ -3017,9 +3361,11 @@
+     }
+   else
+     {
++      /* A namespace call's name and operation pass as written; only its program may name a variable.  */
++      int from = strlen (base) > 3 && strcmp (base + strlen (base) - 3, ".ns") == 0 ? (n == 3 ? 2 : n) : 0;
+       for (i = 0; i < n; ++i)
+         {
+-          held[i] = star_arg (funcname, argv[i], NULL);
++          held[i] = i >= from ? star_arg (funcname, argv[i], NULL) : NULL;
+           args[i] = held[i] ? held[i] : argv[i];
+         }
+       args[n] = NULL;
+@@ -3444,27 +3790,31 @@
+           f->maximum_args = 3;
+           hash_insert (&function_table, f++);
+         }
+-      if (e->persist)
++      /* Each operation in main takes one argument, so its program keeps its commas; .ns names a namespace and an operation first.  */
++      if (e->run && e->ops)
+         {
+-          char *name = xmalloc (strlen (e->name) + 6);
+-          sprintf (name, "%s.exec", e->name);
+-          f->fptr.func_ptr = func_persistent;
+-          f->name = name;
+-          f->len = strlen (name);
+-          f->minimum_args = 1;
+-          f->maximum_args = 2;
+-          f->expand_args = 1;
+-          hash_insert (&function_table, f++);
+-        }
+-      if (e->persist)
+-        {
+-          char *name = xmalloc (strlen (e->name) + 8);
+-          sprintf (name, "%s.import", e->name);
+-          f->fptr.func_ptr = func_persistent;
++          const char *p = e->ops, *w;
++          size_t wlen;
++          char *name;
++          while ((w = find_next_token (&p, &wlen)) != NULL)
++            {
++              name = xmalloc (strlen (e->name) + wlen + 2);
++              sprintf (name, "%s.%.*s", e->name, (int) wlen, w);
++              f->fptr.func_ptr = func_op;
++              f->name = name;
++              f->len = strlen (name);
++              f->minimum_args = 1;
++              f->maximum_args = 1;
++              f->expand_args = 1;
++              hash_insert (&function_table, f++);
++            }
++          name = xmalloc (strlen (e->name) + 4);
++          sprintf (name, "%s.ns", e->name);
++          f->fptr.func_ptr = func_ns;
+           f->name = name;
+           f->len = strlen (name);
+-          f->minimum_args = 1;
+-          f->maximum_args = 2;
++          f->minimum_args = 2;
++          f->maximum_args = 3;
+           f->expand_args = 1;
+           hash_insert (&function_table, f++);
+         }
+--- a/src/main.c
++++ b/src/main.c
+@@ -5900,34 +5900,104 @@
+   *body = strchr (reply, '\n');
+   *body = *body != NULL ? *body + 1 : reply + strlen (reply);
+   return rc;
++}
++
++/* The next word of a request line into word, p moved past it; 0 at the end.  */
++static int
++amk_call_word (const char **p, char *word, size_t size) {
++  const char *s = *p;
++  size_t n = 0;
++  while (*s == ' ' || *s == '\t')
++    ++s;
++  if (*s == '\0') {
++    *p = s;
++    return 0;
++  }
++  while (*s != '\0' && *s != ' ' && *s != '\t') {
++    if (n + 1 < size)
++      word[n++] = *s;
++    ++s;
++  }
++  word[n] = '\0';
++  *p = s;
++  return 1;
++}
++
++/* The whole of a file as text, or null with the reason on stderr.  */
++static char *
++amk_call_slurp (const char *op, const char *name, const char *path) {
++  FILE *f = fopen (path, "r");
++  char *text;
++  size_t len = 0, cap = 4096;
++  if (f == NULL) {
++    fprintf (stderr, "amk: call: %s %s: cannot read %s\n", op, name, path);
++    return NULL;
++  }
++  text = xmalloc (cap + 1);
++  for (;;) {
++    len += fread (text + len, 1, cap - len, f);
++    if (len < cap)
++      break;
++    cap *= 2;
++    text = xrealloc (text, cap + 1);
++  }
++  text[len] = '\0';
++  fclose (f);
++  return text;
++}
++
++/* One request line to the store: the operation, the name, and the rest as the program. A dump is a get of the whole value, a load names a file read here, and a filter, whose input lines the transport counted, runs with no name.  */
++static int
++amk_call_serve (struct amk_sink *out, const char *line, const char *input) {
++  char op[32], name[1024];
++  const char *p = line;
++  char *text;
++  int rc;
++
++  if (!amk_call_word (&p, op, sizeof op)) {
++    fprintf (stderr, "amk: call: expected an operation, got: %s\n", line);
++    return 2;
++  }
++  if (strcmp (op, "filter") == 0) {
++    if (amk_call_input_lines (line) >= 0)
++      amk_call_word (&p, name, sizeof name);
++    while (*p == ' ' || *p == '\t')
++      ++p;
++    return amk_store_filter (out, p, input);
++  }
++  if (!amk_call_word (&p, name, sizeof name)) {
++    fprintf (stderr, "amk: call: %s: expected a name, got: %s\n", op, line);
++    return 2;
++  }
++  while (*p == ' ' || *p == '\t')
++    ++p;
++  if (strcmp (op, "dump") == 0)
++    return amk_store_call (out, "get", name, ".");
++  if (strcmp (op, "load") == 0) {
++    char path[4096];
++    if (!amk_call_word (&p, path, sizeof path)) {
++      fprintf (stderr, "amk: call: load %s: no path\n", name);
++      return 2;
++    }
++    text = amk_call_slurp (op, name, path);
++    if (text == NULL)
++      return 2;
++    rc = amk_store_call (out, "load", name, text);
++    free (text);
++    return rc;
++  }
++  return amk_store_call (out, op, name, p);
+ }
+
+ /* The reply to one request: the store's status and how many lines follow, then each output on a line of its own, verbatim.  A build without the store engine answers 2.  */
+ static char *
+ amk_call_answer (const char *line, const char *input) {
+-  const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
+   struct amk_buf_sink sink = { { amk_buf_write }, NULL, 0 };
+-  char *av[4], *reply, *call = NULL;
++  char *reply;
+   const char *p;
+   int rc, n = 0;
+
+-  if (e == NULL || e->persist == NULL) {
+-    fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
+-    return xstrdup ("2 0\n");
+-  }
+-  if (amk_call_input_lines (line) >= 0) {
+-    /* The count served the transport; the entry gets the request and the input apart.  */
+-    const char *rest = strchr (line + 7, ' ');
+-    call = xmalloc (strlen (line) + 8);
+-    sprintf (call, "filter%s", rest != NULL ? rest : "");
+-    line = call;
+-  }
+-  av[0] = (char *) e->name;
+-  av[1] = (char *) line;
+-  av[2] = (char *) input;
+-  av[3] = NULL;
+-  rc = e->persist (&sink.base, input != NULL ? 3 : 2, av);
+-  free (call);
++  rc = amk_call_serve (&sink.base, line, input);
+
+   for (p = sink.buf; p != NULL && *p != '\0'; ++n) {
+     const char *nl = strchr (p, '\n');

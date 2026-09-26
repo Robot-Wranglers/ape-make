@@ -1,0 +1,88 @@
+Star forms: every engine builtin but an argv form gets a twin whose name ends in a star,
+taking the name of a variable where the base takes program text. $(micropy.import* body)
+is $(micropy.import ...) handed body's unexpanded value, dedented; a second argument
+passes through as the input. The star joins the characters a function name may hold,
+so make looks the twin up as a builtin; an undefined name or an inconsistent indent is
+fatal, since the text is always a program. $(amk.dedent* name) is amk.val.dedent under
+the same rule.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -727,4 +727,5 @@
+   stopchar_map[(int)'-'] = MAP_USERFUNC;
+   stopchar_map[(int)'_'] = MAP_USERFUNC;
++  stopchar_map[(int)'*'] |= MAP_USERFUNC;
+
+   stopchar_map[(int)' '] = MAP_BLANK;
+--- a/src/function.c
++++ b/src/function.c
+@@ -2880,4 +2880,36 @@
+   return o;
+ }
++
++/* A star builtin: the builtin named without the star, handed the dedented unexpanded value of the variable the first argument names.  */
++static char *
++func_star (char *o, char **argv, const char *funcname)
++{
++  char *base = xstrndup (funcname, strlen (funcname) - 1);
++  const struct function_table_entry *f = lookup_function (base);
++  char *name = argv[0];
++  char *end = name + strlen (name);
++  struct variable *v;
++  char *text, *args[3];
++  size_t width;
++  int bad;
++
++  while (ISSPACE (*name))
++    name++;
++  while (end > name && ISSPACE (end[-1]))
++    *--end = '\0';
++  v = lookup_variable (name, strlen (name));
++  if (v == NULL)
++    OSS (fatal, reading_file, _("%s: no variable named '%s'"), funcname, name);
++  text = amk_dedent (v->value, &width, &bad);
++  if (bad)
++    fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
++  args[0] = text;
++  args[1] = argv[1];
++  args[2] = NULL;
++  o = f->fptr.func_ptr (o, args, f->name);
++  free (text);
++  free (base);
++  return o;
++}
+
+ #define FT_ENTRY(_name, _min, _max, _exp, _func) \
+@@ -2926,4 +2958,5 @@
+   FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
+   FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
++  FT_ENTRY ("amk.dedent*",   0,  1,  1,  amk_func_val_dedent),
+   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+@@ -3242,3 +3275,3 @@
+ /* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
+-static struct function_table_entry amk_function_entries[64];
++static struct function_table_entry amk_function_entries[128];
+
+@@ -3293,4 +3326,21 @@
+         }
+     }
++  /* Every builtin but an argv form gets a star twin that takes a variable's name.  */
++  {
++    struct function_table_entry *end = f, *g;
++    for (g = amk_function_entries; g < end; ++g)
++      if (g->len < 5 || memcmp (g->name + g->len - 5, ".argv", 5) != 0)
++        {
++          char *name = xmalloc (g->len + 2);
++          sprintf (name, "%s*", g->name);
++          f->fptr.func_ptr = func_star;
++          f->name = name;
++          f->len = g->len + 1;
++          f->minimum_args = 1;
++          f->maximum_args = 2;
++          f->expand_args = 1;
++          hash_insert (&function_table, f++);
++        }
++  }
+ }
+

@@ -1,0 +1,20 @@
+QuickJS joins the persistent family: its row gains the persist and hook entries, so
+$(js.exec ...), $(js.import ...), the AMK_JS_INIT chunk, and amk.on hooks all run
+against one runtime kept for the life of the make process, as Lua's and MicroPython's do.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -79,4 +79,6 @@
+ extern int micropy_run_main (int argc, char **argv);
+ extern int wasm3_main (int argc, char **argv);
++extern int js_persist_main (struct amk_sink *out, int argc, char **argv);
++extern void js_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int js_run_main (int argc, char **argv);
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -2514,3 +2514,3 @@
+ #ifdef AMK_ENGINE_QUICKJS
+-    { "js", 0, js_run_main, 0, 0, 0 },
++    { "js", 0, js_run_main, 0, 0, 0, js_persist_main, js_hook_main },
+ #endif

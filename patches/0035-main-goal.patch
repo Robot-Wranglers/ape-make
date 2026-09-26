@@ -1,0 +1,78 @@
+Main goal: a target named __main__ is the default goal when the makefile named none
+itself. Make still fills .DEFAULT_GOAL from the first rule as it reads, and remembers
+that pick; when no goal is on the command line, a __main__ target replaces the pick, but
+not a value a makefile or the AMK_GOAL knob assigned. Both places that read the default
+settle it first: the ordinary run and a zygote request that names no goal.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -55,6 +55,8 @@
+ void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ void amk_engine_init (void);
++extern char *amk_goal_autofill;
++void amk_default_goal_settle (void);
+
+ /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
+ struct amk_sink
+--- a/src/read.c
++++ b/src/read.c
+@@ -2008,8 +2008,12 @@
+             }
+
+           if (!reject)
+-            define_variable_global (".DEFAULT_GOAL", 13, t->name,
+-                                    o_file, 0, NILF);
++            {
++              define_variable_global (".DEFAULT_GOAL", 13, t->name,
++                                      o_file, 0, NILF);
++              free (amk_goal_autofill);
++              amk_goal_autofill = xstrdup (t->name);
++            }
+         }
+     }
+ }
+--- a/src/function.c
++++ b/src/function.c
+@@ -2605,6 +2605,22 @@
+         e->persist (&amk_sink_stderr, 2, av);
+         free (chunk);
+       }
++}
++
++/* The goal make chose for itself from the first rule, so a later value can be told from a makefile's own.  */
++char *amk_goal_autofill = NULL;
++
++/* A target named __main__ becomes the default goal when a makefile named none itself, ahead of make's own first-rule pick.  */
++void
++amk_default_goal_settle (void)
++{
++  struct file *f = lookup_file ("__main__");
++  const char *v = default_goal_var->value;
++
++  if (f == NULL || !f->is_target)
++    return;
++  if (v[0] == '\0' || (amk_goal_autofill != NULL && streq (v, amk_goal_autofill)))
++    define_variable_global (".DEFAULT_GOAL", 13, "__main__", o_file, 0, NILF);
+ }
+
+ /* Whether word is one of the row's multi-call names.  */
+--- a/src/main.c
++++ b/src/main.c
+@@ -3788,6 +3788,7 @@
+     {
+       char *p;
+
++      amk_default_goal_settle ();
+       if (default_goal_var->recursive)
+         p = variable_expand (default_goal_var->value);
+       else
+@@ -5362,6 +5363,8 @@
+
+   /* A request naming no goal means the default, which the zygote resolved for its
+      own argv before the fork and this child discarded along with the rest.  */
++  if (goals == 0 && default_goal_var != 0)
++    amk_default_goal_settle ();
+   if (goals == 0 && default_goal_var != 0 && default_goal_var->value[0] != '\0') {
+     char *dg = allocated_variable_expand (default_goal_var->value);
+

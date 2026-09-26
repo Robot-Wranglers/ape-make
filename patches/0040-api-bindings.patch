@@ -1,0 +1,155 @@
+Bindings: make keeps a ledger of what each engine gave it. A function registered while an
+engine's persistent call runs, through amk.func or an import, is appended once to the
+variable <engine>.__fxns__; each name an import returns that is not a function is
+appended once to <engine>.__vars__. $(amk.fxns? engines) and $(amk.vars? engines) read
+those lists for the named engines, and amk.__fxns__ and amk.__vars__ read them for every
+engine in the build. The question mark joins the characters a function name may hold,
+as the star did.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -728,4 +728,5 @@
+   stopchar_map[(int)'_'] = MAP_USERFUNC;
+   stopchar_map[(int)'*'] |= MAP_USERFUNC;
++  stopchar_map[(int)'?'] |= MAP_USERFUNC;
+
+   stopchar_map[(int)' '] = MAP_BLANK;
+@@ -2408,4 +2409,6 @@
+     define_variable_cname (".ENGINES", engines, o_default, 0);
+     define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
++    define_variable_cname ("amk.__fxns__", "$(amk.fxns? $(.ENGINES))", o_default, 1);
++    define_variable_cname ("amk.__vars__", "$(amk.vars? $(.ENGINES))", o_default, 1);
+     free (all);
+   }
+--- a/src/function.c
++++ b/src/function.c
+@@ -2846,38 +2846,113 @@
+ struct amk_sink amk_sink_stderr = { amk_stderr_write };
+
++/* The engine whose persistent call is running, so a function registered during it is credited to that engine.  */
++static const char *amk_binding_engine;
++
++/* A name appended once to an engine's ledger of what it gave make, its fxns or its vars.  */
++static void
++amk_binding_add (const char *engine, const char *kind, const char *name, size_t len)
++{
++  char var[96];
++  struct variable *v;
++  const char *old, *p, *w;
++  size_t wlen;
++  char *val;
++
++  snprintf (var, sizeof var, "%s.__%s__", engine, kind);
++  v = lookup_variable (var, strlen (var));
++  old = v != NULL ? v->value : "";
++  p = old;
++  while ((w = find_next_token (&p, &wlen)) != NULL)
++    if (wlen == len && memcmp (w, name, len) == 0)
++      return;
++  val = xmalloc (strlen (old) + len + 2);
++  sprintf (val, "%s%s%.*s", old, *old ? " " : "", (int) len, name);
++  define_variable_global (var, strlen (var), val, o_file, 0, NILF);
++  free (val);
++}
++
++/* $(amk.fxns? engines) and $(amk.vars? engines): what each named engine gave make, its functions or its variables, in order.  */
++static char *
++func_bindings (char *o, char **argv, const char *funcname)
++{
++  const char *kind = strstr (funcname, "fxns") != NULL ? "fxns" : "vars";
++  const char *p = argv[0], *w;
++  size_t wlen;
++  int first = 1;
++
++  while ((w = find_next_token (&p, &wlen)) != NULL)
++    {
++      char var[96];
++      struct variable *v;
++
++      snprintf (var, sizeof var, "%.*s.__%s__", (int) wlen, w, kind);
++      v = lookup_variable (var, strlen (var));
++      if (v != NULL && *v->value != '\0')
++        {
++          if (!first)
++            o = variable_buffer_output (o, " ", 1);
++          o = variable_buffer_output (o, v->value, strlen (v->value));
++          first = 0;
++        }
++    }
++  return o;
++}
++
+ /* $(name.exec program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
+ static char *
+ func_persistent (char *o, char **argv, const char *funcname)
+ {
+   const struct amk_engine *e = amk_engine_by_name (funcname);
+   struct amk_expand_sink sink;
+   char *av[4];
+   size_t start = o - variable_buffer;
+   int ac = 2;
+   int rc;
+
+   av[0] = (char *) e->name;
+   av[1] = argv[0];
+   if (strchr (funcname, '.'))
+     av[0] = (char *) funcname;
+   if (argv[1] != NULL)
+     av[ac++] = argv[1];
+   av[ac] = NULL;
+
+   sink.base.write = amk_expand_write;
+   sink.o = o;
+-  rc = e->persist (&sink.base, ac, av);
++  {
++    const char *outer = amk_binding_engine;
++    amk_binding_engine = e->name;
++    rc = e->persist (&sink.base, ac, av);
++    amk_binding_engine = outer;
++  }
+   shell_completed (rc, 0);
+   o = sink.o;
+
+   /* One trailing newline goes, as for every builtin; the buffer may have moved, so the start is an offset.  */
+   if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')
+     {
+       --o;
+       if ((size_t) (o - variable_buffer) > start && o[-1] == '\r')
+         --o;
+     }
++
++  /* An import's names that are not functions are the variables it gave make.  */
++  if (strlen (funcname) > 7 && strcmp (funcname + strlen (funcname) - 7, ".import") == 0)
++    {
++      char *names = xstrndup (variable_buffer + start, o - variable_buffer - start);
++      const char *p = names, *w;
++      size_t wlen;
++
++      while ((w = find_next_token (&p, &wlen)) != NULL)
++        {
++          char *name = xstrndup (w, wlen);
++          if (!amk_function_exists (name))
++            amk_binding_add (e->name, "vars", w, wlen);
++          free (name);
++        }
++      free (names);
++    }
+   return o;
+ }
+
+ /* A star builtin: the builtin named without the star, handed the dedented unexpanded value of the variable the first argument names.  */
+@@ -2987,4 +3062,6 @@
+   FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
+   FT_ENTRY ("amk.dedent*",   0,  1,  1,  amk_func_val_dedent),
++  FT_ENTRY ("amk.fxns?",     0,  1,  1,  func_bindings),
++  FT_ENTRY ("amk.vars?",     0,  1,  1,  func_bindings),
+   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+@@ -3299,5 +3376,7 @@
+   ent = hash_insert (&function_table, ent);
+   free (ent);
++  if (amk_binding_engine != NULL)
++    amk_binding_add (amk_binding_engine, "fxns", name, strlen (name));
+ }
+
+ /* The engine builtins join the table from the engine rows, so a row is the whole registration.  */

@@ -1,0 +1,21 @@
+Spawned goals in the global set: a job spawned while a recipe expands runs its
+goal collection with the expanding target's variable set current, so its command
+goals landed there and every other target of the job read the parent's goal list
+instead. The job now defines its collected goals in the global set as well, so a
+target reading MAKECMDGOALS sees the job's own.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -6056,6 +6056,12 @@
+   define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
+   for (i = 0; i < n; ++i)
+     handle_non_switch_argument (words[i], o_command);
++  /* A job spawned while a recipe expands collected its goals in that target's
++     variable set; every target of the job reads them from the global one.  */
++  {
++    struct variable *gv = lookup_variable (STRING_SIZE_TUPLE ("MAKECMDGOALS"));
++    define_variable_global ("MAKECMDGOALS", 12, gv != 0 ? gv->value : "", o_default, 0, NILF);
++  }
+   define_makeflags (0);
+   if (goals == 0)
+     return MAKE_SUCCESS;

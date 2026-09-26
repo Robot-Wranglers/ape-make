@@ -1,0 +1,161 @@
+The value channel: $(goal name) brings a goal up to date, in a fork of this parsed image
+as the spawn api runs goals, and answers the goal's value file, trimmed like every
+builtin's result. A define for an engine now enters a real rule on that value file,
+under $(goal.dir) or .amk/goals, whose recipe writes what the program printed, and the
+phony target of the define's name prints it; every $(goal x) in the body is a
+prerequisite on x's value file, so referencing a value declares the edge and the imported
+target reruns only when a value it reads is newer. A plain file target's value is the file
+itself, copied into the value directory by a pattern rule the first define enters.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -40,6 +40,8 @@
+ void amk_eval (const char *text);
+ extern int amk_queue_fd;
+ void amk_queue_apply (FILE *queue);
++char *amk_func_goal (char *o, char **argv, const char *funcname);
++char *amk_cell_text (const char *name, const char *engine, const char *body);
+ void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ void amk_engine_init (void);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2906,4 +2906,5 @@
+   FT_ENTRY ("or",            1,  0,  0,  func_or),
+   FT_ENTRY ("and",           1,  0,  0,  func_and),
++  FT_ENTRY ("goal",          1,  1,  1,  amk_func_goal),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
+@@ -3423,3 +3424,56 @@
+     }
+   free (buf);
+ }
++
++/* $(goal name): the goal's value file brought up to date by a fork of this image, then read; the value directory is expanded here so a makefile may set goal.dir.  */
++char *
++amk_func_goal (char *o, char **argv, const char *funcname)
++{
++  char *dir = allocated_variable_expand ("$(or $(goal.dir),.amk/goals)");
++  char *name = argv[0];
++  char *end, *path, *words[1];
++  pid_t pid, got = 0;
++  int code = 0, sig = 0, stopped = 0;
++  size_t start = o - variable_buffer;
++  FILE *fp;
++  char buf[4096];
++  size_t n;
++
++  while (ISSPACE (*name))
++    name++;
++  end = name + strlen (name);
++  while (end > name && ISSPACE (end[-1]))
++    *--end = '\0';
++  if (*name == '\0')
++    OS (fatal, NILF, _("$(%s ...): no goal named"), funcname);
++  path = xmalloc (strlen (dir) + strlen (name) + 2);
++  sprintf (path, "%s/%s", dir, name);
++  free (dir);
++
++  words[0] = path;
++  pid = amk_spawn_goals (1, words, 0, "/dev/null");
++  if (pid < 0)
++    OSS (fatal, NILF, _("$(%s %s): cannot fork"), funcname, name);
++  do
++    amk_wait_child (pid, 1, &got, &code, &sig, &stopped);
++  while (stopped);
++  if (code != 0 || sig != 0)
++    OSS (fatal, NILF, _("$(%s %s): the goal failed"), funcname, name);
++
++  fp = fopen (path, "r");
++  if (fp == NULL)
++    OSS (fatal, NILF, _("$(%s %s): the goal left no value"), funcname, name);
++  while ((n = fread (buf, 1, sizeof buf, fp)) > 0)
++    o = variable_buffer_output (o, buf, n);
++  fclose (fp);
++  free (path);
++
++  /* One trailing newline goes, as for every builtin; the buffer may have moved, so the start is an offset.  */
++  if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')
++    {
++      --o;
++      if ((size_t) (o - variable_buffer) > start && o[-1] == '\r')
++        --o;
++    }
++  return o;
++}
+--- a/src/read.c
++++ b/src/read.c
+@@ -3579,7 +3579,6 @@
+ define_engine_target (const struct variable *v, const struct vmodifiers *vmod,
+                       const floc *flocp)
+ {
+-  static const char shape[] = ".PHONY: %s\n%s:; @$(info $(%s ${%s}))\n";
+   const char *engine;
+   char *text;
+   int no_goal_yet = default_goal_var->value[0] == '\0';
+@@ -3593,5 +3592,4 @@
+   engine = vmod->engine_v->name;
+-  text = xmalloc (sizeof shape + 3 * strlen (v->name) + strlen (engine));
+-  sprintf (text, shape, v->name, v->name, engine, v->name);
++  text = amk_cell_text (v->name, engine, v->value);
+   eval_buffer (text, flocp);
+   free (text);
+@@ -3600,3 +3598,58 @@
+   if (no_goal_yet)
+     define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
+ }
++
++/* The value directory as a makefile spells it, expanded when a rule is read, so a makefile sets goal.dir before its first define.  */
++static const char amk_goal_dir[] = "$(or $(goal.dir),.amk/goals)";
++
++/* Every goal the body references through the goal function, as its value file, space separated and allocated.  */
++static char *
++amk_cell_deps (const char *body)
++{
++  char *deps = xstrdup ("");
++  const char *p = body;
++  while ((p = strstr (p, "goal ")) != NULL)
++    {
++      const char *name;
++      size_t len;
++      int opened = p >= body + 2 && (p[-1] == '(' || p[-1] == '{') && p[-2] == '$';
++      p += 5;
++      if (!opened)
++        continue;
++      while (*p == ' ')
++        p++;
++      name = p;
++      len = strcspn (name, ") }\n");
++      if (len > 0)
++        {
++          size_t have = strlen (deps);
++          deps = xrealloc (deps, have + sizeof amk_goal_dir + len + 3);
++          sprintf (deps + have, " %s/%.*s", amk_goal_dir, (int) len, name);
++        }
++      p = name + len;
++    }
++  return deps;
++}
++
++/* The rules behind a define for an engine: once, the directory and the pattern that copies a plain file into it; then the value file, rebuilt when a value the body reads is newer, and the phony target of the define's name that prints it. The program is expanded while the recipe is, so its value references resolve in this process, and it reaches the engine on the job's standard input, so cells overlap under -j and a program has no size limit.  */
++char *
++amk_cell_text (const char *name, const char *engine, const char *body)
++{
++  static int prepared;
++  static const char preamble[] = "$(shell mkdir -p %s)\n%s/%%: %%; @$(file >$@,$(file <$<))\n";
++  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(job.stdin ${%s})$(MAKE) --%s %s >$@\n";
++  const char *program = strcmp (engine, "awk") == 0 ? "-f -" : strcmp (engine, "jq") == 0 ? "-n -f /dev/stdin" : "-";
++  char *deps = amk_cell_deps (body);
++  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + strlen (deps) + 24;
++  char *text = xmalloc (len);
++  char *p = text;
++
++  if (!prepared)
++    {
++      p += sprintf (p, preamble, amk_goal_dir, amk_goal_dir);
++      prepared = 1;
++    }
++  sprintf (p, shape, name, name, amk_goal_dir, name, amk_goal_dir, name, deps, name, engine, program);
++  free (deps);
++  return text;
++}

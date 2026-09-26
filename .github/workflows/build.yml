@@ -1,21 +1,14 @@
-# Build amk from a clean tree, smoke and test it, and keep it as a workflow artifact; release.yml calls this.
+# Build amk from a clean tree, smoke it and its image, and keep both as workflow artifacts; ci.yml and release.yml call this, then test.yml.
 name: Build
 on:
-  workflow_dispatch: {}
   workflow_call: {}
-  push:
-    branches: [ "main" ]
-    paths-ignore: ['**.md', '**.png', '**.svg']
-  pull_request:
-    branches: [ "main" ]
-    paths-ignore: ['**.md', '**.png', '**.svg']
 permissions:
   contents: read
 jobs:
   # One build per engine set: the default, and the default with the opt-in engine added.
   build:
     name: Build amk (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -26,11 +19,15 @@ jobs:
           - name: wasm3
             with: wasm3
     steps:
+      # The Makefile reads the version from the nearest v-tag, so the checkout needs the tags and the history behind them.
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across engine sets.
       - name: Cache downloads and toolchain
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             *.tar.gz
@@ -48,11 +45,6 @@ jobs:
         run: make build with=${{ matrix.with }}
       - name: Smoke
         run: make smoke with=${{ matrix.with }}
-      # The suite needs pytest and nothing else; the Makefile runs it as python3 -m pytest when no pytest is on PATH.
-      - name: Install pytest
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pytest
-      - name: Test
-        run: make test with=${{ matrix.with }}
       # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.
       - name: Docker image
         run: make build.docker with=${{ matrix.with }}
@@ -62,7 +54,7 @@ jobs:
       - name: Pack the image context
         run: tar -C build/docker -cf docker-context.tar amd64 arm64
       - name: Upload the image context
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: docker-context-${{ matrix.name }}
           path: docker-context.tar
@@ -79,49 +71,9 @@ jobs:
           install -m 0644 src/wasm3-*/test/wasi/simple/test.wasm dist/test.wasm
           install -m 0644 src/wasm3-*/test/lang/fib32.wasm dist/fib32.wasm
       - name: Upload amk
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: amk-${{ matrix.name }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14
-
-  # One file runs everywhere: prove it on hosts that never built it.
-  portable:
-    name: Run ${{ matrix.name }} on ${{ matrix.os }}
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest ]
-        name: [ default, wasm3 ]
-        include:
-          - name: default
-            with: ''
-            features: awk jq lua s7 micropy js
-          - name: wasm3
-            with: wasm3
-            features: awk jq lua s7 micropy wasm js
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Download amk
-        uses: actions/download-artifact@v6
-        with:
-          name: amk-${{ matrix.name }}
-      # A host with no ape loader registered cannot exec the file directly; sh runs the bootstrap.
-      - name: Version
-        run: sh ./amk --version
-      - name: Builtins
-        run: sh ./amk -f smoke.mk builtins engines='${{ matrix.features }}' wasm.test=test.wasm
-      - name: Guests by flag
-        run: |
-          sh ./amk --awk 'BEGIN { print "awk by flag: ok" }'
-          printf '{"n":41}' | sh ./amk --jq -c .n+1
-      - name: Payload tools first on PATH
-        run: sh ./amk -f smoke.mk path tools='sed bash'
-      - name: wasm3 by flag
-        if: matrix.with == 'wasm3'
-        run: |
-          sh ./amk --wasm --func fib fib32.wasm 20 2>&1 | grep -x 'Result: 6765'

@@ -1,0 +1,36 @@
+Every engine's version as a make variable. The build names each selected engine with a
+define, and now gives that define a value, the version of the tarball it unpacked. Each
+becomes the variable of the builtin's name with .__version__ after it, set where
+.AMK_VERSION is, so no engine runs to answer it and an engine left out has none.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -2408,6 +2408,28 @@
+     define_variable_cname (".FEATURES", all, o_default, 0);
+     define_variable_cname (".ENGINES", engines, o_default, 0);
+     define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
++    /* Each engine's define carries the version the build unpacked, read here as the variable of the builtin's name.  */
++#ifdef AMK_ENGINE_GAWK
++    define_variable_cname ("awk.__version__", AMK_STR(AMK_ENGINE_GAWK), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_JQ
++    define_variable_cname ("jq.__version__", AMK_STR(AMK_ENGINE_JQ), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_LUA
++    define_variable_cname ("lua.__version__", AMK_STR(AMK_ENGINE_LUA), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_S7
++    define_variable_cname ("s7.__version__", AMK_STR(AMK_ENGINE_S7), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_MICROPY
++    define_variable_cname ("micropy.__version__", AMK_STR(AMK_ENGINE_MICROPY), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_WASM3
++    define_variable_cname ("wasm.__version__", AMK_STR(AMK_ENGINE_WASM3), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_QUICKJS
++    define_variable_cname ("js.__version__", AMK_STR(AMK_ENGINE_QUICKJS), o_default, 0);
++#endif
+     define_variable_cname ("amk.__fxns__", "$(amk.fxns? $(.ENGINES))", o_default, 1);
+     define_variable_cname ("amk.__vars__", "$(amk.vars? $(.ENGINES))", o_default, 1);
+     free (all);

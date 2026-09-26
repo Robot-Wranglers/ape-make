@@ -81,7 +81,7 @@ declares the one-field struct itself and keeps no header of make's.
 +
 +struct amk_sink amk_sink_stderr = { amk_stderr_write };
 +
- /* $(name.persistent program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
+ /* $(name.exec program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
  static char *
  func_persistent (char *o, char **argv, const char *funcname)
  {

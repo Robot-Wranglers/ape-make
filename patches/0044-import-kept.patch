@@ -1,0 +1,374 @@
+A value is kept only where a body names it, and the value directory is touched only
+where a value is kept. Importing a target enters its phony name and nothing else. Once
+the makefiles are read, and only when some body holds a reference, the directory and a
+value file for each referenced target are entered; a referenced target reruns when a
+value it reads is newer, and its name prints what is kept. A plain file is read where it
+is, never copied. Any other imported target runs whenever it is asked for, on the job's
+own standard input and output, and the goal function reads what that run printed. One
+function reads a value, for the splice, the goal function and the name.
+
+--- a/src/file.c
++++ b/src/file.c
+@@ -1348,34 +1348,54 @@
+   return first;
+ }
+
+-/* After the makefiles are read: every reference resolves to one target, and its value file becomes a prerequisite of the imported target that names it.  */
++/* The value directory, allocated: what a makefile or the command line assigned to goal.dir, or the default.  */
++char *
++amk_goal_dir (void)
++{
++  const struct variable *v = lookup_variable ("goal.dir", 8);
++  return v != NULL && v->value[0] != '\0' ? allocated_variable_expand ("$(goal.dir)") : xstrdup (".amk/goals");
++}
++
++/* After the makefiles are read, and only when some body holds a reference: the value directory, and every reference resolved to one target, a plain file where it is. A target a body references gets a value file, which its name waits on; what a body reads is a prerequisite of its value file, or of its name when it keeps none.  */
+ void
+ amk_goal_refs_settle (void)
+ {
+   struct file **slot = (struct file **) files.ht_vec;
+   struct file **end = slot + files.ht_size;
+   struct file **imported = xmalloc ((files.ht_fill + 1) * sizeof *imported);
+-  size_t count = 0, i;
++  size_t count = 0, reading = 0, dlen, i;
++  char *dir, *text;
+
+   for (; slot < end; ++slot)
+-    if (! HASH_VACANT (*slot) && (*slot)->amk_refs != NULL)
+-      imported[count++] = *slot;
++    if (! HASH_VACANT (*slot) && (*slot)->amk_engine != NULL)
++      {
++        imported[count++] = *slot;
++        reading += (*slot)->amk_refs != NULL;
++      }
++  if (reading == 0)
++    {
++      free (imported);
++      return;
++    }
+
++  dir = amk_goal_dir ();
++  dlen = strlen (dir);
++  text = xmalloc (dlen + 24);
++  sprintf (text, "$(shell mkdir -p %s)\n", dir);
++  eval_buffer (text, &imported[0]->cmds->fileinfo);
++  free (text);
++
+   for (i = 0; i < count; ++i)
+     {
+       struct file *f = imported[i];
+       const floc *flocp = &f->cmds->fileinfo;
+-      size_t dlen = strlen (f->name) - strlen (f->amk_program) - 1;
+-      char *dir = xstrndup (f->name, dlen);
+-      char *text = xstrdup (f->name);
+       struct amk_goal_ref *r;
+
+-      text = xrealloc (text, strlen (text) + 2);
+-      strcat (text, ":");
+       for (r = f->amk_refs; r != NULL; r = r->next)
+         {
+           const char *second = NULL;
+           const char *name = amk_goal_named (dir, r->word, &second);
++          struct file *read;
+           char *path;
+
+           if (name == NULL)
+@@ -1385,20 +1405,71 @@
+                    _("@%s@ in imported target '%s' names both '%s' and '%s'"), r->word, f->amk_program, name, second);
+           path = xmalloc (dlen + strlen (name) + 2);
+           sprintf (path, "%s/%s", dir, name);
+-          r->path = strcache_add (path);
+-          text = xrealloc (text, strlen (text) + strlen (path) + 3);
+-          strcat (text, " ");
+-          strcat (text, path);
++          read = lookup_file (name);
++          if (read != NULL && read->amk_engine != NULL)
++            read->amk_value = r->path = strcache_add (path);
++          else
++            r->path = lookup_file (path) != NULL ? strcache_add (path) : name;
+           free (path);
+         }
++    }
++
++  for (i = 0; i < count; ++i)
++    {
++      struct file *f = imported[i];
++      const char *reader = f->amk_value != NULL ? f->amk_value : f->name;
++      const struct amk_goal_ref *r;
++      size_t len = 3 * strlen (reader) + 2 * strlen (f->name) + 24;
++
++      for (r = f->amk_refs; r != NULL; r = r->next)
++        len += strlen (r->path) + 1;
++      text = xmalloc (len);
++      text[0] = '\0';
++      if (f->amk_value != NULL)
++        sprintf (text, "%s:; @: %s\n%s: %s\n", reader, f->name, f->name, reader);
++      sprintf (text + strlen (text), "%s:", reader);
++      for (r = f->amk_refs; r != NULL; r = r->next)
++        sprintf (text + strlen (text), " %s", r->path);
+       strcat (text, "\n");
+-      eval_buffer (text, flocp);
++      eval_buffer (text, &f->cmds->fileinfo);
+       free (text);
+-      free (dir);
++      if (f->amk_value != NULL)
++        {
++          struct file *kept = lookup_file (reader);
++          kept->amk_engine = f->amk_engine;
++          kept->amk_program = f->amk_program;
++          kept->amk_refs = f->amk_refs;
++          kept->amk_value = kept->name;
++        }
+     }
+   free (imported);
++  free (dir);
+ }
+
++/* A goal's value: the text of its file less one trailing newline, allocated, or null when the file cannot be read.  */
++char *
++amk_goal_value (const char *path)
++{
++  FILE *fp = fopen (path, "r");
++  char *value = NULL;
++  size_t len = 0, n;
++
++  if (fp == NULL)
++    return NULL;
++  do
++    {
++      value = xrealloc (value, len + 4097);
++      n = fread (value + len, 1, 4096, fp);
++      len += n;
++    }
++  while (n > 0);
++  fclose (fp);
++  if (len > 0 && value[len - 1] == '\n' && --len > 0 && value[len - 1] == '\r')
++    --len;
++  value[len] = '\0';
++  return value;
++}
++
+ /* An imported body for its engine, inside the job's fork: each reference replaced by its value, raw, less one trailing newline, and nothing else touched.  */
+ char *
+ amk_goal_splice (const struct file *file, const char *body)
+@@ -1418,27 +1489,13 @@
+           break;
+       if (r != NULL)
+         {
+-          FILE *fp = fopen (r->path, "r");
+-          char buf[4096];
+-          size_t n;
+-          if (fp == NULL)
++          value = amk_goal_value (r->path);
++          if (value == NULL)
+             {
+               fprintf (stderr, "amk: %s: @%s@ has no value at %s: %s\n", file->name, r->word, r->path, strerror (errno));
+               _exit (127);
+             }
+-          while ((n = fread (buf, 1, sizeof buf, fp)) > 0)
+-            {
+-              value = xrealloc (value, vlen + n);
+-              memcpy (value + vlen, buf, n);
+-              vlen += n;
+-            }
+-          fclose (fp);
+-          if (vlen > 0 && value[vlen - 1] == '\n')
+-            {
+-              --vlen;
+-              if (vlen > 0 && value[vlen - 1] == '\r')
+-                --vlen;
+-            }
++          vlen = strlen (value);
+           at += len + 2;
+         }
+       else
+--- a/src/filedef.h
++++ b/src/filedef.h
+@@ -117,6 +117,8 @@
+     const struct amk_engine *amk_engine;
+     const char *amk_program;
+     struct amk_goal_ref *amk_refs;
++    /* The value file of an imported target some body references, on its name and on the file itself; null when no value is kept.  */
++    const char *amk_value;
+   };
+
+ /* A goal reference in an imported body: the name as written, and the value file it resolved to once the makefiles were read.  */
+@@ -130,6 +132,8 @@
+ struct amk_goal_ref *amk_goal_refs (const char *body);
+ void amk_goal_refs_settle (void);
+ char *amk_goal_splice (const struct file *file, const char *body);
++char *amk_goal_value (const char *path);
++char *amk_goal_dir (void);
+
+
+ extern struct file *default_file;
+--- a/src/function.c
++++ b/src/function.c
+@@ -3638,19 +3638,15 @@
+   free (buf);
+ }
+
+-/* $(goal name): the goal's value file brought up to date by a fork of this image, then read; the value directory is expanded here so a makefile may set goal.dir.  */
++/* $(goal name): the goal brought up to date by a fork of this image, then its value read: a kept value from its file, a plain file target in place, and an imported target that keeps none from what its run printed.  */
+ char *
+ amk_func_goal (char *o, char **argv, const char *funcname)
+ {
+-  char *dir = allocated_variable_expand ("$(or $(goal.dir),.amk/goals)");
+   char *name = argv[0];
+-  char *end, *path, *words[1];
++  char *end, *path, *value, *words[1];
++  struct file *f, ran;
+   pid_t pid, got = 0;
+-  int code = 0, sig = 0, stopped = 0;
+-  size_t start = o - variable_buffer;
+-  FILE *fp;
+-  char buf[4096];
+-  size_t n;
++  int code = 0, sig = 0, stopped = 0, printed;
+
+   while (ISSPACE (*name))
+     name++;
+@@ -3659,12 +3655,33 @@
+     *--end = '\0';
+   if (*name == '\0')
+     OS (fatal, NILF, _("$(%s ...): no goal named"), funcname);
+-  path = xmalloc (strlen (dir) + strlen (name) + 2);
+-  sprintf (path, "%s/%s", dir, name);
+-  free (dir);
++  f = lookup_file (name);
++  printed = f != NULL && f->amk_engine != NULL && f->amk_value == NULL;
++  if (printed)
++    {
++      /* The fork runs the target again even when this make already has, so its record of that is set aside for the fork.  */
++      ran = *f;
++      f->updated = 0;
++      f->command_state = cs_not_started;
++      close (get_tmpfd (&path));
++    }
++  else if (f != NULL && f->is_target && f->amk_engine == NULL)
++    path = xstrdup (name);
++  else
++    {
++      char *dir = amk_goal_dir ();
++      path = xmalloc (strlen (dir) + strlen (name) + 2);
++      sprintf (path, "%s/%s", dir, name);
++      free (dir);
++    }
+
+-  words[0] = path;
+-  pid = amk_spawn_goals (1, words, 0, "/dev/null");
++  words[0] = printed ? name : path;
++  pid = amk_spawn_goals (1, words, 0, printed ? path : "/dev/null");
++  if (printed)
++    {
++      f->updated = ran.updated;
++      f->command_state = ran.command_state;
++    }
+   if (pid < 0)
+     OSS (fatal, NILF, _("$(%s %s): cannot fork"), funcname, name);
+   do
+@@ -3673,21 +3690,14 @@
+   if (code != 0 || sig != 0)
+     OSS (fatal, NILF, _("$(%s %s): the goal failed"), funcname, name);
+
+-  fp = fopen (path, "r");
+-  if (fp == NULL)
++  value = amk_goal_value (path);
++  if (printed)
++    unlink (path);
++  if (value == NULL)
+     OSS (fatal, NILF, _("$(%s %s): the goal left no value"), funcname, name);
+-  while ((n = fread (buf, 1, sizeof buf, fp)) > 0)
+-    o = variable_buffer_output (o, buf, n);
+-  fclose (fp);
++  o = variable_buffer_output (o, value, strlen (value));
++  free (value);
+   free (path);
+-
+-  /* One trailing newline goes, as for every builtin; the buffer may have moved, so the start is an offset.  */
+-  if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')
+-    {
+-      --o;
+-      if ((size_t) (o - variable_buffer) > start && o[-1] == '\r')
+-        --o;
+-    }
+   return o;
+ }
+
+--- a/src/job.c
++++ b/src/job.c
+@@ -1148,7 +1148,7 @@
+   free (child->cmd_name);
+ }
+
+-/* An imported target's job: a fork of make with no exec, so the engine runs inside the parsed image with the handle live. The child takes the program as written, its goal references replaced by their values, runs the engine's main over it with standard output on the value file, and leaves with the engine's status.  */
++/* An imported target's job: a fork of make with no exec, so the engine runs inside the parsed image with the handle live. The child takes the program as written, its goal references replaced by their values, runs the engine's main over it, and leaves with the engine's status. A value file takes the output; a name prints its kept value, or with none kept runs the program on the job's own standard output.  */
+ static pid_t
+ amk_engine_job (struct child *child)
+ {
+@@ -1172,12 +1172,16 @@
+     EINTRLOOP (r, dup2 (fdin, FD_STDIN));
+   if (child->output.syncout && child->output.err >= 0)
+     EINTRLOOP (r, dup2 (child->output.err, FD_STDERR));
++  if (child->output.syncout && child->output.out >= 0)
++    EINTRLOOP (r, dup2 (child->output.out, FD_STDOUT));
+   environ = child->environment;
+   amk_fork_settle ();
+
++  if (file->amk_value != NULL && !streq (file->amk_value, file->name))
++    _exit ((program = amk_goal_value (file->amk_value)) == NULL || puts (program) < 0 || fflush (stdout) != 0);
+   v = lookup_variable (file->amk_program, strlen (file->amk_program));
+   program = amk_goal_splice (file, v != NULL ? v->value : "");
+-  if (freopen (file->name, "w", stdout) == NULL)
++  if (file->amk_value != NULL && freopen (file->name, "w", stdout) == NULL)
+     {
+       fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
+       _exit (127);
+--- a/src/read.c
++++ b/src/read.c
+@@ -3609,39 +3609,22 @@
+   return new;
+ }
+
+-/* The value directory as a makefile spells it, expanded when a rule is read, so a makefile sets goal.dir before its first define.  */
+-static const char amk_goal_dir[] = "$(or $(goal.dir),.amk/goals)";
+-
+-/* The rules behind an imported target, never the default goal: once, the directory and the pattern that copies a plain file into it; then the value file and the phony target of the name that prints it. The value file's rule records its engine, its program and the goals its body references, which become its prerequisites once the makefiles are read, and the job launcher runs the program in a fork of make, so the recipe line only names it.  */
++/* The rule behind an imported target, never the default goal: a phony target of the name that records its engine, its program and the goals its body references. The job launcher runs the program in a fork of make, so the recipe line only names it, and nothing of the value directory is touched here.  */
+ void
+ amk_import_target (const char *name, const char *engine, const char *body,
+                    const floc *flocp)
+ {
+-  static int prepared;
+-  static const char preamble[] = "$(shell mkdir -p %s)\n%s/%%: %%; @$(file >$@,$(file <$<))\n";
+-  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:; @: %s %s\n";
++  static const char shape[] = ".PHONY: %s\n%s:; @: %s %s\n";
+   int no_goal_yet = default_goal_var->value[0] == '\0';
+-  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + 24;
+-  char *text = xmalloc (len);
+-  char *p = text;
+-  char *path;
++  char *text = xmalloc (sizeof shape + 3 * strlen (name) + strlen (engine));
+   struct file *f;
+
+-  if (!prepared)
+-    {
+-      p += sprintf (p, preamble, amk_goal_dir, amk_goal_dir);
+-      prepared = 1;
+-    }
+-  sprintf (p, shape, name, name, amk_goal_dir, name, amk_goal_dir, name, engine, name);
++  sprintf (text, shape, name, name, engine, name);
+   eval_buffer (text, flocp);
+-
+-  sprintf (text, "%s/%s", amk_goal_dir, name);
+-  path = allocated_variable_expand (text);
+   free (text);
+-  f = lookup_file (path);
++  f = lookup_file (name);
+   if (f == NULL)
+-    OS (fatal, flocp, _("%s: the imported target left no rule"), path);
+-  free (path);
++    OS (fatal, flocp, _("%s: the imported target left no rule"), name);
+   f->amk_engine = amk_engine_by_name (engine);
+   f->amk_program = strcache_add (name);
+   f->amk_refs = amk_goal_refs (body);

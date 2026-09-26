@@ -1,0 +1,171 @@
+Deferred call: amk_call_begin runs the handle's call in a fork of this parsed image and
+hands back the pid and the read end of a pipe the result arrives on, so a guest's own
+reactor can wait on it; amk_call_end reads the pipe, collects the child, applies the
+writes it queued, and answers the text or the error the blocking call would have raised.
+The child is a spawned job to the reaper and the sweep, through the slot setup the spawn
+api now shares, and it closes every socket it inherited, so a server's connection closes
+with its reply rather than with the call.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -36,6 +36,9 @@
+ void amk_reap_foreign (pid_t pid, int code, int sig);
+ int amk_mail_take (pid_t pid, char **buf, size_t *len);
+ int amk_mail_send (const char *s, size_t n);
++pid_t amk_call_begin (const char *name, unsigned int argc, const char **args, int *fd);
++int amk_call_end (pid_t pid, char **text, const char **err);
++char *amk_call (const char *name, unsigned int argc, const char **args, const char **err);
+ char *amk_var_get (const char *name);
+ int amk_has_db (void);
+ int amk_function_exists (const char *name);
+--- a/src/main.c
++++ b/src/main.c
+@@ -6278,8 +6278,9 @@
+   amk_tty_owner = 0;
+ }
+
+-pid_t
+-amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
++/* A fork of this parsed image in a slot, with the mail pipe, the call pair, the group, and the signals set up on both sides; the parent gets the pid, the child 0 with what it runs left to the caller, and -1 is no slot or no fork.  */
++static pid_t
++amk_fork_slot (unsigned int *slot, int foreground, const char *stdout_path) {
+   unsigned int i;
+   pid_t pid;
+   int p[2], req[2], rep[2];
+@@ -6287,6 +6288,7 @@
+     ;
+   if (i == AMK_SPAWNED)
+     return -1;
++  *slot = i;
+   if (pipe (p) < 0)
+     return -1;
+   if (pipe (req) < 0 || pipe (rep) < 0) {
+@@ -6351,9 +6353,128 @@
+   signal (SIGHUP, fatal_error_signal);
+   signal (SIGQUIT, fatal_error_signal);
+   amk_fork_settle ();
++  return 0;
++}
++
++pid_t
++amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
++  unsigned int i;
++  pid_t pid = amk_fork_slot (&i, foreground, stdout_path);
++  if (pid != 0)
++    return pid;
+   die (amk_run_goals (n, words));
+ }
+
++/* The deferred calls in flight: the pid, the pipe its result arrives on, and the queue its writes come back through.  */
++static struct { pid_t pid; int fd; FILE *queue; } amk_calls[AMK_SPAWNED];
++
++/* A forked call holds no socket, so a server's connection closes with its reply rather than when the call ends.  */
++static void
++amk_close_sockets (void) {
++  int fd, top = (int) sysconf (_SC_OPEN_MAX);
++  struct stat st;
++  if (top < 0 || top > 4096) top = 4096;
++  for (fd = 3; fd < top; ++fd)
++    if (fstat (fd, &st) == 0 && S_ISSOCK (st.st_mode))
++      close (fd);
++}
++
++/* The deferred call: amk_call run in a fork of this parsed image, its text or its error written to a pipe whose read end the caller gets to wait on; the child is a spawned job to the reaper, so make's own waiting cannot lose it.  */
++pid_t
++amk_call_begin (const char *name, unsigned int argc, const char **args, int *fd) {
++  unsigned int i, k;
++  int out[2];
++  FILE *queue;
++  pid_t pid;
++  const char *err = NULL, *text;
++  char *s;
++  for (k = 0; k < AMK_SPAWNED && amk_calls[k].pid != 0; ++k)
++    ;
++  if (k == AMK_SPAWNED || pipe (out) < 0)
++    return -1;
++  queue = tmpfile ();
++  pid = amk_fork_slot (&i, 0, NULL);
++  if (pid < 0) {
++    close (out[0]);
++    close (out[1]);
++    if (queue != NULL)
++      fclose (queue);
++    return -1;
++  }
++  if (pid > 0) {
++    close (out[1]);
++    amk_calls[k].pid = pid;
++    amk_calls[k].fd = out[0];
++    amk_calls[k].queue = queue;
++    *fd = out[0];
++    return pid;
++  }
++  close (out[0]);
++  amk_close_sockets ();
++  amk_queue_fd = queue != NULL ? fileno (queue) : -1;
++  s = amk_call (name, argc, args, &err);
++  text = s != NULL ? s : err != NULL ? err : "";
++  amk_write_all (out[1], text, strlen (text));
++  close (out[1]);
++  die (s != NULL ? 0 : 1);
++}
++
++/* The call collected: its pipe read to the end, the child waited for, its writes applied; the text is the caller's to free, and a call that raised, died, or was never begun answers -1 with the reason in err.  */
++int
++amk_call_end (pid_t pid, char **text, const char **err) {
++  static char why[256];
++  unsigned int k;
++  char *buf;
++  size_t len = 0, cap = 4096;
++  pid_t got = 0;
++  int code = 0, sig = 0, stopped = 0;
++  char *mail = NULL;
++  size_t maillen = 0;
++  for (k = 0; k < AMK_SPAWNED && amk_calls[k].pid != pid; ++k)
++    ;
++  if (k == AMK_SPAWNED) {
++    *err = "no such call";
++    return -1;
++  }
++  buf = xmalloc (cap + 1);
++  for (;;) {
++    ssize_t r;
++    if (len == cap) {
++      cap += 4096;
++      buf = xrealloc (buf, cap + 1);
++    }
++    r = read (amk_calls[k].fd, buf + len, cap - len);
++    if (r < 0 && errno == EINTR)
++      continue;
++    if (r <= 0)
++      break;
++    len += r;
++  }
++  buf[len] = '\0';
++  close (amk_calls[k].fd);
++  do
++    amk_wait_child (pid, 1, &got, &code, &sig, &stopped);
++  while (stopped);
++  amk_queue_apply (amk_calls[k].queue);
++  if (amk_mail_take (pid, &mail, &maillen))
++    free (mail);
++  amk_calls[k].pid = 0;
++  if (sig != 0 || code > 1) {
++    snprintf (why, sizeof why, sig != 0 ? "the call died of signal %d" : "the call exited with status %d", sig != 0 ? sig : code);
++    *err = why;
++    free (buf);
++    return -1;
++  }
++  if (code == 1) {
++    snprintf (why, sizeof why, "%s", buf);
++    *err = why;
++    free (buf);
++    return -1;
++  }
++  *text = buf;
++  return 0;
++}
++
+ /* What a fork of the parsed image drops before it runs anything: the served request's connection, which the request answers when its own goals end, the jobserver, leaving one slot, and every child and mailbox that belongs to the parent.  */
+ void
+ amk_fork_settle (void) {

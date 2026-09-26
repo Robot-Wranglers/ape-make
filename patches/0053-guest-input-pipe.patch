@@ -1,0 +1,157 @@
+Guest input over a pipe: a builtin call with input wrote it to a temp file under
+TMPDIR for the child's stdin, so the single-threaded parent never had to feed
+input and drain output at once; every such call created and deleted a file, a
+guest that died early leaked one, and the file column of every benchmark carried
+the churn. The parent now polls the input pipe's write end beside the output
+pipe's read end and interleaves the two, closing the write end when the input is
+spent, with SIGPIPE ignored for the feed so a guest that stops reading early ends
+the feed rather than make.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -2488,6 +2488,8 @@
+ static char *func_call (char *o, char **argv, const char *funcname);
+ 
+ #include <fcntl.h>
++#include <poll.h>
++#include <signal.h>
+ #include <sys/wait.h>
+ 
+ /* Each row: the builtin name, the multi-call names, the entry point, and the argv shape.  */
+@@ -2650,41 +2652,22 @@
+   _exit (status);
+ }
+ 
+-/* Run a linked-in guest's main over the argv in a forked child, no exec: input, if any, becomes its stdin through a temp file, and its stdout is appended to o with its lines intact, less one trailing newline. */
++/* Run a linked-in guest's main over the argv in a forked child, no exec: input, if any, becomes its stdin through a pipe the parent feeds between reads of the child's stdout, which is appended to o with its lines intact, less one trailing newline. */
+ static char *
+ func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
+             int ac, char **av, const char *input)
+ {
+-  int out[2];
++  int out[2], in[2] = { -1, -1 };
+   FILE *queue = tmpfile ();
+-  char tmpl[PATH_MAX];
+-  const char *tmpdir = getenv ("TMPDIR");
+-  int infd = -1;
++  const char *s = input;
++  size_t n = input != NULL ? strlen (input) : 0;
++  void (*pipe_handler) (int) = SIG_DFL;
+   pid_t pid;
+   char *buffer;
+   size_t maxlen = 4096, i = 0;
+   int st = 0;
+ 
+-  if (input != NULL)
+-    {
+-      const char *s = input;
+-      size_t n = strlen (s);
+-      snprintf (tmpl, sizeof tmpl, "%s/%sin.XXXXXX", tmpdir && *tmpdir ? tmpdir : "/tmp", funcname);
+-      infd = mkstemp (tmpl);
+-      if (infd < 0)
+-        OSSS (fatal, NILF, _("$(%s ...): cannot create %s: %s"), funcname, tmpl, strerror (errno));
+-      while (n > 0)
+-        {
+-          ssize_t w = write (infd, s, n);
+-          if (w <= 0)
+-            break;
+-          s += w;
+-          n -= w;
+-        }
+-      lseek (infd, 0, SEEK_SET);
+-    }
+-
+-  if (pipe (out) < 0)
++  if (pipe (out) < 0 || (n > 0 && pipe (in) < 0))
+     OSS (fatal, NILF, _("$(%s ...): pipe: %s"), funcname, strerror (errno));
+ 
+   fflush (stdout);
+@@ -2694,8 +2677,12 @@
+     OSS (fatal, NILF, _("$(%s ...): fork: %s"), funcname, strerror (errno));
+   if (pid == 0)
+     {
+-      if (infd >= 0)
+-        dup2 (infd, 0);
++      if (in[0] >= 0)
++        {
++          dup2 (in[0], 0);
++          close (in[0]);
++          close (in[1]);
++        }
+       else
+         {
+           int nul = open ("/dev/null", O_RDONLY);
+@@ -2711,16 +2698,56 @@
+     }
+ 
+   close (out[1]);
+-  if (infd >= 0)
++  if (in[0] >= 0)
++    close (in[0]);
++  /* A guest that stops reading early answers the next write with EPIPE, which must not end make; the feed just ends.  */
++  if (in[1] >= 0)
+     {
+-      close (infd);
+-      unlink (tmpl);
++      fcntl (in[1], F_SETFL, fcntl (in[1], F_GETFL) | O_NONBLOCK);
++      pipe_handler = signal (SIGPIPE, SIG_IGN);
+     }
+ 
+   buffer = xmalloc (maxlen + 1);
+   while (1)
+     {
++      struct pollfd fds[2];
++      int nfds = 1;
+       ssize_t r;
++
++      fds[0].fd = out[0];
++      fds[0].events = POLLIN;
++      fds[0].revents = 0;
++      if (in[1] >= 0)
++        {
++          fds[1].fd = in[1];
++          fds[1].events = POLLOUT;
++          fds[1].revents = 0;
++          nfds = 2;
++        }
++      if (poll (fds, nfds, -1) < 0)
++        {
++          if (errno == EINTR)
++            continue;
++          break;
++        }
++      if (nfds == 2 && fds[1].revents != 0)
++        {
++          ssize_t w = write (in[1], s, n);
++          if (w > 0)
++            {
++              s += w;
++              n -= w;
++            }
++          else if (w < 0 && errno != EAGAIN && errno != EINTR)
++            n = 0;
++          if (n == 0)
++            {
++              close (in[1]);
++              in[1] = -1;
++            }
++        }
++      if (fds[0].revents == 0)
++        continue;
+       if (i == maxlen)
+         {
+           maxlen += 4096;
+@@ -2735,6 +2762,13 @@
+     }
+   amk_queue_apply (queue);
+   close (out[0]);
++  if (in[1] >= 0)
++    {
++      close (in[1]);
++      in[1] = -1;
++    }
++  if (input != NULL && strlen (input) > 0)
++    signal (SIGPIPE, pipe_handler);
+   waitpid (pid, &st, 0);
+   shell_completed (WIFEXITED (st) ? WEXITSTATUS (st) : 127, WIFSIGNALED (st) ? WTERMSIG (st) : 0);
+ 

@@ -1,0 +1,242 @@
+An imported target runs as a fork of make, with no exec: the rule on its value file
+records its engine and the variable that holds its program, and the job launcher forks
+for such a rule where it would spawn a command. The child is the parsed image, so the
+guest handle reads make state there; it expands the program for its target, runs the
+engine's main over it with standard output on the value file, and leaves with the
+engine's status. Handle writes end with the job, and a build the child starts keeps
+the one slot and no jobserver that a spawned goal list has. The program crosses no
+exec, so an imported target no longer uses job.stdin, which stays for ordinary recipes.
+The rules are entered by the import routine itself, and the routine that finds the
+goals a body references is named for that.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -48,10 +48,11 @@
+ char *amk_func_dedent (char *o, char **argv, const char *funcname);
+ char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
+ char *amk_dedent (const char *text, size_t *basep, int *badp);
+-char *amk_cell_text (const char *name, const char *engine, const char *body);
+ void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
+ struct child;
+ struct amk_engine;
++void amk_fork_settle (void);
++void amk_engine_program (const struct amk_engine *e, const char *program);
+ char *amk_func_job_stdin (char *o, char **argv, const char *funcname);
+ void amk_job_stdin_pending (struct child *child);
+ int amk_job_stdin_fd (const void *child);
+--- a/src/filedef.h
++++ b/src/filedef.h
+@@ -113,6 +113,9 @@
+                                     --shuffle passes through the graph.  */
+     unsigned int snapped:1;     /* True if the deps of this file have been
+                                    secondary expanded.  */
++    /* An imported target's engine and the variable that holds its program; null for every other file.  */
++    const struct amk_engine *amk_engine;
++    const char *amk_program;
+   };
+
+
+--- a/src/read.c
++++ b/src/read.c
+@@ -3607,20 +3607,6 @@
+
+   *stringp = p;
+   return new;
+-}
+-
+-/* The rules behind an imported target: the value file and the phony target of the name, entered as rules, never the default goal.  */
+-void
+-amk_import_target (const char *name, const char *engine, const char *body,
+-                   const floc *flocp)
+-{
+-  int no_goal_yet = default_goal_var->value[0] == '\0';
+-  char *text = amk_cell_text (name, engine, body);
+-
+-  eval_buffer (text, flocp);
+-  free (text);
+-  if (no_goal_yet)
+-    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
+ }
+
+ /* The value directory as a makefile spells it, expanded when a rule is read, so a makefile sets goal.dir before its first define.  */
+@@ -3628,7 +3614,7 @@
+
+ /* Every goal the body references through the goal function, as its value file, space separated and allocated.  */
+ static char *
+-amk_cell_deps (const char *body)
++amk_goal_refs (const char *body)
+ {
+   char *deps = xstrdup ("");
+   const char *p = body;
+@@ -3655,25 +3641,41 @@
+   return deps;
+ }
+
+-/* The rules behind a define for an engine: once, the directory and the pattern that copies a plain file into it; then the value file, rebuilt when a value the body reads is newer, and the phony target of the define's name that prints it. The program is expanded while the recipe is, so its value references resolve in this process, and it reaches the engine on the job's standard input, so cells overlap under -j and a program has no size limit.  */
+-char *
+-amk_cell_text (const char *name, const char *engine, const char *body)
++/* The rules behind an imported target, never the default goal: once, the directory and the pattern that copies a plain file into it; then the value file, rebuilt when a value the body reads is newer, and the phony target of the name that prints it. The value file's rule records its engine and its program, and the job launcher runs that in a fork of make, so the recipe line only names them.  */
++void
++amk_import_target (const char *name, const char *engine, const char *body,
++                   const floc *flocp)
+ {
+   static int prepared;
+   static const char preamble[] = "$(shell mkdir -p %s)\n%s/%%: %%; @$(file >$@,$(file <$<))\n";
+-  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(job.stdin ${%s})$(MAKE) --%s %s >$@\n";
+-  const char *program = strcmp (engine, "awk") == 0 ? "-f -" : strcmp (engine, "jq") == 0 ? "-n -f /dev/stdin" : "-";
+-  char *deps = amk_cell_deps (body);
+-  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + strlen (deps) + 24;
++  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @: %s %s\n";
++  int no_goal_yet = default_goal_var->value[0] == '\0';
++  char *refs = amk_goal_refs (body);
++  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + strlen (refs) + 24;
+   char *text = xmalloc (len);
+   char *p = text;
++  char *path;
++  struct file *f;
+
+   if (!prepared)
+     {
+       p += sprintf (p, preamble, amk_goal_dir, amk_goal_dir);
+       prepared = 1;
+     }
+-  sprintf (p, shape, name, name, amk_goal_dir, name, amk_goal_dir, name, deps, name, engine, program);
+-  free (deps);
+-  return text;
++  sprintf (p, shape, name, name, amk_goal_dir, name, amk_goal_dir, name, refs, engine, name);
++  free (refs);
++  eval_buffer (text, flocp);
++
++  sprintf (text, "%s/%s", amk_goal_dir, name);
++  path = allocated_variable_expand (text);
++  free (text);
++  f = lookup_file (path);
++  if (f == NULL)
++    OS (fatal, flocp, _("%s: the imported target left no rule"), path);
++  free (path);
++  f->amk_engine = amk_engine_by_name (engine);
++  f->amk_program = strcache_add (name);
++
++  if (no_goal_yet)
++    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
+ }
+--- a/src/function.c
++++ b/src/function.c
+@@ -2820,6 +2820,31 @@
+   return o;
+ }
+
++/* An imported target's job, inside its fork: the engine's main over the program as the builtin would pass it, jq with the null input it needs to run without data; handle writes have no queue, so they end with the job.  */
++void
++amk_engine_program (const struct amk_engine *e, const char *program)
++{
++  char *av[64];
++  char *args = NULL;
++  int ac = 1;
++  av[0] = (char *) e->name;
++  if (strcmp (e->name, "jq") == 0)
++    av[ac++] = (char *) "-n";
++  if (e->dashdash)
++    av[ac++] = (char *) "--";
++  if (e->cmdline)
++    {
++      args = xstrdup (program);
++      ac += amk_split_argv (args, av + ac, 62 - ac);
++    }
++  else
++    av[ac++] = (char *) program;
++  av[ac] = NULL;
++  amk_queue_fd = -1;
++  optind = 0;
++  amk_exit (e->main (ac, av));
++}
++
+ /* The expansion being built, as a sink: what an engine writes lands in make's own buffer at the call's place, with no copy between.  */
+ extern char *variable_buffer;
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -5621,7 +5621,14 @@
+   signal (SIGTERM, fatal_error_signal);
+   signal (SIGHUP, fatal_error_signal);
+   signal (SIGQUIT, fatal_error_signal);
+-  /* A job forked from a served request must not answer that request's client; the request does, when its own goals end.  */
++  amk_fork_settle ();
++  die (amk_run_goals (n, words));
++}
++
++/* What a fork of the parsed image drops before it runs anything: the served request's connection, which the request answers when its own goals end, the jobserver, leaving one slot, and every child and mailbox that belongs to the parent.  */
++void
++amk_fork_settle (void) {
++  unsigned int i;
+   if (amk_conn >= 0) {
+     close (amk_conn);
+     amk_conn = -1;
+@@ -5638,7 +5645,6 @@
+       close (amk_mail[i]);
+     amk_mail[i] = 0;
+   }
+-  die (amk_run_goals (n, words));
+ }
+
+ /* A parked child first, then waitpid on the wanted pid, or on each live one in turn when any will do; a stopped job is reported and stays live, and a finished terminal holder gives the terminal back.  */
+--- a/src/job.c
++++ b/src/job.c
+@@ -1146,6 +1146,44 @@
+     }
+
+   free (child->cmd_name);
++}
++
++/* An imported target's job: a fork of make with no exec, so the engine runs inside the parsed image with the handle live. The child expands the program for its target, runs the engine's main over it with standard output on the value file, and leaves with the engine's status.  */
++static pid_t
++amk_engine_job (struct child *child)
++{
++  struct file *file = child->file;
++  const int fdin = child->good_stdin ? FD_STDIN : get_bad_stdin ();
++  char *ref, *program;
++  pid_t pid;
++  int r;
++
++  pid = fork ();
++  if (pid != 0)
++    return pid;
++
++  unblock_all_sigs ();
++  signal (SIGINT, SIG_DFL);
++  signal (SIGTERM, SIG_DFL);
++  signal (SIGHUP, SIG_DFL);
++  signal (SIGQUIT, SIG_DFL);
++  if (fdin >= 0 && fdin != FD_STDIN)
++    EINTRLOOP (r, dup2 (fdin, FD_STDIN));
++  if (child->output.syncout && child->output.err >= 0)
++    EINTRLOOP (r, dup2 (child->output.err, FD_STDERR));
++  environ = child->environment;
++  amk_fork_settle ();
++
++  ref = xmalloc (strlen (file->amk_program) + 4);
++  sprintf (ref, "${%s}", file->amk_program);
++  program = allocated_variable_expand_for_file (ref, file);
++  if (freopen (file->name, "w", stdout) == NULL)
++    {
++      fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
++      _exit (127);
++    }
++  amk_engine_program (file->amk_engine, program);
++  _exit (127);
+ }
+
+ static void
+@@ -1497,8 +1535,10 @@
+
+       jobserver_pre_child (ANY_SET (flags, COMMANDS_RECURSE));
+
+-      child->pid = child_execute_job ((struct childbase *)child,
+-                                      child->good_stdin, argv);
++      child->pid = child->file->amk_engine
++        ? amk_engine_job (child)
++        : child_execute_job ((struct childbase *)child,
++                             child->good_stdin, argv);
+
+       jobserver_post_child (ANY_SET (flags, COMMANDS_RECURSE));
+

@@ -23,25 +23,25 @@ from conftest import popen, sh
 NAP = "7.31"
 
 sleeper = "\n".join([
-  "seed := $(lua.persistent)",
+  "seed := $(lua.exec)",
   "sleeper:",
   "\t@sleep %s" % NAP,
   "linger:",
-  "\t@echo spawned $(lua.persistent p = amk.spawn({'sleeper'}))",
+  "\t@echo spawned $(lua.exec p = amk.spawn({'sleeper'}))",
   "\t@sleep 3",
   "leave:",
-  "\t@echo spawned $(lua.persistent p = amk.spawn({'sleeper'}))",
+  "\t@echo spawned $(lua.exec p = amk.spawn({'sleeper'}))",
   "killer:",
-  "\t@echo r=$(lua.persistent p = amk.spawn({'sleeper'}) os.execute('sleep 0.3') amk.kill(p) local r = amk.wait(p) print(r.status .. r.signal))",
+  "\t@echo r=$(lua.exec p = amk.spawn({'sleeper'}) os.execute('sleep 0.3') amk.kill(p) local r = amk.wait(p) print(r.status .. r.signal))",
   "",
 ])
 
 asker = "\n".join([
-  "seed := $(lua.persistent)",
+  "seed := $(lua.exec)",
   "ask:",
   "\t@read x && echo got:$$x",
   "driver:",
-  "\t@true $(lua.persistent p = amk.spawn({'ask'}) local r = amk.wait(p) io.stderr:write('first=' .. r.status .. '\\n') amk.foreground(p) r = amk.wait(p) io.stderr:write('then=' .. r.status .. '\\n'))",
+  "\t@true $(lua.exec p = amk.spawn({'ask'}) local r = amk.wait(p) io.stderr:write('first=' .. r.status .. '\\n') amk.foreground(p) r = amk.wait(p) io.stderr:write('then=' .. r.status .. '\\n'))",
   "",
 ])
 

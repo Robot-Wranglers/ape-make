@@ -1,0 +1,199 @@
+The guest handle's make side: four calls a guest binds the same way in every language.
+amk_var_get answers a name with its expanded value, allocated, or null when no such
+variable exists, which expansion alone cannot say; amk_has_db says whether make has built
+its tables yet, false under an engine flag; amk_var_set defines a simple variable with
+the literal value; amk_eval reads text as makefile syntax. gmk_expand from make's own
+load api, compiled whether or not load is enabled, is the read for everything else.
+
+A write from a forked one-shot guest would die with the child, so the child writes each
+one as a record to a temp file the parent opened before the fork, and the parent applies
+the records, in order, once the child's output is in. In this process, a write applies at
+once. The queue is a file and not a pipe so a guest that writes more than a pipe holds
+cannot block against a parent still reading its output.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -33,6 +33,13 @@
+ void amk_reap_foreign (pid_t pid, int code, int sig);
+ int amk_mail_take (pid_t pid, char **buf, size_t *len);
+ int amk_mail_send (const char *s, size_t n);
++char *amk_var_get (const char *name);
++int amk_has_db (void);
++int amk_function_exists (const char *name);
++void amk_var_set (const char *name, const char *value);
++void amk_eval (const char *text);
++extern int amk_queue_fd;
++void amk_queue_apply (FILE *queue);
+ void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+ void amk_engine_init (void);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2640,6 +2640,7 @@
+             int ac, char **av, const char *input)
+ {
+   int out[2];
++  FILE *queue = tmpfile ();
+   char tmpl[PATH_MAX];
+   const char *tmpdir = getenv ("TMPDIR");
+   int infd = -1;
+@@ -2688,6 +2689,7 @@
+       dup2 (out[1], 1);
+       close (out[0]);
+       close (out[1]);
++      amk_queue_fd = queue ? fileno (queue) : -1;
+       optind = 0;
+       amk_exit (guest_main (ac, av));
+     }
+@@ -2715,6 +2717,7 @@
+         break;
+       i += r;
+     }
++  amk_queue_apply (queue);
+   close (out[0]);
+   waitpid (pid, &st, 0);
+   shell_completed (WIFEXITED (st) ? WEXITSTATUS (st) : 127, WIFSIGNALED (st) ? WTERMSIG (st) : 0);
+@@ -3266,3 +3269,143 @@
+              FUNCTION_TABLE_ENTRIES, sizeof (struct function_table_entry));
+   amk_load_engine_functions ();
+ }
++
++/* Whether a make function of that name exists, builtin or added, so a guest can refuse to replace one: the table's insert would free the old entry, and a builtin's is static.  */
++int
++amk_function_exists (const char *name)
++{
++  return lookup_function (name) != NULL;
++}
++
++/* Inside a forked guest, the queue file every write goes to as a record; anywhere else, none, and a write applies at once.  */
++int amk_queue_fd = -1;
++
++/* Whether make has built its variable tables: not yet under an engine flag, where the guest runs before any makefile.  */
++int
++amk_has_db (void)
++{
++  return current_variable_set_list != NULL && current_variable_set_list->set->table.ht_vec != NULL;
++}
++
++/* The value a guest reads through its variable proxy: expanded the way a reference would be, and null rather than empty for a name make has never seen.  */
++char *
++amk_var_get (const char *name)
++{
++  struct variable *v;
++  if (!amk_has_db ())
++    return NULL;
++  v = lookup_variable (name, strlen (name));
++  if (v == NULL)
++    return NULL;
++  return recursively_expand (v);
++}
++
++static void
++amk_queue_write (int fd, const char *s, size_t n)
++{
++  while (n > 0)
++    {
++      ssize_t w = write (fd, s, n);
++      if (w < 0 && errno == EINTR)
++        continue;
++      if (w <= 0)
++        return;
++      s += w;
++      n -= w;
++    }
++}
++
++/* One record: the kind, the two lengths, then the two bodies back to back.  */
++static void
++amk_queue_record (char kind, const char *a, const char *b)
++{
++  char head[64];
++  size_t la = strlen (a);
++  size_t lb = b ? strlen (b) : 0;
++  int n = snprintf (head, sizeof head, "%c %lu %lu\n", kind, (unsigned long) la, (unsigned long) lb);
++  amk_queue_write (amk_queue_fd, head, (size_t) n);
++  amk_queue_write (amk_queue_fd, a, la);
++  if (lb > 0)
++    amk_queue_write (amk_queue_fd, b, lb);
++}
++
++/* A simple variable with the literal value, at file origin so an override still wins; queued from a forked guest.  */
++void
++amk_var_set (const char *name, const char *value)
++{
++  if (amk_queue_fd >= 0)
++    {
++      amk_queue_record ('V', name, value);
++      return;
++    }
++  if (!amk_has_db ())
++    return;
++  define_variable_global (name, strlen (name), value, o_file, 0, NILF);
++}
++
++/* Text read as makefile syntax; queued from a forked guest.  */
++void
++amk_eval (const char *text)
++{
++  if (amk_queue_fd >= 0)
++    {
++      amk_queue_record ('E', text, NULL);
++      return;
++    }
++  if (!amk_has_db ())
++    return;
++  gmk_eval (text, NULL);
++}
++
++/* The parent's side of the queue: every record the child left, applied in order, then the file goes.  */
++void
++amk_queue_apply (FILE *queue)
++{
++  char *buf;
++  size_t len = 0, cap = 4096, pos = 0;
++  int fd;
++
++  if (queue == NULL)
++    return;
++  fd = fileno (queue);
++  lseek (fd, 0, SEEK_SET);
++  buf = xmalloc (cap + 1);
++  while (1)
++    {
++      ssize_t r;
++      if (len == cap)
++        {
++          cap += 4096;
++          buf = xrealloc (buf, cap + 1);
++        }
++      r = read (fd, buf + len, cap - len);
++      if (r < 0 && errno == EINTR)
++        continue;
++      if (r <= 0)
++        break;
++      len += r;
++    }
++  fclose (queue);
++  while (pos < len)
++    {
++      char kind;
++      unsigned long la, lb;
++      int used = 0;
++      char *a, *b;
++      if (sscanf (buf + pos, "%c %lu %lu\n%n", &kind, &la, &lb, &used) < 3 || used == 0)
++        break;
++      pos += (size_t) used;
++      if (pos + la + lb > len)
++        break;
++      a = xstrndup (buf + pos, la);
++      b = xstrndup (buf + pos + la, lb);
++      pos += la + lb;
++      if (kind == 'V')
++        amk_var_set (a, b);
++      else if (kind == 'E')
++        amk_eval (a);
++      free (a);
++      free (b);
++    }
++  free (buf);
++}

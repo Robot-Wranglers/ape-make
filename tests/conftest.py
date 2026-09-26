@@ -8,6 +8,7 @@ needs a shell in front on macOS, so every invocation goes through `sh`.
 
 import os
 import shutil
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -30,20 +31,26 @@ def _binary():
   return next((p for p in CANDIDATES if p.exists()), CANDIDATES[0])
 
 
+def _env(env):
+  """The test's environment: the harness's own, minus what a parent make exports, so a run under `make test` sees the same level and flags as one from a shell."""
+  full = dict(os.environ)
+  for name in ("MAKELEVEL", "MAKEFLAGS", "MFLAGS"):
+    full.pop(name, None)
+  full.update(env or {})
+  return full
+
+
 def sh(binary, args, cwd=None, env=None, timeout=300, stdin=None):
   """Run a binary through a shell, which is the only way an ape execs without a loader registered; exec keeps the pid the binary's, since dash on Linux otherwise forks it a child."""
-  full = dict(os.environ)
-  full.update(env or {})
   return subprocess.run(
     ["sh", "-c", 'exec "$0" "$@"', str(binary), *args],
-    capture_output=True, text=True, cwd=cwd, env=full, timeout=timeout, input=stdin,
+    capture_output=True, text=True, cwd=cwd, env=_env(env), timeout=timeout, input=stdin,
   )
 
 
 def popen(binary, args, cwd=None, env=None, **kw):
   """The background form of `sh`, for a zygote or a run that a test will signal."""
-  full = dict(os.environ)
-  full.update(env or {})
+  full = _env(env)
   return subprocess.Popen(["sh", "-c", 'exec "$0" "$@"', str(binary), *args],
                           cwd=cwd, env=full, **kw)
 
@@ -82,6 +89,21 @@ def _needs_engines(request, engines):
     missing = [e for e in marker.args if e not in engines]
     if missing:
       pytest.skip(f"this amk carries no {' '.join(missing)}")
+
+
+@pytest.fixture(autouse=True)
+def _integration_runs_serially(request):
+  """An integration test holds a port or a server for its length, so a parallel worker is refused rather than raced."""
+  if request.node.get_closest_marker("integration") and os.environ.get("PYTEST_XDIST_WORKER"):
+    pytest.fail("integration tests run serially: make test.integration, or pytest -m integration -p no:xdist")
+
+
+@pytest.fixture
+def free_port():
+  """A TCP port on the loopback that nothing holds at the moment it is chosen."""
+  with socket.socket() as s:
+    s.bind(("127.0.0.1", 0))
+    return s.getsockname()[1]
 
 
 def _run_dirs():

@@ -1,0 +1,142 @@
+Star arguments: every argument of a star builtin may name a variable. One that does is
+replaced by that variable's unexpanded value, dedented; one that does not passes as
+written, so $(lua* lua.count, words) reads both defines and $(jq.argv* -r, prog, doc)
+keeps -r. The argv forms gain twins, and amk.dedent* follows the same rule. A one-argument
+import target star still takes its name and body from the one variable.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -3022,42 +3022,69 @@
+   return o;
+ }
+
+-/* A star builtin: the builtin named without the star, handed the dedented unexpanded value of the variable the first argument names.  */
++/* One star argument: the dedented unexpanded value of the variable it names, or null when it names none and passes as written.  */
+ static char *
+-func_star (char *o, char **argv, const char *funcname)
++star_arg (const char *funcname, const char *arg, char **namep)
+ {
+-  char *base = xstrndup (funcname, strlen (funcname) - 1);
+-  const struct function_table_entry *f = lookup_function (base);
+-  char *name = argv[0];
+-  char *end = name + strlen (name);
++  const char *start = arg;
++  const char *end = arg + strlen (arg);
+   struct variable *v;
+-  char *text, *args[3];
++  char *name, *text;
+   size_t width;
+   int bad;
+
+-  while (ISSPACE (*name))
+-    name++;
+-  while (end > name && ISSPACE (end[-1]))
+-    *--end = '\0';
+-  v = lookup_variable (name, strlen (name));
++  while (ISSPACE (*start))
++    start++;
++  while (end > start && ISSPACE (end[-1]))
++    end--;
++  if (end == start)
++    return NULL;
++  v = lookup_variable (start, end - start);
+   if (v == NULL)
+-    OSS (fatal, reading_file, _("%s: no variable named '%s'"), funcname, name);
++    return NULL;
++  name = xstrndup (start, end - start);
+   text = amk_dedent (v->value, &width, &bad);
+   if (bad)
+     fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
+-  if (strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
++  if (namep)
++    *namep = name;
++  else
++    free (name);
++  return text;
++}
++
++/* A star builtin: the builtin named without the star, each argument that names a variable replaced by that variable's value and any other passed as written.  */
++static char *
++func_star (char *o, char **argv, const char *funcname)
++{
++  char *base = xstrndup (funcname, strlen (funcname) - 1);
++  const struct function_table_entry *f = lookup_function (base);
++  char *args[4], *held[4], *name = NULL;
++  int i, n;
++
++  for (n = 0; n < 3 && argv[n] != NULL; ++n)
++    held[n] = NULL;
++  /* An import target named by one variable takes that name and that body.  */
++  if (n == 1 && strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0
++      && (held[0] = star_arg (funcname, argv[0], &name)) != NULL)
+     {
+       args[0] = name;
+-      args[1] = text;
++      args[1] = held[0];
++      args[2] = NULL;
+     }
+   else
+     {
+-      args[0] = text;
+-      args[1] = argv[1];
+-    }
+-  args[2] = NULL;
++      for (i = 0; i < n; ++i)
++        {
++          held[i] = star_arg (funcname, argv[i], NULL);
++          args[i] = held[i] ? held[i] : argv[i];
++        }
++      args[n] = NULL;
++    }
+   o = f->fptr.func_ptr (o, args, f->name);
+-  free (text);
++  for (i = 0; i < n; ++i)
++    free (held[i]);
++  free (name);
+   free (base);
+   return o;
+ }
+@@ -3127,7 +3154,7 @@
+   FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
+   FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
+   FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
+-  FT_ENTRY ("amk.dedent*",   0,  1,  1,  amk_func_val_dedent),
++  FT_ENTRY ("amk.dedent*",   1,  1,  1,  func_star),
+   FT_ENTRY ("amk.fxns?",     0,  1,  1,  func_bindings),
+   FT_ENTRY ("amk.vars?",     0,  1,  1,  func_bindings),
+   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+@@ -3510,22 +3537,21 @@
+         hash_insert (&function_table, f++);
+       }
+     }
+-  /* Every builtin but an argv form gets a star twin that takes a variable's name.  */
++  /* Every builtin gets a star twin whose arguments may name variables.  */
+   {
+     struct function_table_entry *end = f, *g;
+     for (g = amk_function_entries; g < end; ++g)
+-      if (g->len < 5 || memcmp (g->name + g->len - 5, ".argv", 5) != 0)
+-        {
+-          char *name = xmalloc (g->len + 2);
+-          sprintf (name, "%s*", g->name);
+-          f->fptr.func_ptr = func_star;
+-          f->name = name;
+-          f->len = g->len + 1;
+-          f->minimum_args = 1;
+-          f->maximum_args = 2;
+-          f->expand_args = 1;
+-          hash_insert (&function_table, f++);
+-        }
++      {
++        char *name = xmalloc (g->len + 2);
++        sprintf (name, "%s*", g->name);
++        f->fptr.func_ptr = func_star;
++        f->name = name;
++        f->len = g->len + 1;
++        f->minimum_args = 1;
++        f->maximum_args = g->maximum_args;
++        f->expand_args = 1;
++        hash_insert (&function_table, f++);
++      }
+   }
+ }
+

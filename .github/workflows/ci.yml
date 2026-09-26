@@ -1,0 +1,19 @@
+# Every push and pull request to main: build once, then test the binaries that build kept.
+name: CI
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ "main" ]
+    paths-ignore: ['**.md', '**.png', '**.svg']
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore: ['**.md', '**.png', '**.svg']
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  test:
+    needs: build
+    uses: ./.github/workflows/test.yml

@@ -1,0 +1,243 @@
+Import target and the at line: $(<name>.import.target target,program) stores the program
+as the variable target and enters the rules behind it, the cached value file and the
+phony target of the name that prints it, as define.<name> did; its star form takes the
+variable's name, dedents its value, and passes both. The one grammar amk adds is the at
+line: an at sign and the name of a builtin with a star twin, alone at the start of a
+line with optional arguments after it, applies that twin to the define that follows, as
+if $(<builtin>* name,args) were written after its endef with its result discarded. A
+line like that with no define after it is fatal; an at line that names no such builtin
+is left to make as before. define.<name> is gone, and its rules are entered through the
+same routine the builtin uses.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -50,4 +50,5 @@
+ char *amk_dedent (const char *text, size_t *basep, int *badp);
+ char *amk_cell_text (const char *name, const char *engine, const char *body);
++void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
+ struct child;
+ struct amk_engine;
+--- a/src/read.c
++++ b/src/read.c
+@@ -67,10 +67,6 @@
+     unsigned int override_v:1;
+     unsigned int private_v:1;
+     enum variable_export export_v ENUM_BITFIELD (2);
+-    /* A define.<engine> names the row the body is written for; the word is kept so an unknown one can be reported where it stands.  */
+-    const struct amk_engine *engine_v;
+-    const char *engine_word;
+-    size_t engine_wlen;
+   };
+
+ /* Types of "words" that can be read in a makefile.  */
+@@ -149,7 +145,4 @@
+ static struct variable *do_define (char *name, enum variable_origin origin,
+                                    struct ebuffer *ebuf);
+-static void define_engine_target (const struct variable *v,
+-                                  const struct vmodifiers *vmod,
+-                                  const floc *flocp);
+ static int conditional_line (char *line, size_t len, const floc *flocp);
+ static void check_specials (struct nameseq *filep, int set_default);
+@@ -555,18 +548,4 @@
+           break;
+         }
+-      else if (!targvar && wlen > 7 && memcmp (p, "define.", 7) == 0)
+-        {
+-          /* A define for an engine: the body is that engine's program, and the name becomes a target that runs it.  */
+-          const struct amk_engine *e;
+-          for (e = amk_engines; e->name; ++e)
+-            if (strlen (e->name) == wlen - 7 && memcmp (e->name, p + 7, wlen - 7) == 0)
+-              break;
+-          vmod->define_v = 1;
+-          vmod->engine_v = e->name ? e : NULL;
+-          vmod->engine_word = p;
+-          vmod->engine_wlen = wlen;
+-          p = next_token (p2);
+-          break;
+-        }
+       else if (!targvar && word1eq ("undefine"))
+         {
+@@ -617,4 +596,6 @@
+   floc *fstart;
+   floc fi;
++  char *at_fn = NULL, *at_rest = NULL;
++  floc at_floc;
+
+ #define record_waiting_files()                                                \
+@@ -751,8 +732,41 @@
+       p = collapsed;
+       NEXT_TOKEN (p);
++
++      /* An at sign and the name of a builtin with a star twin apply that twin to the define that follows, as if called after its endef.  */
++      if (!ignoring && line[0] == '@')
++        {
++          char *n = p + 1;
++          size_t nlen = 0;
++          while (STOP_SET (n[nlen], MAP_USERFUNC))
++            nlen++;
++          if (nlen > 0 && (n[nlen] == '\0' || ISBLANK (n[nlen])))
++            {
++              char *star = xmalloc (nlen + 2);
++              memcpy (star, n, nlen);
++              strcpy (star + nlen, "*");
++              if (amk_function_exists (star))
++                {
++                  char *rest = n + nlen, *end;
++                  if (at_fn)
++                    OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
++                  NEXT_TOKEN (rest);
++                  end = rest + strlen (rest);
++                  while (end > rest && ISSPACE (end[-1]))
++                    *--end = '\0';
++                  at_fn = xstrndup (n, nlen);
++                  at_rest = xstrdup (rest);
++                  at_floc = *fstart;
++                  free (star);
++                  continue;
++                }
++              free (star);
++            }
++        }
+
+       /* See if this is a variable assignment.  We need to do this early, to
+          allow variables with names like 'ifdef', 'export', 'private', etc.  */
+       p = parse_var_assignment (p, 0, &vmod);
++      if (at_fn && !ignoring && !vmod.define_v && *p != '\0')
++        OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
+       if (vmod.assign_v)
+         {
+@@ -779,6 +793,14 @@
+             {
+               v = do_define (p, origin, ebuf);
+-              if (vmod.engine_word)
+-                define_engine_target (v, &vmod, fstart);
++              if (at_fn)
++                {
++                  char *call = xmalloc (strlen (at_fn) + strlen (v->name) + strlen (at_rest) + 16);
++                  sprintf (call, "$(if $(%s* %s%s%s),)", at_fn, v->name, *at_rest ? "," : "", at_rest);
++                  eval_buffer (call, &at_floc);
++                  free (call);
++                  free (at_fn);
++                  free (at_rest);
++                  at_fn = at_rest = NULL;
++                }
+             }
+           else
+@@ -1384,4 +1406,6 @@
+   if (conditionals->if_cmds)
+     O (fatal, fstart, _("missing 'endif'"));
++  if (at_fn)
++    OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
+
+   /* At eof, record the last rule.  */
+@@ -3586,36 +3610,17 @@
+ }
+
+-/* The target behind a define for an engine: phony, named as the variable, with a recipe that hands the body to the engine's builtin and prints what comes back.  */
+-static void
+-define_engine_target (const struct variable *v, const struct vmodifiers *vmod,
+-                      const floc *flocp)
+-{
+-  const char *engine;
+-  char *text;
+-  char *body;
+-  size_t base;
+-  int bad;
+-  int no_goal_yet = default_goal_var->value[0] == '\0';
+-
+-  if (vmod->engine_v == NULL)
+-    {
+-      char *word = xstrndup (vmod->engine_word, vmod->engine_wlen);
+-      OS (fatal, flocp, _("'%s' names no engine in this build"), word);
+-    }
+-
+-  engine = vmod->engine_v->name;
+-  body = amk_dedent (v->value, &base, &bad);
+-  if (bad)
+-    fatal (flocp, strlen (engine) + strlen (v->name) + INTSTR_LENGTH, _("define.%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), engine, v->name, (int) base);
+-  free (v->value);
+-  ((struct variable *) v)->value = body;
+-  text = amk_cell_text (v->name, engine, v->value);
+-  eval_buffer (text, flocp);
+-  free (text);
+-
+-  /* A define is not a rule, so it does not take the default goal the way the first rule would.  */
+-  if (no_goal_yet)
+-    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
+-}
++/* The rules behind an imported target: the value file and the phony target of the name, entered as rules, never the default goal.  */
++void
++amk_import_target (const char *name, const char *engine, const char *body,
++                   const floc *flocp)
++{
++  int no_goal_yet = default_goal_var->value[0] == '\0';
++  char *text = amk_cell_text (name, engine, body);
++
++  eval_buffer (text, flocp);
++  free (text);
++  if (no_goal_yet)
++    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
++}
+
+ /* The value directory as a makefile spells it, expanded when a rule is read, so a makefile sets goal.dir before its first define.  */
+--- a/src/function.c
++++ b/src/function.c
+@@ -2904,12 +2904,40 @@
+   if (bad)
+     fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
+-  args[0] = text;
+-  args[1] = argv[1];
++  if (strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
++    {
++      args[0] = name;
++      args[1] = text;
++    }
++  else
++    {
++      args[0] = text;
++      args[1] = argv[1];
++    }
+   args[2] = NULL;
+   o = f->fptr.func_ptr (o, args, f->name);
+   free (text);
+   free (base);
+   return o;
+ }
++
++/* $(name.import.target target,program): the program stored as the variable target, and the rules that run it into a cached value and print it under the target's name.  */
++static char *
++func_import_target (char *o, char **argv, const char *funcname)
++{
++  const struct amk_engine *e = amk_engine_by_name (funcname);
++  char *name = argv[0];
++  char *end = name + strlen (name);
++  const char *body = argv[1] != NULL ? argv[1] : "";
++
++  while (ISSPACE (*name))
++    name++;
++  while (end > name && ISSPACE (end[-1]))
++    *--end = '\0';
++  if (*name == '\0')
++    OS (fatal, reading_file, _("%s: no target named"), funcname);
++  define_variable_global (name, strlen (name), body, o_file, 1, reading_file);
++  amk_import_target (name, e->name, body, reading_file);
++  return o;
++}
+
+ #define FT_ENTRY(_name, _min, _max, _exp, _func) \
+@@ -3325,4 +3353,15 @@
+           hash_insert (&function_table, f++);
+         }
++      {
++        char *name = xmalloc (strlen (e->name) + 15);
++        sprintf (name, "%s.import.target", e->name);
++        f->fptr.func_ptr = func_import_target;
++        f->name = name;
++        f->len = strlen (name);
++        f->minimum_args = 1;
++        f->maximum_args = 2;
++        f->expand_args = 1;
++        hash_insert (&function_table, f++);
++      }
+     }
+   /* Every builtin but an argv form gets a star twin that takes a variable's name.  */

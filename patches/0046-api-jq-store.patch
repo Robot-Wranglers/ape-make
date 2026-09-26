@@ -1,0 +1,30 @@
+jq store: a persist entry on the jq row. The state is a store, a map from name to JSON
+value, and a call is one line: an operation, a name, and a jq program run over that value
+through libjq in this process, with no fork. get emits every output, update keeps the
+first and emits the rest, load reads a file or the call's input, and dump prints the
+value. Programs compile once per text and set of bound names. The entry lives in
+guest/jq_main.c and is compiled beside jq's own objects, so the row here is the whole
+change to make. The namespace patch later in the series moves the store into make's
+table of states, one JSON value per name, and the request line's parsing into make.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -63,6 +63,7 @@
+
+ extern int gawk_main (int argc, char **argv);
+ extern int jq_main (int argc, char **argv);
++extern int jq_persist_main (struct amk_sink *out, int argc, char **argv);
+ extern int lua_run_main (int argc, char **argv);
+ extern int lua_persist_main (struct amk_sink *out, int argc, char **argv);
+ extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2497,7 +2497,7 @@
+     { "awk", "awk gawk", gawk_main, 1, 0, 1 },
+ #endif
+ #ifdef AMK_ENGINE_JQ
+-    { "jq", "jq", jq_main, 0, 0, 1 },
++    { "jq", "jq", jq_main, 0, 0, 1, jq_persist_main },
+ #endif
+ #ifdef AMK_ENGINE_LUA
+     { "lua", 0, lua_run_main, 0, 0, 0, lua_persist_main, lua_hook_main },

@@ -1,10 +1,11 @@
-Persistent state: a row may carry a persist entry beside its main. Where main runs in a
-forked child with a fresh state every call, persist runs in this process against one
-state kept for its life, so what one $(name.persistent) call leaves behind the next
-finds. The result is what the entry writes to the stream it is given, trimmed the way
-every builtin's output is, and its return is the status. A zygote's fork carries the
-state, so each request starts from what the parse left. Lua takes the entry here; the
-row field is null for an engine without one, and no builtin is registered for it.
+Kept state: a row may carry an entry beside its main that runs in this process against
+a state kept for the process's life, where main runs in a forked child with a fresh state
+every call, so what one call leaves behind the next finds. The result is what the entry
+writes to the stream it is given, trimmed the way every builtin's output is, and its
+return is the status. A zygote's fork carries the state, so each request starts from what
+the parse left. Lua takes the entry here; the row field is null for an engine without one,
+and no builtin is registered for it. The namespace patch later in the series replaces the
+single entry with open and run primitives and registers the operations over them.
 
 --- a/src/amk.h
 +++ b/src/amk.h
@@ -49,7 +50,7 @@ row field is null for an engine without one, and no builtin is registered for it
    return o;
  }
  
-+/* $(name.persistent program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
++/* $(name.exec program[,input]): the row's persist entry in this process, no fork, so what one call leaves in the engine's state the next call finds. */
 +static char *
 +func_persistent (char *o, char **argv, const char *funcname)
 +{
@@ -105,8 +106,8 @@ row field is null for an engine without one, and no builtin is registered for it
 +        }
 +      if (e->persist)
 +        {
-+          char *name = xmalloc (strlen (e->name) + 12);
-+          sprintf (name, "%s.persistent", e->name);
++          char *name = xmalloc (strlen (e->name) + 6);
++          sprintf (name, "%s.exec", e->name);
 +          f->fptr.func_ptr = func_persistent;
 +          f->name = name;
 +          f->len = strlen (name);

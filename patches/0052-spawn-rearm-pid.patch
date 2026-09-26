@@ -1,0 +1,74 @@
+Rearm a spawned job's pid: the names AMK_REARM_PID lists took a served child's
+own pid, so a makefile that recorded its process at parse answered for the
+child; a job spawned from the parsed image kept the parent's, so every hop of a
+loop reported one pid. The spawn now rearms them the same way, from the variable
+the served request imported, and both define in the global set so a job forked
+while a recipe expands reads its own from every target.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -5294,7 +5294,27 @@
+   }
+   return 1;
+ }
++
++/* The names AMK_REARM_PID lists take this process's pid, in the global set so
++   every target of a child forked while a recipe expands reads its own.  */
++static void
++amk_rearm_pid (const char *names) {
++  char pid[32];
++  const char *q = names;
+
++  sprintf (pid, "%d", (int) getpid ());
++  while (*q != '\0') {
++    size_t n;
++
++    q += strspn (q, " \t");
++    n = strcspn (q, " \t");
++    if (n == 0)
++      break;
++    define_variable_global (q, n, pid, o_override, 0, NILF);
++    q += n;
++  }
++}
++
+ /* Adopt the request and run it in this process.  Never returns.  */
+
+ static void amk_dispatch (int conn) NORETURN;
+@@ -5371,22 +5391,8 @@
+
+     /* A name whose value is this process rather than the caller's: only the
+        child knows it, so it is set here rather than promoted from the request.  */
+-    if (aspid != 0) {
+-      char pid[32];
+-      const char *q = aspid;
+-
+-      sprintf (pid, "%d", (int) getpid ());
+-      while (*q != '\0') {
+-        size_t n;
+-
+-        q += strspn (q, " \t");
+-        n = strcspn (q, " \t");
+-        if (n == 0)
+-          break;
+-        define_variable (q, n, pid, o_override, 0);
+-        q += n;
+-      }
+-    }
++    if (aspid != 0)
++      amk_rearm_pid (aspid);
+     free (rearm);
+     free (aspid);
+   }
+@@ -6180,6 +6186,11 @@
+     amk_conn = -1;
+   }
+   amk_child = 1;
++  {
++    struct variable *aspid = lookup_variable (STRING_SIZE_TUPLE ("AMK_REARM_PID"));
++    if (aspid != 0 && aspid->value[0] != '\0')
++      amk_rearm_pid (aspid->value);
++  }
+   job_slots = 1;
+   jobserver_auth = NULL;
+   jobserver_clear ();

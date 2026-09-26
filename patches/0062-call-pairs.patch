@@ -1,0 +1,1016 @@
+Call pairs: every recipe child gets its own request and reply pair at spawn, dup'd onto the
+descriptors AMK_CALL and AMK_REPLY already name, served while make waits for children or for
+a jobserver token, and dropped with the child, so concurrent callers never read each other's
+replies and a request left unread dies with its recipe. A forked guest's and a deferred
+call's variable writes ride a pipe that one collector reads beside the child's output,
+applying whole records as they arrive, and a printed goal's value comes up the job's mail.
+The tagged reply FIFOs, their directory under TMPDIR, the temp file queues, and amk_mkfifo
+are gone: nothing amk makes under TMPDIR but the serve socket.
+
+diff --git a/src/amk.h b/src/amk.h
+index 76f3b04..f0ec822 100644
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -5,6 +5,7 @@
+ 
+ #include <stdio.h>
+ #include <sys/types.h>
++#include <sys/select.h>
+ 
+ /* The payload member make reads before any makefile.  */
+ #define AMK_PRELUDE_MK "/zip/__init__.mk"
+@@ -29,6 +30,7 @@ struct amk_event_info
+ extern const char *const amk_event_names[];
+ /* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
+ pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
++void amk_spawn_stdout_to_mail (void);
+ int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
+ int amk_kill_child (pid_t pid, int sig);
+ int amk_foreground (pid_t pid);
+@@ -45,7 +47,7 @@ int amk_function_exists (const char *name);
+ void amk_var_set (const char *name, const char *value);
+ void amk_eval (const char *text);
+ extern int amk_queue_fd;
+-void amk_queue_apply (FILE *queue);
++char *amk_collect (int *out, size_t *outlen, int *q, int *in, const char *feed, size_t feedlen);
+ char *amk_func_goal (char *o, char **argv, const char *funcname);
+ char *amk_func_require (char *o, char **argv, const char *funcname);
+ char *amk_func_dedent (char *o, char **argv, const char *funcname);
+@@ -69,10 +71,18 @@ void amk_default_goal_settle (void);
+ 
+ /* The call channel: recipes and jobs ask the store engine's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a store. */
+ #define AMK_STORE_ENGINE "jq"
++struct amk_chan { int req; int rep; char *buf; size_t len; };
+ void amk_call_init (void);
+ void amk_call_dispatch (void);
+-void amk_call_cleanup (void);
+ void amk_call_wait (int ms);
++/* Any other wait that blocks while children run adds the channel descriptors to its set and serves the ready ones after. */
++int amk_call_fdset (fd_set *rd);
++void amk_call_ready (fd_set *rd);
++/* A recipe child's own pair: made before the spawn, its ends dup'd onto the named descriptors in the child, this side served while make waits, and dropped with the child. */
++void amk_call_child_pending (void);
++int amk_call_child_fds (int *req, int *rep, int *req_at, int *rep_at);
++void amk_call_child_spawned (struct child *child);
++void amk_call_child_drop (struct child *child);
+ pid_t amk_wait_any (int *status);
+ int amk_call_forwarding (void);
+ 
+diff --git a/src/function.c b/src/function.c
+index 72d4918..22fc787 100644
+--- a/src/function.c
++++ b/src/function.c
+@@ -2657,17 +2657,16 @@ static char *
+ func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
+             int ac, char **av, const char *input)
+ {
+-  int out[2], in[2] = { -1, -1 };
+-  FILE *queue = tmpfile ();
++  int out[2], in[2] = { -1, -1 }, q[2] = { -1, -1 };
+   const char *s = input;
+   size_t n = input != NULL ? strlen (input) : 0;
+   void (*pipe_handler) (int) = SIG_DFL;
+   pid_t pid;
+   char *buffer;
+-  size_t maxlen = 4096, i = 0;
++  size_t i = 0;
+   int st = 0;
+ 
+-  if (pipe (out) < 0 || (n > 0 && pipe (in) < 0))
++  if (pipe (out) < 0 || pipe (q) < 0 || (n > 0 && pipe (in) < 0))
+     OSS (fatal, NILF, _("$(%s ...): pipe: %s"), funcname, strerror (errno));
+ 
+   fflush (stdout);
+@@ -2692,12 +2691,14 @@ func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
+       dup2 (out[1], 1);
+       close (out[0]);
+       close (out[1]);
+-      amk_queue_fd = queue ? fileno (queue) : -1;
++      close (q[0]);
++      amk_queue_fd = q[1];
+       optind = 0;
+       amk_exit (guest_main (ac, av));
+     }
+ 
+   close (out[1]);
++  close (q[1]);
+   if (in[0] >= 0)
+     close (in[0]);
+   /* A guest that stops reading early answers the next write with EPIPE, which must not end make; the feed just ends.  */
+@@ -2707,66 +2708,7 @@ func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
+       pipe_handler = signal (SIGPIPE, SIG_IGN);
+     }
+ 
+-  buffer = xmalloc (maxlen + 1);
+-  while (1)
+-    {
+-      struct pollfd fds[2];
+-      int nfds = 1;
+-      ssize_t r;
+-
+-      fds[0].fd = out[0];
+-      fds[0].events = POLLIN;
+-      fds[0].revents = 0;
+-      if (in[1] >= 0)
+-        {
+-          fds[1].fd = in[1];
+-          fds[1].events = POLLOUT;
+-          fds[1].revents = 0;
+-          nfds = 2;
+-        }
+-      if (poll (fds, nfds, -1) < 0)
+-        {
+-          if (errno == EINTR)
+-            continue;
+-          break;
+-        }
+-      if (nfds == 2 && fds[1].revents != 0)
+-        {
+-          ssize_t w = write (in[1], s, n);
+-          if (w > 0)
+-            {
+-              s += w;
+-              n -= w;
+-            }
+-          else if (w < 0 && errno != EAGAIN && errno != EINTR)
+-            n = 0;
+-          if (n == 0)
+-            {
+-              close (in[1]);
+-              in[1] = -1;
+-            }
+-        }
+-      if (fds[0].revents == 0)
+-        continue;
+-      if (i == maxlen)
+-        {
+-          maxlen += 4096;
+-          buffer = xrealloc (buffer, maxlen + 1);
+-        }
+-      r = read (out[0], buffer + i, maxlen - i);
+-      if (r < 0 && errno == EINTR)
+-        continue;
+-      if (r <= 0)
+-        break;
+-      i += r;
+-    }
+-  amk_queue_apply (queue);
+-  close (out[0]);
+-  if (in[1] >= 0)
+-    {
+-      close (in[1]);
+-      in[1] = -1;
+-    }
++  buffer = amk_collect (&out[0], &i, &q[0], &in[1], s, n);
+   if (input != NULL && strlen (input) > 0)
+     signal (SIGPIPE, pipe_handler);
+   waitpid (pid, &st, 0);
+@@ -3574,7 +3516,7 @@ amk_function_exists (const char *name)
+   return lookup_function (name) != NULL;
+ }
+ 
+-/* Inside a forked guest, the queue file every write goes to as a record; anywhere else, none, and a write applies at once.  */
++/* Inside a forked guest, the pipe every write goes up as a record; anywhere else, none, and a write applies at once.  */
+ int amk_queue_fd = -1;
+ 
+ /* Whether make has built its variable tables: not yet under an engine flag, where the guest runs before any makefile.  */
+@@ -3750,46 +3692,23 @@ amk_call (const char *name, unsigned int argc, const char **args, const char **e
+   return value;
+ }
+ 
+-/* The parent's side of the queue: every record the child left, applied in order, then the file goes.  */
+-void
+-amk_queue_apply (FILE *queue)
++/* The parent's side of the queue: every whole record in the buffer applied in order, a partial one left for the next read; the bytes consumed are returned.  */
++static size_t
++amk_queue_apply (const char *buf, size_t len)
+ {
+-  char *buf;
+-  size_t len = 0, cap = 4096, pos = 0;
+-  int fd;
+-
+-  if (queue == NULL)
+-    return;
+-  fd = fileno (queue);
+-  lseek (fd, 0, SEEK_SET);
+-  buf = xmalloc (cap + 1);
+-  while (1)
+-    {
+-      ssize_t r;
+-      if (len == cap)
+-        {
+-          cap += 4096;
+-          buf = xrealloc (buf, cap + 1);
+-        }
+-      r = read (fd, buf + len, cap - len);
+-      if (r < 0 && errno == EINTR)
+-        continue;
+-      if (r <= 0)
+-        break;
+-      len += r;
+-    }
+-  fclose (queue);
++  size_t pos = 0;
+   while (pos < len)
+     {
+       char kind;
+       unsigned long la, lb;
+       int used = 0;
+       char *a, *b;
+-      if (sscanf (buf + pos, "%c %lu %lu\n%n", &kind, &la, &lb, &used) < 3 || used == 0)
++      if (memchr (buf + pos, '\n', len - pos) == NULL
++          || sscanf (buf + pos, "%c %lu %lu\n%n", &kind, &la, &lb, &used) < 3 || used == 0)
+         break;
+-      pos += (size_t) used;
+-      if (pos + la + lb > len)
++      if (pos + (size_t) used + la + lb > len)
+         break;
++      pos += (size_t) used;
+       a = xstrndup (buf + pos, la);
+       b = xstrndup (buf + pos + la, lb);
+       pos += la + lb;
+@@ -3800,7 +3719,131 @@ amk_queue_apply (FILE *queue)
+       free (a);
+       free (b);
+     }
+-  free (buf);
++  return pos;
++}
++
++/* The pipe read once it is ready: whole records applied, a partial one kept in the buffer, and the descriptor closed and set to -1 at its end.  */
++static void
++amk_queue_drain (int *fd, char **buf, size_t *len, size_t *cap)
++{
++  ssize_t r;
++  if (*len == *cap)
++    {
++      *cap += 4096;
++      *buf = xrealloc (*buf, *cap + 1);
++    }
++  r = read (*fd, *buf + *len, *cap - *len);
++  if (r > 0)
++    {
++      size_t used;
++      *len += r;
++      (*buf)[*len] = '\0';
++      used = amk_queue_apply (*buf, *len);
++      memmove (*buf, *buf + used, *len - used);
++      *len -= used;
++    }
++  else if (r == 0 || errno != EINTR)
++    {
++      close (*fd);
++      *fd = -1;
++    }
++}
++
++/* A child's output and its writes read until both end: the output into a buffer the caller frees, the writes applied by whole records as they come, and a feed, when one is given, written as the child takes it.  Every descriptor is closed and set to -1.  */
++char *
++amk_collect (int *out, size_t *outlen, int *q, int *in, const char *feed, size_t feedlen)
++{
++  char *buf = xmalloc (4097), *qbuf = NULL;
++  size_t len = 0, cap = 4096, qlen = 0, qcap = 0;
++
++  while (*out >= 0 || *q >= 0)
++    {
++      struct pollfd fds[3];
++      int nfds = 0, iout = -1, iin = -1, iq = -1;
++      ssize_t r;
++
++      if (*out >= 0)
++        {
++          iout = nfds++;
++          fds[iout].fd = *out;
++          fds[iout].events = POLLIN;
++          fds[iout].revents = 0;
++        }
++      if (in != NULL && *in >= 0)
++        {
++          iin = nfds++;
++          fds[iin].fd = *in;
++          fds[iin].events = POLLOUT;
++          fds[iin].revents = 0;
++        }
++      if (*q >= 0)
++        {
++          iq = nfds++;
++          fds[iq].fd = *q;
++          fds[iq].events = POLLIN;
++          fds[iq].revents = 0;
++        }
++      if (poll (fds, nfds, -1) < 0)
++        {
++          if (errno == EINTR)
++            continue;
++          break;
++        }
++      if (iin >= 0 && fds[iin].revents != 0)
++        {
++          ssize_t w = write (*in, feed, feedlen);
++          if (w > 0)
++            {
++              feed += w;
++              feedlen -= w;
++            }
++          else if (w < 0 && errno != EAGAIN && errno != EINTR)
++            feedlen = 0;
++          if (feedlen == 0)
++            {
++              close (*in);
++              *in = -1;
++            }
++        }
++      if (iq >= 0 && fds[iq].revents != 0)
++        amk_queue_drain (q, &qbuf, &qlen, &qcap);
++      if (iout < 0 || fds[iout].revents == 0)
++        continue;
++      if (len == cap)
++        {
++          cap += 4096;
++          buf = xrealloc (buf, cap + 1);
++        }
++      r = read (*out, buf + len, cap - len);
++      if (r < 0 && errno == EINTR)
++        continue;
++      if (r <= 0)
++        {
++          close (*out);
++          *out = -1;
++          continue;
++        }
++      len += r;
++    }
++  free (qbuf);
++  if (*q >= 0)
++    {
++      close (*q);
++      *q = -1;
++    }
++  if (*out >= 0)
++    {
++      close (*out);
++      *out = -1;
++    }
++  if (in != NULL && *in >= 0)
++    {
++      close (*in);
++      *in = -1;
++    }
++  buf[len] = '\0';
++  *outlen = len;
++  return buf;
+ }
+ 
+ /* $(goal name): the goal brought up to date by a fork of this image, then its value read: a kept value from its file, a plain file target in place, and an imported target that keeps none from what its run printed.  */
+@@ -3808,7 +3851,7 @@ char *
+ amk_func_goal (char *o, char **argv, const char *funcname)
+ {
+   char *name = argv[0];
+-  char *end, *path, *value, *words[1];
++  char *end, *path = NULL, *value, *words[1];
+   struct file *f, ran;
+   pid_t pid, got = 0;
+   int code = 0, sig = 0, stopped = 0, printed;
+@@ -3828,7 +3871,7 @@ amk_func_goal (char *o, char **argv, const char *funcname)
+       ran = *f;
+       f->updated = 0;
+       f->command_state = cs_not_started;
+-      close (get_tmpfd (&path));
++      amk_spawn_stdout_to_mail ();
+     }
+   else if (f != NULL && f->is_target && f->amk_engine == NULL)
+     path = xstrdup (name);
+@@ -3841,7 +3884,7 @@ amk_func_goal (char *o, char **argv, const char *funcname)
+     }
+ 
+   words[0] = printed ? name : path;
+-  pid = amk_spawn_goals (1, words, 0, printed ? path : "/dev/null");
++  pid = amk_spawn_goals (1, words, 0, printed ? NULL : "/dev/null");
+   if (printed)
+     {
+       f->updated = ran.updated;
+@@ -3855,9 +3898,23 @@ amk_func_goal (char *o, char **argv, const char *funcname)
+   if (code != 0 || sig != 0)
+     OSS (fatal, NILF, _("$(%s %s): the goal failed"), funcname, name);
+ 
+-  value = amk_goal_value (path);
+   if (printed)
+-    unlink (path);
++    {
++      /* What the job printed came up its mail, less one trailing newline as a value file would lose.  */
++      size_t mlen = 0;
++      if (!amk_mail_take (pid, &value, &mlen))
++        value = NULL;
++      else if (value == NULL)
++        value = xstrdup ("");
++      else
++        {
++          if (mlen > 0 && value[mlen - 1] == '\n' && --mlen > 0 && value[mlen - 1] == '\r')
++            --mlen;
++          value[mlen] = '\0';
++        }
++    }
++  else
++    value = amk_goal_value (path);
+   if (value == NULL)
+     OSS (fatal, NILF, _("$(%s %s): the goal left no value"), funcname, name);
+   o = variable_buffer_output (o, value, strlen (value));
+diff --git a/src/job.c b/src/job.c
+index e0005a1..5ea5812 100644
+--- a/src/job.c
++++ b/src/job.c
+@@ -1223,6 +1223,7 @@ free_child (struct child *child)
+       free (child->command_lines);
+       amk_job_stdin_drop (child);
+     }
++  amk_call_child_drop (child);
+ 
+   free_childbase ((struct childbase*)child);
+ 
+@@ -1540,10 +1541,15 @@ start_job_command (struct child *child)
+ 
+       jobserver_pre_child (ANY_SET (flags, COMMANDS_RECURSE));
+ 
+-      child->pid = child->file->amk_engine
+-        ? amk_engine_job (child)
+-        : child_execute_job ((struct childbase *)child,
+-                             child->good_stdin, argv);
++      if (child->file->amk_engine)
++        child->pid = amk_engine_job (child);
++      else
++        {
++          amk_call_child_pending ();
++          child->pid = child_execute_job ((struct childbase *)child,
++                                          child->good_stdin, argv);
++          amk_call_child_spawned (child);
++        }
+ 
+       jobserver_post_child (ANY_SET (flags, COMMANDS_RECURSE));
+ 
+@@ -2392,6 +2398,8 @@ child_execute_job (struct childbase *child, int good_stdin, char **argv)
+   int fderr = FD_STDERR;
+   pid_t pid = -1;
+   int r;
++  int creq = -1, crep = -1, creq_at = -1, crep_at = -1;
++  const int call = amk_call_child_fds (&creq, &crep, &creq_at, &crep_at);
+ #if defined(USE_POSIX_SPAWN)
+   char *cmd;
+   posix_spawnattr_t attr;
+@@ -2438,6 +2446,11 @@ child_execute_job (struct childbase *child, int good_stdin, char **argv)
+     EINTRLOOP (r, dup2 (fdout, FD_STDOUT));
+   if (fderr != FD_STDERR)
+     EINTRLOOP (r, dup2 (fderr, FD_STDERR));
++  if (call)
++    {
++      EINTRLOOP (r, dup2 (creq, creq_at));
++      EINTRLOOP (r, dup2 (crep, crep_at));
++    }
+ 
+   /* Run the command.  */
+   exec_command (argv, child->environment);
+@@ -2482,6 +2495,10 @@ child_execute_job (struct childbase *child, int good_stdin, char **argv)
+   if (fderr != FD_STDERR)
+     if ((r = posix_spawn_file_actions_adddup2 (&fa, fderr, FD_STDERR)) != 0)
+       goto cleanup;
++  if (call)
++    if ((r = posix_spawn_file_actions_adddup2 (&fa, creq, creq_at)) != 0
++        || (r = posix_spawn_file_actions_adddup2 (&fa, crep, crep_at)) != 0)
++      goto cleanup;
+ 
+   /* We can't use the POSIX_SPAWN_RESETIDS flag: when make is invoked under
+      restrictive environments like unshare it will fail with EINVAL.  */
+diff --git a/src/job.h b/src/job.h
+index 00fac99..96e5e17 100644
+--- a/src/job.h
++++ b/src/job.h
+@@ -56,6 +56,8 @@ struct child
+ 
+     pid_t pid;                  /* Child process's ID number.  */
+ 
++    struct amk_chan *amk_chan;  /* The recipe's own call pair, this side.  */
++
+     unsigned int  remote:1;     /* Nonzero if executing remotely.  */
+     unsigned int  noerror:1;    /* Nonzero if commands contained a '-'.  */
+     unsigned int  good_stdin:1; /* Nonzero if this child has a good stdin.  */
+diff --git a/src/main.c b/src/main.c
+index 8efb33c..d7b3e2c 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -5646,29 +5646,16 @@ static char *amk_mailbuf[AMK_SPAWNED];
+ static size_t amk_maillen[AMK_SPAWNED];
+ static struct { pid_t pid; char *buf; size_t len; } amk_mails[AMK_SPAWNED];
+ static int amk_mail_fd = -1;
++static int amk_spawn_mail_stdout;
+ 
+-/* The call channel: a request pipe and a reply pipe, named to recipes as AMK_CALL and AMK_REPLY, one pair for this process's own recipes and one per spawned job, answered from the store while the process waits; a process that inherits a live pair holds no store and sends every request up it.  A tagged request is answered into a private FIFO under AMK_REPLY_DIR instead.  */
+-struct amk_chan { int req; int rep; char *buf; size_t len; };
++/* The call channel: a request pipe and a reply pipe, named to recipes as AMK_CALL and AMK_REPLY, one pair per recipe child and per spawned job, answered from the store while the process waits; a process that inherits a live pair holds no store and sends every request up it.  */
+ #define AMK_OWN AMK_SPAWNED
+ static struct amk_chan amk_chan[AMK_SPAWNED + 1];
+ static int amk_up_req = -1, amk_up_rep = -1;
+ static int amk_chld[2] = { -1, -1 };
+-static char amk_reply_dir[PATH_MAX];
+-static int amk_reply_dir_mine;
+-
+-/* Cosmopolitan makes a FIFO through mknod on Linux and through the Berkeley system call elsewhere.  */
+-#ifdef __COSMOPOLITAN__
+-int sys_mkfifo (const char *, unsigned);
+-static int
+-amk_mkfifo (const char *path, mode_t mode) {
+-  int r = mknod (path, S_IFIFO | mode, 0);
+-  if (r < 0 && errno == ENOSYS)
+-    r = sys_mkfifo (path, mode);
+-  return r;
+-}
+-#else
+-# define amk_mkfifo(path, mode) mkfifo (path, mode)
+-#endif
++/* The descriptor numbers recipes read the pair at, and the pair waiting for the child about to spawn.  */
++static int amk_call_fd[2] = { -1, -1 };
++static int amk_pend_req[2] = { -1, -1 }, amk_pend_rep[2] = { -1, -1 };
+ 
+ static void
+ amk_chld_handler (int sig) {
+@@ -5716,35 +5703,77 @@ amk_call_export (int req, int rep) {
+   define_variable_global ("AMK_REPLY", 9, fd, o_env, 0, NILF)->export = v_export;
+ }
+ 
+-/* The directory tagged replies land in: an owner makes one and takes it down at exit; a forwarder uses the one it inherited.  */
+ static void
+-amk_reply_dir_init (void) {
+-  const char *inherited = getenv ("AMK_REPLY_DIR");
+-  const char *tmp = getenv ("TMPDIR");
+-  struct stat st;
+-  if (amk_up_req >= 0 && inherited != NULL && stat (inherited, &st) == 0 && S_ISDIR (st.st_mode)) {
+-    strcpy (amk_reply_dir, inherited);
++amk_pend_close (void) {
++  int i;
++  for (i = 0; i < 2; ++i) {
++    if (amk_pend_req[i] >= 0)
++      close (amk_pend_req[i]);
++    if (amk_pend_rep[i] >= 0)
++      close (amk_pend_rep[i]);
++    amk_pend_req[i] = amk_pend_rep[i] = -1;
++  }
++}
++
++/* The pair for the recipe child about to spawn, every end closed on exec since the child reads its two at the named numbers.  */
++void
++amk_call_child_pending (void) {
++  int i;
++  amk_pend_close ();
++  if (amk_call_fd[0] < 0)
+     return;
++  if (pipe (amk_pend_req) < 0 || pipe (amk_pend_rep) < 0) {
++    amk_pend_close ();
++    return;
++  }
++  for (i = 0; i < 2; ++i) {
++    fcntl (amk_pend_req[i], F_SETFD, FD_CLOEXEC);
++    fcntl (amk_pend_rep[i], F_SETFD, FD_CLOEXEC);
+   }
+-  if (tmp == NULL || *tmp == '\0' || strlen (tmp) + 20 > sizeof amk_reply_dir)
+-    tmp = "/tmp";
+-  sprintf (amk_reply_dir, "%s/amk-call.XXXXXX", tmp);
+-  if (mkdtemp (amk_reply_dir) == NULL) {
+-    amk_reply_dir[0] = '\0';
++}
++
++int
++amk_call_child_fds (int *req, int *rep, int *req_at, int *rep_at) {
++  if (amk_pend_req[1] < 0)
++    return 0;
++  *req = amk_pend_req[1];
++  *rep = amk_pend_rep[0];
++  *req_at = amk_call_fd[0];
++  *rep_at = amk_call_fd[1];
++  return 1;
++}
++
++/* After the spawn: the child's ends go, and this side rides on the child until it is freed.  */
++void
++amk_call_child_spawned (struct child *child) {
++  if (amk_pend_req[0] < 0)
+     return;
++  if (child->pid > 0) {
++    child->amk_chan = xcalloc (sizeof *child->amk_chan);
++    child->amk_chan->req = amk_pend_req[0];
++    child->amk_chan->rep = amk_pend_rep[1];
++    amk_pend_req[0] = amk_pend_rep[1] = -1;
+   }
+-  amk_reply_dir_mine = 1;
+-  define_variable_global ("AMK_REPLY_DIR", 13, amk_reply_dir, o_env, 0, NILF)->export = v_export;
++  amk_pend_close ();
+ }
+ 
+ void
+-amk_call_cleanup (void) {
+-  if (amk_reply_dir_mine && amk_reply_dir[0] != '\0') {
+-    rmdir (amk_reply_dir);
+-    amk_reply_dir_mine = 0;
++amk_call_child_drop (struct child *child) {
++  if (child->amk_chan != NULL) {
++    amk_chan_close (child->amk_chan);
++    free (child->amk_chan);
++    child->amk_chan = NULL;
+   }
+ }
+ 
++/* A fork that holds no store drops the pairs of the children it inherited on the chain.  */
++static void
++amk_call_children_drop (void) {
++  struct child *ch;
++  for (ch = children; ch != NULL; ch = ch->next)
++    amk_call_child_drop (ch);
++}
++
+ /* A pair for this process's own recipes: the recipe ends inheritable and named, this side closed on exec.  */
+ static void
+ amk_call_own (void) {
+@@ -5761,6 +5790,8 @@ amk_call_own (void) {
+   fcntl (rep[1], F_SETFD, FD_CLOEXEC);
+   amk_chan[AMK_OWN].req = req[0];
+   amk_chan[AMK_OWN].rep = rep[1];
++  amk_call_fd[0] = req[1];
++  amk_call_fd[1] = rep[0];
+   amk_call_export (req[1], rep[0]);
+ }
+ 
+@@ -5787,9 +5818,10 @@ amk_call_init (void) {
+   if (up_req >= 0 && up_rep >= 0) {
+     amk_up_req = up_req;
+     amk_up_rep = up_rep;
++    amk_call_fd[0] = up_req;
++    amk_call_fd[1] = up_rep;
+   } else
+     amk_call_own ();
+-  amk_reply_dir_init ();
+ }
+ 
+ /* A served request starts as an owner: the zygote closed every inherited descriptor, so the pairs and the child pipe are made afresh.  */
+@@ -5801,12 +5833,11 @@ amk_call_dispatch (void) {
+     free (amk_chan[i].buf);
+     memset (&amk_chan[i], 0, sizeof amk_chan[i]);
+   }
++  amk_call_children_drop ();
+   amk_chld[0] = amk_chld[1] = -1;
+   amk_chld_open ();
+   bsd_signal (SIGCHLD, amk_chld_handler);
+   amk_call_own ();
+-  amk_reply_dir_mine = 0;
+-  amk_reply_dir_init ();
+ }
+ 
+ int
+@@ -5967,42 +5998,6 @@ amk_call_forward (const char *line, struct amk_sink *out) {
+   return rc;
+ }
+ 
+-/* A tagged reply: the FIFO is made, the caller is told it exists with an empty line on the pair, and the reply goes through the FIFO once the caller opens it; a caller that never does costs a bounded wait.  */
+-static void
+-amk_reply_tagged (struct amk_chan *c, const char *tag, const char *reply) {
+-  char path[PATH_MAX];
+-  void (*prev) (int);
+-  int fd = -1, tries, made = 0;
+-  if (amk_reply_dir[0] == '\0' || strlen (tag) + strlen (amk_reply_dir) + 2 > sizeof path
+-      || strchr (tag, '/') != NULL || tag[0] == '.')
+-    fprintf (stderr, "amk: call: cannot answer tag %s\n", tag);
+-  else {
+-    sprintf (path, "%s/%s", amk_reply_dir, tag);
+-    unlink (path);
+-    made = amk_mkfifo (path, 0600) == 0;
+-    /* A hop forked from one parse shares the directory with its siblings, and the first to exit takes it down; the next to answer makes it again.  */
+-    if (!made && errno == ENOENT && mkdir (amk_reply_dir, 0700) == 0)
+-      made = amk_mkfifo (path, 0600) == 0;
+-    if (!made)
+-      fprintf (stderr, "amk: call: %s: %s\n", path, strerror (errno));
+-  }
+-  /* The caller hears the ack either way, so a failure costs it an open error rather than a wait.  */
+-  prev = signal (SIGPIPE, SIG_IGN);
+-  amk_write_all (c->rep, "\n", 1);
+-  if (made) {
+-    for (tries = 0; tries < 1000 && (fd = open (path, O_WRONLY | O_NONBLOCK)) < 0 && errno == ENXIO; ++tries)
+-      usleep (5000);
+-    if (fd >= 0) {
+-      fcntl (fd, F_SETFL, fcntl (fd, F_GETFL) & ~O_NONBLOCK);
+-      amk_write_all (fd, reply, strlen (reply));
+-      close (fd);
+-    } else
+-      fprintf (stderr, "amk: call: no reader opened %s\n", path);
+-    unlink (path);
+-  }
+-  signal (SIGPIPE, prev);
+-}
+-
+ /* Whatever a channel holds: each complete request, its input lines included, is answered on its reply end or into its tag's FIFO; a partial request waits for the rest.  */
+ static void
+ amk_chan_serve (struct amk_chan *c) {
+@@ -6021,23 +6016,13 @@ amk_chan_serve (struct amk_chan *c) {
+   c->len += r;
+   c->buf[c->len] = '\0';
+   for (;;) {
+-    char *nl = memchr (c->buf, '\n', c->len), *line, *tag = NULL, *input = NULL, *reply, *end;
++    char *nl = memchr (c->buf, '\n', c->len), *line, *input = NULL, *reply, *end;
+     size_t used;
+     int lines;
+     if (nl == NULL)
+       return;
+     /* Nothing in the buffer changes until the whole request is here, since a partial one is read again.  */
+     line = c->buf;
+-    if (*line == '@') {
+-      char *sp = memchr (line, ' ', nl - line);
+-      size_t tlen = (sp != NULL ? sp : nl) - (line + 1);
+-      tag = xmalloc (tlen + 1);
+-      memcpy (tag, line + 1, tlen);
+-      tag[tlen] = '\0';
+-      line = sp != NULL ? sp : nl;
+-      while (*line == ' ')
+-        ++line;
+-    }
+     *nl = '\0';
+     lines = amk_call_input_lines (line);
+     *nl = '\n';
+@@ -6046,10 +6031,8 @@ amk_chan_serve (struct amk_chan *c) {
+       int k;
+       for (k = 0; k < lines; ++k) {
+         char *next = memchr (end, '\n', c->len - (end - c->buf));
+-        if (next == NULL) {
+-          free (tag);
++        if (next == NULL)
+           return;
+-        }
+         end = next + 1;
+       }
+       input = xmalloc (end - (nl + 1) + 1);
+@@ -6059,16 +6042,13 @@ amk_chan_serve (struct amk_chan *c) {
+       input = xstrdup ("");
+     *nl = '\0';
+     reply = amk_call_handle (line, input);
+-    if (tag != NULL)
+-      amk_reply_tagged (c, tag, reply);
+-    else {
++    {
+       void (*prev) (int) = signal (SIGPIPE, SIG_IGN);
+       amk_write_all (c->rep, reply, strlen (reply));
+       signal (SIGPIPE, prev);
+     }
+     free (reply);
+     free (input);
+-    free (tag);
+     used = end - c->buf;
+     memmove (c->buf, end, c->len - used);
+     c->len -= used;
+@@ -6077,25 +6057,53 @@ amk_chan_serve (struct amk_chan *c) {
+ }
+ 
+ /* Wait for a dead child or a request, whichever comes first, at most ms milliseconds when ms is not negative, and answer every request that is ready.  */
+-void
+-amk_call_wait (int ms) {
+-  fd_set rd;
+-  struct timespec ts, *tsp = NULL;
+-  sigset_t empty;
++int
++amk_call_fdset (fd_set *rd) {
+   unsigned int i;
++  struct child *ch;
+   int top = -1;
+-
+-  FD_ZERO (&rd);
+   if (amk_chld[0] >= 0 && amk_chld[0] < FD_SETSIZE) {
+-    FD_SET (amk_chld[0], &rd);
++    FD_SET (amk_chld[0], rd);
+     top = amk_chld[0];
+   }
+   for (i = 0; i <= AMK_SPAWNED; ++i)
+     if (amk_chan[i].req > 0 && amk_chan[i].req < FD_SETSIZE) {
+-      FD_SET (amk_chan[i].req, &rd);
++      FD_SET (amk_chan[i].req, rd);
+       if (amk_chan[i].req > top)
+         top = amk_chan[i].req;
+     }
++  for (ch = children; ch != NULL; ch = ch->next)
++    if (ch->amk_chan != NULL && ch->amk_chan->req > 0 && ch->amk_chan->req < FD_SETSIZE) {
++      FD_SET (ch->amk_chan->req, rd);
++      if (ch->amk_chan->req > top)
++        top = ch->amk_chan->req;
++    }
++  return top;
++}
++
++void
++amk_call_ready (fd_set *rd) {
++  unsigned int i;
++  struct child *ch;
++  if (amk_chld[0] >= 0 && FD_ISSET (amk_chld[0], rd))
++    amk_chld_drain ();
++  for (i = 0; i <= AMK_SPAWNED; ++i)
++    if (amk_chan[i].req > 0 && FD_ISSET (amk_chan[i].req, rd))
++      amk_chan_serve (&amk_chan[i]);
++  for (ch = children; ch != NULL; ch = ch->next)
++    if (ch->amk_chan != NULL && ch->amk_chan->req > 0 && FD_ISSET (ch->amk_chan->req, rd))
++      amk_chan_serve (ch->amk_chan);
++}
++
++void
++amk_call_wait (int ms) {
++  fd_set rd;
++  struct timespec ts, *tsp = NULL;
++  sigset_t empty;
++  int top;
++
++  FD_ZERO (&rd);
++  top = amk_call_fdset (&rd);
+   if (ms >= 0) {
+     ts.tv_sec = ms / 1000;
+     ts.tv_nsec = (ms % 1000) * 1000000L;
+@@ -6109,11 +6117,7 @@ amk_call_wait (int ms) {
+   sigemptyset (&empty);
+   if (pselect (top + 1, &rd, NULL, NULL, tsp, &empty) <= 0)
+     return;
+-  if (amk_chld[0] >= 0 && FD_ISSET (amk_chld[0], &rd))
+-    amk_chld_drain ();
+-  for (i = 0; i <= AMK_SPAWNED; ++i)
+-    if (amk_chan[i].req > 0 && FD_ISSET (amk_chan[i].req, &rd))
+-      amk_chan_serve (&amk_chan[i]);
++  amk_call_ready (&rd);
+ }
+ 
+ /* The blocking wait for any child, answering requests as they come.  The child pipe is drained before the check, so a death between the check and the wait leaves a byte that ends the wait at once.  */
+@@ -6341,13 +6345,18 @@ amk_fork_slot (unsigned int *slot, int foreground, const char *stdout_path) {
+   close (rep[1]);
+   for (i = 0; i <= AMK_SPAWNED; ++i)
+     amk_chan_close (&amk_chan[i]);
++  amk_call_children_drop ();
+   amk_up_req = req[1];
+   amk_up_rep = rep[0];
++  amk_call_fd[0] = req[1];
++  amk_call_fd[1] = rep[0];
+   amk_call_export (req[1], rep[0]);
+   if (foreground)
+     amk_tty_give (getpid ());
+   if (stdout_path != NULL && freopen (stdout_path, "w", stdout) == NULL)
+     fprintf (stderr, "amk: spawn: cannot write %s: %s\n", stdout_path, strerror (errno));
++  if (amk_spawn_mail_stdout)
++    dup2 (amk_mail_fd, 1);
+   signal (SIGINT, fatal_error_signal);
+   signal (SIGTERM, fatal_error_signal);
+   signal (SIGHUP, fatal_error_signal);
+@@ -6360,13 +6369,20 @@ pid_t
+ amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
+   unsigned int i;
+   pid_t pid = amk_fork_slot (&i, foreground, stdout_path);
++  amk_spawn_mail_stdout = 0;
+   if (pid != 0)
+     return pid;
+   die (amk_run_goals (n, words));
+ }
+ 
+-/* The deferred calls in flight: the pid, the pipe its result arrives on, and the queue its writes come back through.  */
+-static struct { pid_t pid; int fd; FILE *queue; } amk_calls[AMK_SPAWNED];
++/* The next spawned job prints into its mail, so what it printed is taken with amk_mail_take once it is collected.  */
++void
++amk_spawn_stdout_to_mail (void) {
++  amk_spawn_mail_stdout = 1;
++}
++
++/* The deferred calls in flight: the pid, the pipe its result arrives on, and the pipe its writes come back through.  */
++static struct { pid_t pid; int fd; int qfd; } amk_calls[AMK_SPAWNED];
+ 
+ /* A forked call holds no socket, so a server's connection closes with its reply rather than when the call ends.  */
+ static void
+@@ -6383,8 +6399,7 @@ amk_close_sockets (void) {
+ pid_t
+ amk_call_begin (const char *name, unsigned int argc, const char **args, int *fd) {
+   unsigned int i, k;
+-  int out[2];
+-  FILE *queue;
++  int out[2], q[2];
+   pid_t pid;
+   const char *err = NULL, *text;
+   char *s;
+@@ -6392,26 +6407,32 @@ amk_call_begin (const char *name, unsigned int argc, const char **args, int *fd)
+     ;
+   if (k == AMK_SPAWNED || pipe (out) < 0)
+     return -1;
+-  queue = tmpfile ();
++  if (pipe (q) < 0) {
++    close (out[0]);
++    close (out[1]);
++    return -1;
++  }
+   pid = amk_fork_slot (&i, 0, NULL);
+   if (pid < 0) {
+     close (out[0]);
+     close (out[1]);
+-    if (queue != NULL)
+-      fclose (queue);
++    close (q[0]);
++    close (q[1]);
+     return -1;
+   }
+   if (pid > 0) {
+     close (out[1]);
++    close (q[1]);
+     amk_calls[k].pid = pid;
+     amk_calls[k].fd = out[0];
+-    amk_calls[k].queue = queue;
++    amk_calls[k].qfd = q[0];
+     *fd = out[0];
+     return pid;
+   }
+   close (out[0]);
++  close (q[0]);
+   amk_close_sockets ();
+-  amk_queue_fd = queue != NULL ? fileno (queue) : -1;
++  amk_queue_fd = q[1];
+   s = amk_call (name, argc, args, &err);
+   text = s != NULL ? s : err != NULL ? err : "";
+   amk_write_all (out[1], text, strlen (text));
+@@ -6425,7 +6446,7 @@ amk_call_end (pid_t pid, char **text, const char **err) {
+   static char why[256];
+   unsigned int k;
+   char *buf;
+-  size_t len = 0, cap = 4096;
++  size_t len = 0;
+   pid_t got = 0;
+   int code = 0, sig = 0, stopped = 0;
+   char *mail = NULL;
+@@ -6436,26 +6457,10 @@ amk_call_end (pid_t pid, char **text, const char **err) {
+     *err = "no such call";
+     return -1;
+   }
+-  buf = xmalloc (cap + 1);
+-  for (;;) {
+-    ssize_t r;
+-    if (len == cap) {
+-      cap += 4096;
+-      buf = xrealloc (buf, cap + 1);
+-    }
+-    r = read (amk_calls[k].fd, buf + len, cap - len);
+-    if (r < 0 && errno == EINTR)
+-      continue;
+-    if (r <= 0)
+-      break;
+-    len += r;
+-  }
+-  buf[len] = '\0';
+-  close (amk_calls[k].fd);
++  buf = amk_collect (&amk_calls[k].fd, &len, &amk_calls[k].qfd, NULL, NULL, 0);
+   do
+     amk_wait_child (pid, 1, &got, &code, &sig, &stopped);
+   while (stopped);
+-  amk_queue_apply (amk_calls[k].queue);
+   if (amk_mail_take (pid, &mail, &maillen))
+     free (mail);
+   amk_calls[k].pid = 0;
+@@ -7068,7 +7073,6 @@ die (int status)
+       if (amk_exit_status >= 0)
+         status = amk_exit_status;
+       amk_sweep_spawned ();
+-      amk_call_cleanup ();
+       dying = 1;
+ 
+       if (print_version_flag)
+diff --git a/src/posixos.c b/src/posixos.c
+index 0cc0a58..61505a2 100644
+--- a/src/posixos.c
++++ b/src/posixos.c
+@@ -40,6 +40,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>.  */
+ #include "debug.h"
+ #include "job.h"
+ #include "os.h"
++#include "amk.h"
+ 
+ #define STREAM_OK(_s) ((fcntl (fileno (_s), F_GETFD) != -1) || (errno != EBADF))
+ 
+@@ -475,13 +476,17 @@ jobserver_acquire (int timeout)
+   while (1)
+     {
+       fd_set readfds;
+-      int r;
++      int r, top;
+       char intake;
+ 
+       FD_ZERO (&readfds);
+       FD_SET (job_fds[0], &readfds);
++      /* The children's call requests are answered from this wait too, or a child blocked on one never frees its token.  */
++      top = amk_call_fdset (&readfds);
++      if (top < job_fds[0])
++        top = job_fds[0];
+ 
+-      r = pselect (job_fds[0]+1, &readfds, NULL, NULL, specp, &empty);
++      r = pselect (top+1, &readfds, NULL, NULL, specp, &empty);
+       if (r < 0)
+         switch (errno)
+           {
+@@ -502,6 +507,10 @@ jobserver_acquire (int timeout)
+         /* Timeout.  */
+         return 0;
+ 
++      amk_call_ready (&readfds);
++      if (!FD_ISSET (job_fds[0], &readfds))
++        continue;
++
+       /* The read FD is ready: read it!  This is non-blocking.  */
+       EINTRLOOP (r, read (job_fds[0], &intake, 1));
+ 

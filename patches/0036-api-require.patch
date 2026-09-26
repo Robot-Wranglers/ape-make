@@ -1,0 +1,62 @@
+Requirements: $(amk.require lua s7 micropy js) expands to nothing when every name is in
+.FEATURES and stops make naming the missing ones otherwise. The names may be split by
+spaces, commas, or both, since the function takes any number of arguments and reads
+the words of all of them. The message is red when stderr is a terminal and neither
+NO_COLOR nor NOCOLOR is set.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -45,4 +45,5 @@
+ void amk_queue_apply (FILE *queue);
+ char *amk_func_goal (char *o, char **argv, const char *funcname);
++char *amk_func_require (char *o, char **argv, const char *funcname);
+ char *amk_cell_text (const char *name, const char *engine, const char *body);
+ struct child;
+--- a/src/function.c
++++ b/src/function.c
+@@ -2924,2 +2924,3 @@
+   FT_ENTRY ("goal",          1,  1,  1,  amk_func_goal),
++  FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
+   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+@@ -3621,4 +3622,41 @@
+     }
+   buf[len] = '\0';
+   argv[1] = buf;
+ }
++
++/* $(amk.require names...): empty when every name is a feature, fatal naming the missing ones otherwise, in red on a terminal unless NO_COLOR or NOCOLOR is set; commas and spaces both separate names.  */
++char *
++amk_func_require (char *o, char **argv, const char *funcname)
++{
++  size_t len = 64;
++  char **a, *names, *text, *want, *missing, *msg;
++  const char *red = "", *off = "";
++
++  for (a = argv; *a != NULL; a++)
++    len += strlen (*a) + 1;
++  names = xmalloc (len);
++  names[0] = '\0';
++  for (a = argv; *a != NULL; a++)
++    {
++      strcat (names, *a);
++      strcat (names, " ");
++    }
++  text = xmalloc (2 * len);
++  sprintf (text, "$(strip $(filter-out $(.FEATURES),%s))", names);
++  missing = allocated_variable_expand (text);
++  sprintf (text, "$(strip %s)", names);
++  want = allocated_variable_expand (text);
++  free (text);
++  free (names);
++  if (*missing != '\0')
++    {
++      if (getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (stderr)))
++        red = "\033[1;31m", off = "\033[0m";
++      msg = xmalloc (strlen (want) + strlen (missing) + strlen (funcname) + 128);
++      sprintf (msg, "%s%s: this makefile needs amk with %s, and this amk has no %s%s", red, funcname, want, missing, off);
++      OS (fatal, reading_file, "%s", msg);
++    }
++  free (want);
++  free (missing);
++  return o;
++}

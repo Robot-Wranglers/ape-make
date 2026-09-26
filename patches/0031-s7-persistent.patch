@@ -1,0 +1,20 @@
+s7 joins the persistent family: its row gains the persist and hook entries, so
+$(s7.exec ...), $(s7.import ...), the AMK_S7_INIT chunk, and amk-on hooks all run
+against one interpreter kept for the life of the make process, as the other rows' do.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -75,4 +75,6 @@
+ extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int s7_run_main (int argc, char **argv);
++extern int s7_persist_main (struct amk_sink *out, int argc, char **argv);
++extern void s7_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int micropy_persist_main (struct amk_sink *out, int argc, char **argv);
+ extern void micropy_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2505,3 +2505,3 @@
+ #ifdef AMK_ENGINE_S7
+-    { "s7", 0, s7_run_main, 0, 0, 0 },
++    { "s7", 0, s7_run_main, 0, 0, 0, s7_persist_main, s7_hook_main },
+ #endif

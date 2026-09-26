@@ -1,0 +1,90 @@
+# Test the binaries build.yml kept, never a fresh build: the unit suite, the integration suite, and a run on hosts that never built them; ci.yml and release.yml call this after build.yml.
+name: Test
+on:
+  workflow_call: {}
+permissions:
+  contents: read
+jobs:
+  # The unit suite per engine set; a test for an engine the set lacks skips itself.
+  unit:
+    name: Unit tests (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [ default, wasm3 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download amk
+        uses: actions/download-artifact@v8
+        with:
+          name: amk-${{ matrix.name }}
+      - name: Restore the exec bit
+        run: chmod +x amk
+      # The suite needs pytest and nothing else; the Makefile runs it as python3 -m pytest when no pytest is on PATH.
+      - name: Install pytest
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pytest
+      # The downloaded binary stands in for the artifact, and -o keeps make from rebuilding it.
+      - name: Unit
+        run: make -o "$PWD/amk" test artifact.ape="$PWD/amk"
+
+  # The tests that start servers, hold ports, and fetch from GitHub, one at a time.
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download amk
+        uses: actions/download-artifact@v8
+        with:
+          name: amk-default
+      - name: Restore the exec bit
+        run: chmod +x amk
+      - name: Install pytest
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pytest
+      - name: Integration
+        run: make -o "$PWD/amk" test.integration artifact.ape="$PWD/amk"
+
+  # One file runs everywhere: prove it on hosts that never built it.
+  portable:
+    name: Run ${{ matrix.name }} on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-24.04, ubuntu-24.04-arm, macos-latest ]
+        name: [ default, wasm3 ]
+        include:
+          - name: default
+            with: ''
+            features: awk jq lua s7 micropy js
+          - name: wasm3
+            with: wasm3
+            features: awk jq lua s7 micropy wasm js
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download amk
+        uses: actions/download-artifact@v8
+        with:
+          name: amk-${{ matrix.name }}
+      # Artifacts drop the mode, and the bootstrap finds itself by command -v, which on macOS skips a file that is not executable.
+      - name: Restore the exec bit
+        run: chmod +x amk
+      # A host with no ape loader registered cannot exec the file directly; sh runs the bootstrap.
+      - name: Version
+        run: sh ./amk --version
+      - name: Builtins
+        run: sh ./amk -f smoke.mk builtins engines='${{ matrix.features }}' wasm.test=test.wasm
+      - name: Guests by flag
+        run: |
+          sh ./amk --awk 'BEGIN { print "awk by flag: ok" }'
+          printf '{"n":41}' | sh ./amk --jq -c .n+1
+      - name: Payload tools first on PATH
+        run: sh ./amk -f smoke.mk path tools='sed bash jb'
+      - name: wasm3 by flag
+        if: matrix.with == 'wasm3'
+        run: |
+          sh ./amk --wasm --func fib fib32.wasm 20 2>&1 | grep -x 'Result: 6765'

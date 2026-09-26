@@ -62,7 +62,10 @@ mp_random_seed_init (void)
   return r;
 }
 
-/* No terminal and no threads: nothing interactive, and asyncio's Python half is not frozen in. */
+/* Sockets as the unix port has them, polled through select. */
+#define MICROPY_PY_SOCKET                       (1)
+
+/* No terminal and no threads: nothing interactive; asyncio's Python half is read from the payload. */
 #define MICROPY_HELPER_REPL                     (0)
 #define MICROPY_USE_READLINE                    (0)
 #define MICROPY_PY_BUILTINS_INPUT               (0)
@@ -70,4 +73,4 @@ mp_random_seed_init (void)
 #define MICROPY_KBD_EXCEPTION                   (0)
 #define MICROPY_PY_THREAD                       (0)
 #define MICROPY_PY_MACHINE                      (0)
-#define MICROPY_PY_ASYNCIO                      (0)
+#define MICROPY_PY_ASYNCIO                      (1)

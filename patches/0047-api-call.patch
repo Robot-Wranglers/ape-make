@@ -1,0 +1,679 @@
+Call: a recipe line asks the running make and gets an answer. Every make process names
+two descriptors to its recipes, AMK_CALL and AMK_REPLY, a request pipe and a reply pipe.
+Everything is line framed and carries JSON as it is: a request is one line, the jq store's
+operation, name and program, and a filter request says how many input lines follow it; a
+reply is a status and count line, then that many output lines, one jq output each. The
+parent answers while the recipe's shell runs: the blocking wait in reap_children and the
+spawn wait both poll the request descriptors beside a pipe the SIGCHLD handler writes, so
+a request never waits for the recipe to end and a death never waits for a poll interval.
+A request that opens with a tag word is answered into a private FIFO under AMK_REPLY_DIR,
+made and removed by the answering process and announced with one empty line on the reply
+pipe, so callers that run at once never share a reader. A spawned job gets a pair of its
+own, as it gets its mail pipe. A process that inherits a live pair, a sub-make or a job,
+holds no store: its recipes write straight to the inherited pipe, and its own persistent
+call travels the same way, so every process of a run reads and writes one set of entries.
+A served request starts as an owner with fresh pipes, since the zygote closed every
+inherited descriptor.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -58,12 +58,22 @@
+ extern char *amk_goal_autofill;
+ void amk_default_goal_settle (void);
+ 
++/* The call channel: recipes and jobs ask the store engine's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a store. */
++#define AMK_STORE_ENGINE "jq"
++void amk_call_init (void);
++void amk_call_dispatch (void);
++void amk_call_cleanup (void);
++void amk_call_wait (int ms);
++pid_t amk_wait_any (int *status);
++int amk_call_forwarding (void);
++
+ /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
+ struct amk_sink
+   {
+     void (*write) (struct amk_sink *, const char *, size_t);
+   };
+ extern struct amk_sink amk_sink_stderr;
++int amk_call_forward (const char *line, struct amk_sink *out);
+ 
+ /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the sink; hook, when a row has one, hears every event as its name and the info fields. */
+ struct amk_engine
+--- a/src/function.c
++++ b/src/function.c
+@@ -2947,7 +2947,15 @@
+   {
+     const char *outer = amk_binding_engine;
+     amk_binding_engine = e->name;
+-    rc = e->persist (&sink.base, ac, av);
++    /* A forwarder has no store of its own: the store engine's call goes up the channel, and only the line travels.  */
++    if (amk_call_forwarding () && streq (e->name, AMK_STORE_ENGINE))
++      {
++        if (argv[1] != NULL)
++          OS (error, NILF, _("$(%s ...): the input does not travel the call channel"), funcname);
++        rc = amk_call_forward (argv[0], &sink.base);
++      }
++    else
++      rc = e->persist (&sink.base, ac, av);
+     amk_binding_engine = outer;
+   }
+   shell_completed (rc, 0);
+
+--- a/src/job.c
++++ b/src/job.c
+@@ -772,7 +772,8 @@
+                 pid = WAIT_NOHANG (&status);
+               else
+ #endif
+-                EINTRLOOP (pid, wait (&status));
++                /* The blocking wait answers call requests while it waits.  */
++                pid = amk_wait_any (&status);
+ #endif /* !VMS */
+             }
+           else
+--- a/src/main.c
++++ b/src/main.c
+@@ -80,6 +80,8 @@
+ # include <sys/socket.h>
+ # include <sys/un.h>
+ # include <sys/wait.h>
++# include <sys/select.h>
++# include <sys/stat.h>
+ # include <poll.h>
+ #endif
+
+@@ -3009,6 +3011,9 @@
+     int old_builtin_rules_flag = no_builtin_rules_flag;
+     int old_builtin_variables_flag = no_builtin_variables_flag;
+     int old_arg_job_slots = arg_job_slots;
++
++    /* The call channel is open before anything expands, so a parse-time call in a forwarder already travels up.  */
++    amk_call_init ();
+
+     /* Each engine's init chunk runs first, so what it defines and subscribes is there for the parse and for every zygote request.  */
+     amk_engine_init ();
+@@ -5369,6 +5374,9 @@
+     free (dg);
+   }
+
++  /* The request's recipes call this process, not whatever the client's environment named.  */
++  amk_call_dispatch ();
++
+   /* MAKEFLAGS was built before the hook point, so rebuild it for sub-makes.  */
+   define_makeflags (0);
+
+@@ -5413,7 +5421,489 @@
+ static size_t amk_maillen[AMK_SPAWNED];
+ static struct { pid_t pid; char *buf; size_t len; } amk_mails[AMK_SPAWNED];
+ static int amk_mail_fd = -1;
++
++/* The call channel: a request pipe and a reply pipe, named to recipes as AMK_CALL and AMK_REPLY, one pair for this process's own recipes and one per spawned job, answered from the store while the process waits; a process that inherits a live pair holds no store and sends every request up it.  A tagged request is answered into a private FIFO under AMK_REPLY_DIR instead.  */
++struct amk_chan { int req; int rep; char *buf; size_t len; };
++#define AMK_OWN AMK_SPAWNED
++static struct amk_chan amk_chan[AMK_SPAWNED + 1];
++static int amk_up_req = -1, amk_up_rep = -1;
++static int amk_chld[2] = { -1, -1 };
++static char amk_reply_dir[PATH_MAX];
++static int amk_reply_dir_mine;
++
++/* Cosmopolitan makes a FIFO through mknod on Linux and through the Berkeley system call elsewhere.  */
++#ifdef __COSMOPOLITAN__
++int sys_mkfifo (const char *, unsigned);
++static int
++amk_mkfifo (const char *path, mode_t mode) {
++  int r = mknod (path, S_IFIFO | mode, 0);
++  if (r < 0 && errno == ENOSYS)
++    r = sys_mkfifo (path, mode);
++  return r;
++}
++#else
++# define amk_mkfifo(path, mode) mkfifo (path, mode)
++#endif
++
++static void
++amk_chld_handler (int sig) {
++  child_handler (sig);
++  if (amk_chld[1] >= 0 && write (amk_chld[1], "", 1) < 0)
++    ;
++}
++
++static void
++amk_chld_open (void) {
++  int i;
++  if (pipe (amk_chld) < 0) {
++    amk_chld[0] = amk_chld[1] = -1;
++    return;
++  }
++  for (i = 0; i < 2; ++i) {
++    fcntl (amk_chld[i], F_SETFL, fcntl (amk_chld[i], F_GETFL) | O_NONBLOCK);
++    fcntl (amk_chld[i], F_SETFD, FD_CLOEXEC);
++  }
++}
++
++static void
++amk_chld_drain (void) {
++  char tmp[64];
++  while (amk_chld[0] >= 0 && read (amk_chld[0], tmp, sizeof tmp) > 0)
++    ;
++}
++
++static void
++amk_chan_close (struct amk_chan *c) {
++  if (c->req > 0)
++    close (c->req);
++  if (c->rep > 0)
++    close (c->rep);
++  free (c->buf);
++  memset (c, 0, sizeof *c);
++}
++
++static void
++amk_call_export (int req, int rep) {
++  char fd[16];
++  sprintf (fd, "%d", req);
++  define_variable_global ("AMK_CALL", 8, fd, o_env, 0, NILF)->export = v_export;
++  sprintf (fd, "%d", rep);
++  define_variable_global ("AMK_REPLY", 9, fd, o_env, 0, NILF)->export = v_export;
++}
++
++/* The directory tagged replies land in: an owner makes one and takes it down at exit; a forwarder uses the one it inherited.  */
++static void
++amk_reply_dir_init (void) {
++  const char *inherited = getenv ("AMK_REPLY_DIR");
++  const char *tmp = getenv ("TMPDIR");
++  struct stat st;
++  if (amk_up_req >= 0 && inherited != NULL && stat (inherited, &st) == 0 && S_ISDIR (st.st_mode)) {
++    strcpy (amk_reply_dir, inherited);
++    return;
++  }
++  if (tmp == NULL || *tmp == '\0' || strlen (tmp) + 20 > sizeof amk_reply_dir)
++    tmp = "/tmp";
++  sprintf (amk_reply_dir, "%s/amk-call.XXXXXX", tmp);
++  if (mkdtemp (amk_reply_dir) == NULL) {
++    amk_reply_dir[0] = '\0';
++    return;
++  }
++  amk_reply_dir_mine = 1;
++  define_variable_global ("AMK_REPLY_DIR", 13, amk_reply_dir, o_env, 0, NILF)->export = v_export;
++}
++
++void
++amk_call_cleanup (void) {
++  if (amk_reply_dir_mine && amk_reply_dir[0] != '\0') {
++    rmdir (amk_reply_dir);
++    amk_reply_dir_mine = 0;
++  }
++}
++
++/* A pair for this process's own recipes: the recipe ends inheritable and named, this side closed on exec.  */
++static void
++amk_call_own (void) {
++  int req[2], rep[2];
++  amk_chan_close (&amk_chan[AMK_OWN]);
++  if (pipe (req) < 0)
++    return;
++  if (pipe (rep) < 0) {
++    close (req[0]);
++    close (req[1]);
++    return;
++  }
++  fcntl (req[0], F_SETFD, FD_CLOEXEC);
++  fcntl (rep[1], F_SETFD, FD_CLOEXEC);
++  amk_chan[AMK_OWN].req = req[0];
++  amk_chan[AMK_OWN].rep = rep[1];
++  amk_call_export (req[1], rep[0]);
++}
++
++/* The descriptor a name in the environment gives, when it is open and a pipe; else -1.  */
++static int
++amk_fd_is_pipe (const char *spec) {
++  struct stat st;
++  char *end;
++  long fd;
++  if (spec == NULL || *spec == '\0')
++    return -1;
++  fd = strtol (spec, &end, 10);
++  if (*end != '\0' || fd < 3 || fstat ((int) fd, &st) < 0 || !S_ISFIFO (st.st_mode))
++    return -1;
++  return (int) fd;
++}
++
++void
++amk_call_init (void) {
++  int up_req = amk_fd_is_pipe (getenv ("AMK_CALL"));
++  int up_rep = amk_fd_is_pipe (getenv ("AMK_REPLY"));
++  amk_chld_open ();
++  bsd_signal (SIGCHLD, amk_chld_handler);
++  if (up_req >= 0 && up_rep >= 0) {
++    amk_up_req = up_req;
++    amk_up_rep = up_rep;
++  } else
++    amk_call_own ();
++  amk_reply_dir_init ();
++}
++
++/* A served request starts as an owner: the zygote closed every inherited descriptor, so the pairs and the child pipe are made afresh.  */
++void
++amk_call_dispatch (void) {
++  unsigned int i;
++  amk_up_req = amk_up_rep = -1;
++  for (i = 0; i <= AMK_SPAWNED; ++i) {
++    free (amk_chan[i].buf);
++    memset (&amk_chan[i], 0, sizeof amk_chan[i]);
++  }
++  amk_chld[0] = amk_chld[1] = -1;
++  amk_chld_open ();
++  bsd_signal (SIGCHLD, amk_chld_handler);
++  amk_call_own ();
++  amk_reply_dir_mine = 0;
++  amk_reply_dir_init ();
++}
++
++int
++amk_call_forwarding (void) {
++  return amk_up_req >= 0;
++}
++
++struct amk_buf_sink { struct amk_sink base; char *buf; size_t len; };
++
++static void
++amk_buf_write (struct amk_sink *s, const char *p, size_t n) {
++  struct amk_buf_sink *b = (struct amk_buf_sink *) s;
++  b->buf = xrealloc (b->buf, b->len + n + 1);
++  memcpy (b->buf + b->len, p, n);
++  b->len += n;
++  b->buf[b->len] = '\0';
++}
++
++/* One line off a descriptor other readers share, a byte at a time so nothing past the newline is taken; the newline stays on.  */
++static char *
++amk_read_line_shared (int fd) {
++  size_t len = 0, cap = 256;
++  char *line = xmalloc (cap);
++  for (;;) {
++    ssize_t r = read (fd, line + len, 1);
++    if (r < 0 && errno == EINTR)
++      continue;
++    if (r <= 0) {
++      free (line);
++      return NULL;
++    }
++    if (line[len++] == '\n')
++      break;
++    if (len + 1 == cap)
++      line = xrealloc (line, cap *= 2);
++  }
++  line[len] = '\0';
++  return line;
++}
++
++/* A filter request's header names how many input lines follow it; -1 for any other request.  */
++static int
++amk_call_input_lines (const char *line) {
++  char *end;
++  long n;
++  if (strncmp (line, "filter ", 7) != 0)
++    return -1;
++  n = strtol (line + 7, &end, 10);
++  if (end == line + 7 || (*end != ' ' && *end != '\0') || n < 0)
++    return -1;
++  return (int) n;
++}
++
++/* The head of a reply: its status and line count; the body starts after the newline.  */
++static int
++amk_reply_head (const char *reply, int *n, const char **body) {
++  char *end;
++  int rc = (int) strtol (reply, &end, 10);
++  *n = (int) strtol (end, &end, 10);
++  *body = strchr (reply, '\n');
++  *body = *body != NULL ? *body + 1 : reply + strlen (reply);
++  return rc;
++}
++
++/* The reply to one request: the store's status and how many lines follow, then each output on a line of its own, verbatim.  A build without the store engine answers 2.  */
++static char *
++amk_call_answer (const char *line, const char *input) {
++  const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
++  struct amk_buf_sink sink = { { amk_buf_write }, NULL, 0 };
++  char *av[4], *reply, *call = NULL;
++  const char *p;
++  int rc, n = 0;
++
++  if (e == NULL || e->persist == NULL) {
++    fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
++    return xstrdup ("2 0\n");
++  }
++  if (amk_call_input_lines (line) >= 0) {
++    /* The count served the transport; the entry gets the request and the input apart.  */
++    const char *rest = strchr (line + 7, ' ');
++    call = xmalloc (strlen (line) + 8);
++    sprintf (call, "filter%s", rest != NULL ? rest : "");
++    line = call;
++  }
++  av[0] = (char *) e->name;
++  av[1] = (char *) line;
++  av[2] = (char *) input;
++  av[3] = NULL;
++  rc = e->persist (&sink.base, input != NULL ? 3 : 2, av);
++  free (call);
++
++  for (p = sink.buf; p != NULL && *p != '\0'; ++n) {
++    const char *nl = strchr (p, '\n');
++    p = nl != NULL ? nl + 1 : p + strlen (p);
++  }
++  reply = xmalloc (sink.len + 32);
++  sprintf (reply, "%d %d\n", rc, n);
++  if (sink.buf != NULL) {
++    strcat (reply, sink.buf);
++    if (sink.len > 0 && sink.buf[sink.len - 1] != '\n')
++      strcat (reply, "\n");
++  }
++  free (sink.buf);
++  return reply;
++}
++
++/* A request sent up the inherited pair, input lines after it, and the whole reply that comes back; nothing when the owner is gone.  */
++static char *
++amk_call_up (const char *line, const char *input) {
++  size_t n = strlen (line), m = input != NULL ? strlen (input) : 0;
++  char *req = xmalloc (n + m + 2), *reply, *more;
++  const char *body;
++  int lines;
++  memcpy (req, line, n);
++  req[n] = '\n';
++  if (m > 0)
++    memcpy (req + n + 1, input, m);
++  if (amk_write_all (amk_up_req, req, n + 1 + m) < 0) {
++    free (req);
++    return NULL;
++  }
++  free (req);
++  reply = amk_read_line_shared (amk_up_rep);
++  if (reply == NULL)
++    return NULL;
++  amk_reply_head (reply, &lines, &body);
++  while (lines-- > 0) {
++    more = amk_read_line_shared (amk_up_rep);
++    if (more == NULL) {
++      free (reply);
++      return NULL;
++    }
++    reply = xrealloc (reply, strlen (reply) + strlen (more) + 1);
++    strcat (reply, more);
++    free (more);
++  }
++  return reply;
++}
++
++static char *
++amk_call_handle (const char *line, const char *input) {
++  char *reply = amk_up_req >= 0 ? amk_call_up (line, input) : amk_call_answer (line, input);
++  if (reply == NULL) {
++    fprintf (stderr, "amk: call: no reply from the store's owner\n");
++    reply = xstrdup ("2 0\n");
++  }
++  return reply;
++}
++
++/* A forwarder's own persistent call: the reply's lines into the sink as they are; the status is the store's.  */
++int
++amk_call_forward (const char *line, struct amk_sink *out) {
++  char *reply = amk_call_handle (line, NULL);
++  const char *body;
++  int n, rc = amk_reply_head (reply, &n, &body);
++  out->write (out, body, strlen (body));
++  free (reply);
++  return rc;
++}
++
++/* A tagged reply: the FIFO is made, the caller is told it exists with an empty line on the pair, and the reply goes through the FIFO once the caller opens it; a caller that never does costs a bounded wait.  */
++static void
++amk_reply_tagged (struct amk_chan *c, const char *tag, const char *reply) {
++  char path[PATH_MAX];
++  void (*prev) (int);
++  int fd = -1, tries, made = 0;
++  if (amk_reply_dir[0] == '\0' || strlen (tag) + strlen (amk_reply_dir) + 2 > sizeof path
++      || strchr (tag, '/') != NULL || tag[0] == '.')
++    fprintf (stderr, "amk: call: cannot answer tag %s\n", tag);
++  else {
++    sprintf (path, "%s/%s", amk_reply_dir, tag);
++    unlink (path);
++    made = amk_mkfifo (path, 0600) == 0;
++    /* A hop forked from one parse shares the directory with its siblings, and the first to exit takes it down; the next to answer makes it again.  */
++    if (!made && errno == ENOENT && mkdir (amk_reply_dir, 0700) == 0)
++      made = amk_mkfifo (path, 0600) == 0;
++    if (!made)
++      fprintf (stderr, "amk: call: %s: %s\n", path, strerror (errno));
++  }
++  /* The caller hears the ack either way, so a failure costs it an open error rather than a wait.  */
++  prev = signal (SIGPIPE, SIG_IGN);
++  amk_write_all (c->rep, "\n", 1);
++  if (made) {
++    for (tries = 0; tries < 1000 && (fd = open (path, O_WRONLY | O_NONBLOCK)) < 0 && errno == ENXIO; ++tries)
++      usleep (5000);
++    if (fd >= 0) {
++      fcntl (fd, F_SETFL, fcntl (fd, F_GETFL) & ~O_NONBLOCK);
++      amk_write_all (fd, reply, strlen (reply));
++      close (fd);
++    } else
++      fprintf (stderr, "amk: call: no reader opened %s\n", path);
++    unlink (path);
++  }
++  signal (SIGPIPE, prev);
++}
++
++/* Whatever a channel holds: each complete request, its input lines included, is answered on its reply end or into its tag's FIFO; a partial request waits for the rest.  */
++static void
++amk_chan_serve (struct amk_chan *c) {
++  char tmp[4096];
++  ssize_t r;
++  do r = read (c->req, tmp, sizeof tmp); while (r < 0 && errno == EINTR);
++  if (r <= 0) {
++    if (r == 0) {
++      close (c->req);
++      c->req = 0;
++    }
++    return;
++  }
++  c->buf = xrealloc (c->buf, c->len + r + 1);
++  memcpy (c->buf + c->len, tmp, r);
++  c->len += r;
++  c->buf[c->len] = '\0';
++  for (;;) {
++    char *nl = memchr (c->buf, '\n', c->len), *line, *tag = NULL, *input = NULL, *reply, *end;
++    size_t used;
++    int lines;
++    if (nl == NULL)
++      return;
++    /* Nothing in the buffer changes until the whole request is here, since a partial one is read again.  */
++    line = c->buf;
++    if (*line == '@') {
++      char *sp = memchr (line, ' ', nl - line);
++      size_t tlen = (sp != NULL ? sp : nl) - (line + 1);
++      tag = xmalloc (tlen + 1);
++      memcpy (tag, line + 1, tlen);
++      tag[tlen] = '\0';
++      line = sp != NULL ? sp : nl;
++      while (*line == ' ')
++        ++line;
++    }
++    *nl = '\0';
++    lines = amk_call_input_lines (line);
++    *nl = '\n';
++    end = nl + 1;
++    if (lines > 0) {
++      int k;
++      for (k = 0; k < lines; ++k) {
++        char *next = memchr (end, '\n', c->len - (end - c->buf));
++        if (next == NULL) {
++          free (tag);
++          return;
++        }
++        end = next + 1;
++      }
++      input = xmalloc (end - (nl + 1) + 1);
++      memcpy (input, nl + 1, end - (nl + 1));
++      input[end - (nl + 1)] = '\0';
++    } else if (lines == 0)
++      input = xstrdup ("");
++    *nl = '\0';
++    reply = amk_call_handle (line, input);
++    if (tag != NULL)
++      amk_reply_tagged (c, tag, reply);
++    else {
++      void (*prev) (int) = signal (SIGPIPE, SIG_IGN);
++      amk_write_all (c->rep, reply, strlen (reply));
++      signal (SIGPIPE, prev);
++    }
++    free (reply);
++    free (input);
++    free (tag);
++    used = end - c->buf;
++    memmove (c->buf, end, c->len - used);
++    c->len -= used;
++    c->buf[c->len] = '\0';
++  }
++}
++
++/* Wait for a dead child or a request, whichever comes first, at most ms milliseconds when ms is not negative, and answer every request that is ready.  */
++void
++amk_call_wait (int ms) {
++  fd_set rd;
++  struct timespec ts, *tsp = NULL;
++  sigset_t empty;
++  unsigned int i;
++  int top = -1;
++
++  FD_ZERO (&rd);
++  if (amk_chld[0] >= 0 && amk_chld[0] < FD_SETSIZE) {
++    FD_SET (amk_chld[0], &rd);
++    top = amk_chld[0];
++  }
++  for (i = 0; i <= AMK_SPAWNED; ++i)
++    if (amk_chan[i].req > 0 && amk_chan[i].req < FD_SETSIZE) {
++      FD_SET (amk_chan[i].req, &rd);
++      if (amk_chan[i].req > top)
++        top = amk_chan[i].req;
++    }
++  if (ms >= 0) {
++    ts.tv_sec = ms / 1000;
++    ts.tv_nsec = (ms % 1000) * 1000000L;
++    tsp = &ts;
++  }
++  if (top < 0) {
++    if (tsp != NULL)
++      nanosleep (tsp, NULL);
++    return;
++  }
++  sigemptyset (&empty);
++  if (pselect (top + 1, &rd, NULL, NULL, tsp, &empty) <= 0)
++    return;
++  if (amk_chld[0] >= 0 && FD_ISSET (amk_chld[0], &rd))
++    amk_chld_drain ();
++  for (i = 0; i <= AMK_SPAWNED; ++i)
++    if (amk_chan[i].req > 0 && FD_ISSET (amk_chan[i].req, &rd))
++      amk_chan_serve (&amk_chan[i]);
++}
+
++/* The blocking wait for any child, answering requests as they come.  The child pipe is drained before the check, so a death between the check and the wait leaves a byte that ends the wait at once.  */
++pid_t
++amk_wait_any (int *status) {
++  for (;;) {
++    pid_t pid;
++    amk_chld_drain ();
++    pid = waitpid (-1, status, WNOHANG);
++    if (pid > 0 || (pid < 0 && errno != EINTR))
++      return pid;
++    amk_call_wait (amk_chld[0] >= 0 ? -1 : 50);
++  }
++}
++
+ static void
+ amk_drain (unsigned int i) {
+   char tmp[4096];
+@@ -5449,6 +5936,7 @@
+     close (amk_mail[i]);
+     amk_mail[i] = 0;
+   }
++  amk_chan_close (&amk_chan[i]);
+   for (m = 0; m < AMK_SPAWNED && amk_mails[m].pid != 0; ++m)
+     ;
+   if (m < AMK_SPAWNED) {
+@@ -5570,18 +6058,27 @@
+ amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path) {
+   unsigned int i;
+   pid_t pid;
+-  int p[2];
++  int p[2], req[2], rep[2];
+   for (i = 0; i < AMK_SPAWNED && amk_live[i] != 0; ++i)
+     ;
+   if (i == AMK_SPAWNED)
+     return -1;
+   if (pipe (p) < 0)
+     return -1;
++  if (pipe (req) < 0 || pipe (rep) < 0) {
++    close (p[0]);
++    close (p[1]);
++    return -1;
++  }
+   fflush (NULL);
+   pid = fork ();
+   if (pid < 0) {
+     close (p[0]);
+     close (p[1]);
++    close (req[0]);
++    close (req[1]);
++    close (rep[0]);
++    close (rep[1]);
+     return -1;
+   }
+   if (pid > 0) {
+@@ -5593,6 +6090,14 @@
+     free (amk_mailbuf[i]);
+     amk_mailbuf[i] = NULL;
+     amk_maillen[i] = 0;
++    /* The job's call pair: its ends go with it, this side answers while waiting.  */
++    close (req[1]);
++    close (rep[0]);
++    fcntl (req[0], F_SETFD, FD_CLOEXEC);
++    fcntl (rep[1], F_SETFD, FD_CLOEXEC);
++    amk_chan_close (&amk_chan[i]);
++    amk_chan[i].req = req[0];
++    amk_chan[i].rep = rep[1];
+     if (foreground)
+       amk_tty_give (pid);
+     return pid;
+@@ -5605,6 +6110,14 @@
+     sprintf (fd, "%d", p[1]);
+     define_variable_global ("AMK_MAIL", 8, fd, o_env, 0, NILF)->export = v_export;
+   }
++  /* A job holds no store: its parent's pairs go, and its own requests travel the new pair up.  */
++  close (req[0]);
++  close (rep[1]);
++  for (i = 0; i <= AMK_SPAWNED; ++i)
++    amk_chan_close (&amk_chan[i]);
++  amk_up_req = req[1];
++  amk_up_rep = rep[0];
++  amk_call_export (req[1], rep[0]);
+   if (foreground)
+     amk_tty_give (getpid ());
+   if (stdout_path != NULL && freopen (stdout_path, "w", stdout) == NULL)
+@@ -5676,7 +6189,7 @@
+     }
+     if (!block)
+       return 0;
+-    usleep (5000);
++    amk_call_wait (5);
+   }
+ }
+
+@@ -6186,6 +6699,7 @@
+       int err;
+
+       amk_sweep_spawned ();
++      amk_call_cleanup ();
+       dying = 1;
+
+       if (print_version_flag)

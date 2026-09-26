@@ -68,6 +68,15 @@ path.off:
 	for t in $(tools); do case "$$(command -v $$t)" in */amk/*/bin/$$t) echo "$$t is on PATH despite AMK_NO_PATH" >&2; exit 1;; esac; done
 	echo "AMK_NO_PATH: PATH left alone"
 
+# json.bash answers under each of its names: jb builds an object, jb-array an array, and json.bash sources by name from PATH.
+jb: SHELL := bash
+jb:
+	for t in jb jb-array json.bash; do case "$$(command -v $$t)" in */amk/*/bin/$$t) ;; *) echo "$$t is not the payload's: $$(command -v $$t)" >&2; exit 1;; esac; done
+	test "$$(jb msg=hi n:number=41)" = '{"msg":"hi","n":41}'
+	test "$$(jb-array a :number=1)" = '["a",1]'
+	source json.bash && test "$$(json k=v)" = '{"k":"v"}'
+	echo "jb: $$(jb --version)"
+
 # The build passes the libraries it zipped in; gmsl is read in place from the payload and finds its helper file beside itself.
 libs ?=
 ifneq ($(filter gmsl,$(libs)),)

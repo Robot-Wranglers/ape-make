@@ -1,0 +1,121 @@
+Dedent: $(amk.dedent text) strips a block's indent the way compose.mk's banana-block
+dedent strips one frame's body, so a foreign program can be indented for reading. The
+base is the leading whitespace of the first non-blank line and comes off every line
+that starts with it; a blank line becomes empty; a tab-led line under a space base is a
+recipe line and passes as it is; a line that does not start with the base is
+inconsistent, passes as it is, and draws one warning. The body of a define for an
+engine is dedented the same way before its target is entered, and there an
+inconsistent line is fatal, since the engine would only misread it. The one routine,
+amk_dedent, serves both and any other C caller. $(amk.val.dedent name) is the shortcut
+for dedenting a variable's unexpanded value, as the value function reads it.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -46,4 +46,7 @@
+ char *amk_func_goal (char *o, char **argv, const char *funcname);
+ char *amk_func_require (char *o, char **argv, const char *funcname);
++char *amk_func_dedent (char *o, char **argv, const char *funcname);
++char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
++char *amk_dedent (const char *text, size_t *basep, int *badp);
+ char *amk_cell_text (const char *name, const char *engine, const char *body);
+ struct child;
+--- a/src/function.c
++++ b/src/function.c
+@@ -2924,4 +2924,6 @@
+   FT_ENTRY ("goal",          1,  1,  1,  amk_func_goal),
+   FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
++  FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
++  FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
+   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+@@ -3659,4 +3661,70 @@
+   free (want);
+   free (missing);
+   return o;
+ }
++
++/* The text with its block indent removed, allocated; the base's width and the count of inconsistent lines come back through the pointers.  */
++char *
++amk_dedent (const char *text, size_t *basep, int *badp)
++{
++  const char *base = NULL, *line = text;
++  size_t blen = 0;
++  char *out = xmalloc (strlen (text) + 1);
++  char *o = out;
++
++  *badp = 0;
++  for (;;)
++    {
++      size_t len = strcspn (line, "\n");
++      size_t lead = strspn (line, " \t");
++      size_t skip = 0;
++
++      if (lead == len)
++        skip = len;
++      else if (base == NULL)
++        {
++          base = line;
++          blen = skip = lead;
++        }
++      else if (line[0] == '\t' && memchr (base, '\t', blen) == NULL)
++        skip = 0;
++      else if (len < blen || memcmp (line, base, blen) != 0)
++        ++*badp;
++      else
++        skip = blen;
++      memcpy (o, line + skip, len - skip);
++      o += len - skip;
++      if (line[len] == '\0')
++        break;
++      *o++ = '\n';
++      line += len + 1;
++    }
++  *o = '\0';
++  *basep = blen;
++  return out;
++}
++
++/* $(amk.dedent text): the text dedented, with one warning when a line breaks the base.  */
++char *
++amk_func_dedent (char *o, char **argv, const char *funcname)
++{
++  size_t base;
++  int bad;
++  char *text = amk_dedent (argv[0], &base, &bad);
++
++  if (bad)
++    error (reading_file, strlen (funcname) + INTSTR_LENGTH, _("%s: inconsistent indentation (a line is less-indented than the %d-column body base); passed through verbatim"), funcname, (int) base);
++  o = variable_buffer_output (o, text, strlen (text));
++  free (text);
++  return o;
++}
++
++/* $(amk.val.dedent name): the variable's unexpanded value, as the value function reads it, dedented.  */
++char *
++amk_func_val_dedent (char *o, char **argv, const char *funcname)
++{
++  struct variable *v = lookup_variable (argv[0], strlen (argv[0]));
++  char *args[2] = { v != NULL ? v->value : (char *) "", NULL };
++
++  return amk_func_dedent (o, args, funcname);
++}
+--- a/src/read.c
++++ b/src/read.c
+@@ -3593,4 +3593,7 @@
+   const char *engine;
+   char *text;
++  char *body;
++  size_t base;
++  int bad;
+   int no_goal_yet = default_goal_var->value[0] == '\0';
+
+@@ -3602,4 +3605,9 @@
+
+   engine = vmod->engine_v->name;
++  body = amk_dedent (v->value, &base, &bad);
++  if (bad)
++    fatal (flocp, strlen (engine) + strlen (v->name) + INTSTR_LENGTH, _("define.%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), engine, v->name, (int) base);
++  free (v->value);
++  ((struct variable *) v)->value = body;
+   text = amk_cell_text (v->name, engine, v->value);
+   eval_buffer (text, flocp);

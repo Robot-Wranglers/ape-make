@@ -1,0 +1,113 @@
+Handle call: amk_call runs the make function or macro of a name with each value a guest
+passes as one whole argument, never split on commas nor expanded, as $(name ...) or
+$(call name,...) would get it already expanded. A builtin that expands its own arguments,
+as if and foreach do, gets each value with its dollars doubled, so it reads back what was
+written; values past a builtin's last argument join that argument with commas, as the
+parser joins them. Too few, or a name that is neither a function nor a variable, answers
+null with a reason the guest raises, where make itself would stop.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -3651,6 +3651,102 @@
+   if (!amk_has_db ())
+     return;
+   gmk_eval (text, NULL);
++}
++
++/* A value with each dollar doubled, so a builtin that expands its own arguments gets the value back as written.  */
++static char *
++amk_dollars_doubled (const char *value)
++{
++  size_t n = 0;
++  const char *p;
++  char *out, *q;
++  for (p = value; *p; ++p)
++    n += *p == '$' ? 2 : 1;
++  out = q = xmalloc (n + 1);
++  for (p = value; *p; ++p)
++    {
++      if (*p == '$')
++        *q++ = '$';
++      *q++ = *p;
++    }
++  *q = '\0';
++  return out;
++}
++
++/* The guest handle's call: the function or macro of that name with each value as one whole argument, never split on commas nor expanded, as $(name ...) or $(call name,...) would get it already expanded.  A builtin that expands its own arguments gets each value with its dollars doubled; values past a builtin's last argument join that argument with commas, as the parser would join them; too few, or a name make knows neither as a function nor as a variable, answers null with the reason in err.  The result is the caller's to free.  */
++char *
++amk_call (const char *name, unsigned int argc, const char **args, const char **err)
++{
++  static char why[256];
++  const struct function_table_entry *entry_p;
++  unsigned int n = argc, i;
++  char **argv, *obuf, *o, *value;
++  size_t olen;
++
++  if (!amk_has_db ())
++    {
++      *err = "no make database, running outside a makefile";
++      return NULL;
++    }
++  entry_p = lookup_function (name);
++  if (entry_p == NULL && lookup_variable (name, strlen (name)) == NULL)
++    {
++      snprintf (why, sizeof why, "no function or variable named '%s'", name);
++      *err = why;
++      return NULL;
++    }
++  if (entry_p != NULL && argc < entry_p->minimum_args)
++    {
++      snprintf (why, sizeof why, "'%s' takes at least %u arguments, and got %u", name, entry_p->minimum_args, argc);
++      *err = why;
++      return NULL;
++    }
++  if (entry_p != NULL && !entry_p->fptr.func_ptr)
++    {
++      snprintf (why, sizeof why, "'%s' is not implemented on this platform", name);
++      *err = why;
++      return NULL;
++    }
++
++  argv = xcalloc ((argc + 2) * sizeof (char *));
++  if (entry_p != NULL)
++    {
++      if (entry_p->maximum_args && n > entry_p->maximum_args)
++        n = entry_p->maximum_args;
++      for (i = 0; i < n; ++i)
++        {
++          char *v = xstrdup (args[i]);
++          unsigned int j;
++          for (j = i + 1; i == n - 1 && j < argc; ++j)
++            {
++              char *joined = xmalloc (strlen (v) + strlen (args[j]) + 2);
++              sprintf (joined, "%s,%s", v, args[j]);
++              free (v);
++              v = joined;
++            }
++          argv[i] = entry_p->expand_args ? v : amk_dollars_doubled (v);
++          if (argv[i] != v)
++            free (v);
++        }
++    }
++  else
++    {
++      argv[0] = xstrdup (name);
++      for (i = 0; i < argc; ++i)
++        argv[i + 1] = xstrdup (args[i]);
++    }
++
++  install_variable_buffer (&obuf, &olen);
++  o = initialize_variable_output ();
++  o = entry_p != NULL ? expand_builtin_function (o, n, argv, entry_p) : func_call (o, argv, "call");
++  variable_buffer_output (o, "", 1);
++  value = xstrdup (initialize_variable_output ());
++  restore_variable_buffer (obuf, olen);
++
++  for (i = 0; argv[i] != NULL; ++i)
++    free (argv[i]);
++  free (argv);
++  return value;
+ }
+
+ /* The parent's side of the queue: every record the child left, applied in order, then the file goes.  */
