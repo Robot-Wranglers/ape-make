@@ -5,11 +5,7 @@ minus one, the do-not-rebuild contract, so a makefile that guards a loadable wit
 
 --- a/src/load.c
 +++ b/src/load.c
-@@ -246,11 +246,12 @@
- int
- load_file (const floc *flocp, struct file *file UNUSED, int noerror)
- {
-   if (! noerror)
+@@ -250,7 +250,8 @@
      O (fatal, flocp,
         _("The 'load' operation is not supported on this platform"));
 
