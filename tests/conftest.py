@@ -16,7 +16,7 @@ import pytest
 
 HERE = Path(__file__).resolve().parent
 AMK_DIR = HERE.parent
-BUNDLE_SRC = AMK_DIR / "bundle"
+BUNDLE_SRC = HERE / "fixtures" / "bundle"
 CANDIDATES = (AMK_DIR / "amk", AMK_DIR / "out" / "bin" / "amk")
 
 # The reader the payload tools use, so a fidelity check reads what the binary holds.
@@ -137,7 +137,7 @@ def zygote(amk, sock):
 
 @pytest.fixture(scope="session")
 def bundle(amk, tmp_path_factory):
-  """A bundle built from bundle/ by the binary under test, as smoke builds it."""
+  """A bundle built from tests/fixtures/bundle/ by the binary under test, as smoke builds it."""
   out = tmp_path_factory.mktemp("bundle") / "b.amk"
   r = sh(amk, ["--bundle", "main.mk", "lib/", "--out", str(out)], cwd=BUNDLE_SRC)
   assert r.returncode == 0, r.stderr

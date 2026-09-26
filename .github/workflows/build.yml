@@ -1,4 +1,4 @@
-# Build amk from a clean tree, smoke it, and keep it as a workflow artifact; release.yml calls this.
+# Build amk from a clean tree, smoke and test it, and keep it as a workflow artifact; release.yml calls this.
 name: Build
 on:
   workflow_dispatch: {}
@@ -48,6 +48,11 @@ jobs:
         run: make build with=${{ matrix.with }}
       - name: Smoke
         run: make smoke with=${{ matrix.with }}
+      # The suite needs pytest and nothing else; the Makefile runs it as python3 -m pytest when no pytest is on PATH.
+      - name: Install pytest
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pytest
+      - name: Test
+        run: make test with=${{ matrix.with }}
       - name: Land the deliverable
         run: |
           mkdir -p dist

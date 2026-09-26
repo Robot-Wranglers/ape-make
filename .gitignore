@@ -1,3 +1,15 @@
-*.tar.gz
+# Pinned downloads and the toolchain unpacked from one; make deps fetches them again.
+/*.tar.gz
+/*.tar.xz
+/*.zip
+/*.ape
+/dkjson-*.lua
+/cosmocc/
+# Unpacked sources, build trees, and outputs; make clean drops them.
+/src/
+/build/
+/out/
+/dist/
 __pycache__
-out/*
+# Local notes.
+/scratch/

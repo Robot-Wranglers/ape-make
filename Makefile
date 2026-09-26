@@ -248,7 +248,7 @@ die  = { printf '$(tty.red)via/amk $(strip $(1)) failed$(tty.off) %s\n' "$(strip
 show = printf '%-8s %-24s %-6s %s\n' '$(strip $(1))' '$(strip $(2))' \
          "$$(du -sh '$(strip $(2))' 2>/dev/null | cut -f1 || echo -)" '$(strip $(3))'
 
-.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.readme smoke.demos test test.native install install.user install.global stat st status clean help FORCE
+.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.readme smoke.demos test test.native build.docker smoke.docker install install.user install.global stat st status clean help FORCE
 .DEFAULT_GOAL := amk
 
 help:
@@ -572,7 +572,7 @@ $(artifact.host): $(make.src) build/.engines$(suffix) $(foreach e,$(engines),$(g
 
 # The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so it runs without this file's undefined-variable warnings.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
-	  out=$$(env MAKEFLAGS=-s sh -c "../../$(artifact.ape) -I /zip/lib -f gmsl-tests $$mode"); \
+	  out=$$(env MAKEFLAGS=-s sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode"); \
 	  echo "gmsl-tests $$mode: $$(echo "$$out" | tail -1)"; \
 	  case "$$out" in *'; 0 tests failed'*) ;; *) echo "$$out" >&2; exit 1;; esac; \
 	done
@@ -611,14 +611,14 @@ smoke: $(artifact.ape) smoke.readme smoke.demos
 	pkill -f -- "--serve $$sock"
 	$(call log, smoke, a bundle whose default entry is its own makefile)
 	rm -rf build/bundle && mkdir -p build/bundle/away
-	cd bundle && sh -c "../$(artifact.ape) --bundle main.mk lib/ --out ../build/bundle/b.amk"
+	cd tests/fixtures/bundle && sh -c "$(abspath $(artifact.ape)) --bundle main.mk lib/ --out $(HERE)build/bundle/b.amk"
 	unzip -Z1 $(artifact.ape) | sort > build/bundle/base.list && unzip -Z1 build/bundle/b.amk | sort > build/bundle/b.list
 	test "$$(comm -13 build/bundle/base.list build/bundle/b.list | tr '\n' ' ')" = "__main__.mk lib/greet.mk lib/sub/deep.mk "
 	unzip -tq build/bundle/b.amk
 	cd build/bundle/away && sh -c "../b.amk entry" && sh -c "../b.amk recurse"
 	cd build/bundle/away && env -i HOME="$$HOME" AMK_NO_PATH=1 PATH=/nonexistent /bin/sh -c "../b.amk entry"
 	sh -c "build/bundle/b.amk -f smoke.mk noop"
-	cd bundle && sh -c "../build/bundle/b.amk --bundle lib/greet.mk --out ../build/bundle/c.amk"
+	cd tests/fixtures/bundle && sh -c "$(HERE)build/bundle/b.amk --bundle lib/greet.mk --out $(HERE)build/bundle/c.amk"
 	test "$$(unzip -p build/bundle/c.amk __main__.mk)" = "greeting := hello"
 	test "$$(unzip -Z1 build/bundle/c.amk | wc -l)" = "$$(unzip -Z1 build/bundle/b.amk | wc -l)"
 	sock=$$(mktemp -d)/bundle.sock; \
@@ -636,7 +636,7 @@ smoke.readme: $(artifact.ape)
 	ln -s ../../src build/readme/src
 	printf '{"version":"1.2.3"}\n' > build/readme/package.json
 	$(call log, smoke.readme, running $$(grep -c ':=' build/readme/examples.mk) assignments and the check target)
-	cd build/readme && env MAKEFLAGS=-s sh -c "../../$(artifact.ape) -f ../../readme.mk readme"
+	cd build/readme && env MAKEFLAGS=-s sh -c "$(abspath $(artifact.ape)) -f ../../readme.mk readme"
 	$(call log, smoke.readme, every example holds)
 # The wasm demo needs the opt-in engine and docker, so a build without wasm3 leaves it out.
 demos.skip := $(if $(filter wasm3,$(engines)),,demos/wasm-1.mk)
@@ -667,6 +667,39 @@ test.native: $(artifact.host)
 	@# The same suite through the host build.
 	$(call log, test.native, pytest under tests/ against $(artifact.host))
 	env AMK_BIN=$(abspath $(artifact.host)) $(pytest) tests $(pytest.args)
+
+# The image: docker execs an entrypoint without a shell and an ape needs one, so the context holds the fat ape assimilated to a native ELF per arch, and the Dockerfile copies its platform's.
+docker.dir    := build/docker$(suffix)
+docker.arches := amd64 arm64
+docker.image  ?= amk
+docker.tag    ?= $(amk.version)$(suffix)$(foreach e,$(filter $(engines.optin),$(engines)),-$(e))
+assimilate.amd64 := -x
+assimilate.arm64 := -a
+# Inside the image the artifact is the installed one; the wasm demo builds its module with docker, which the image does not carry.
+docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.mk \
+  $(foreach v,with without flavor patch.dirs,$(v)='$($(v))')
+
+build.docker: $(docker.dir)/.context
+	@# The image from the artifact make build lands, for this platform, tagged $(docker.image):$(docker.tag).
+	$(call log, build.docker, building $(docker.image):$(docker.tag) from $(docker.dir))
+	docker build -q -f Dockerfile --target amk -t $(docker.image):$(docker.tag) $(docker.dir) >/dev/null
+	$(call log, build.docker, image $(docker.image):$(docker.tag) is ready -- $(docker.dir) is its context for every arch)
+$(docker.dir)/.context: $(artifact.ape) $(cosmocc.dir)/bin/cosmocc
+	$(call log, build.docker, assimilating $(artifact.ape) to an ELF for each of $(docker.arches))
+	rm -rf $(docker.dir) && mkdir -p $(addprefix $(docker.dir)/,$(docker.arches))
+	$(foreach a,$(docker.arches), \
+	  sh $(cosmocc.dir)/bin/assimilate -e $(assimilate.$(a)) -o $(docker.dir)/$(a)/amk $(artifact.ape) >/dev/null \
+	  && chmod 0755 $(docker.dir)/$(a)/amk \
+	  $(foreach n,$(engines.aliases),&& ln -sf amk $(docker.dir)/$(a)/$(n));)
+	touch $@
+
+smoke.docker: build.docker
+	@# The same smoke, run inside the image against the amk it installs, from this checkout mounted as the work tree.
+	$(call log, smoke.docker, make smoke inside $(docker.image):$(docker.tag) with unzip and procps added)
+	docker build -q -f Dockerfile --target smoke -t $(docker.image):$(docker.tag)-smoke $(docker.dir) >/dev/null
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(HERE):$(HERE)" -w "$(HERE)" \
+	  $(docker.image):$(docker.tag)-smoke smoke $(docker.smoke.args)
+	$(call log, smoke.docker, the image passes smoke)
 
 st status: stat
 	@# Aliases for stat.
