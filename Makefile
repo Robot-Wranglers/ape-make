@@ -224,6 +224,14 @@ s7.objskip     :=
 micropython.objskip :=
 wasm3.objskip  :=
 quickjs.objskip :=
+# A file of amk's own compiled beside a configured guest's objects, so the partial link takes it; the compiler is the argument.
+gawk.extra  =
+jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -c $(HERE)guest/jq_main.c -o src/jq_main.o
+lua.extra   =
+s7.extra    =
+micropython.extra =
+wasm3.extra =
+quickjs.extra =
 
 # out/bin and out/bin-native each hold one artifact beside its argv[0] aliases; everything rebuildable stays under build/.
 guests.ape    := build/guests/ape
@@ -441,13 +449,19 @@ build/%-native/.built: build/%-native/Makefile
 	cd $(@D) && MAKEFLAGS=-s make -k -j$(jobs) CFLAGS='$(call guest.cflags,$*)' $($*.defs) >build.log 2>&1 || true
 	ls $(@D)/$($*.objcheck) >/dev/null 2>&1 \
 	  || $(call die, guest, $* compiled no objects -- see the tail of $(@D)/build.log)
+	$(if $($*.extra),cd $(@D) && $(call $*.extra,$${CC:-cc}) >>build.log 2>&1 \
+	  || $(call die, guest, $*'s extra file did not compile -- see the tail of $(@D)/build.log))
 	touch $@
 build/%-ape/.built: build/%-ape/Makefile
 	$(call log, guest, compiling $* for cosmocc -- log at $(@D)/build.log)
 	cd $(@D) && env $(cosmocc.env) MAKEFLAGS=-s make -k -j$(jobs) CFLAGS='$(or $($*.guestflags),$(call guest.cflags,$*))' $($*.defs) >build.log 2>&1 || true
 	ls $(@D)/$($*.objcheck) >/dev/null 2>&1 \
 	  || $(call die, guest, $* compiled no objects -- see the tail of $(@D)/build.log)
+	$(if $($*.extra),cd $(@D) && env $(cosmocc.env) sh -c '$(call $*.extra,cosmocc)' >>build.log 2>&1 \
+	  || $(call die, guest, $*'s extra file did not compile -- see the tail of $(@D)/build.log))
 	touch $@
+# The extra file is a build input of its guest.
+build/jq-ape/.built build/jq-native/.built: guest/jq_main.c
 
 build/lua-native/.built: $(lua.src) guest/lua_main.c guest/amk_guest.h
 	$(call log, guest, compiling lua for the host compiler -- log at $(@D)/build.log)
@@ -543,7 +557,7 @@ FORCE:
 
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree.
-$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files)
+$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) guest/amk.sh
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix) $(bin)
 	cd build/ape$(suffix) \
@@ -553,6 +567,8 @@ $(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) 
 	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/ with the prelude)
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
 	$(foreach t,$(tools),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(t);)
+	@# The call channel's shell side rides in bin/ too, so a recipe sources it by name from PATH.
+	install -m 0644 guest/amk.sh build/payload$(suffix)/bin/amk.sh
 	$(foreach l,$(libs),$(foreach f,$($(l).files),install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
 	$(foreach f,$(payload.files),install -m 0644 $(f) build/payload$(suffix)/$(notdir $(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.

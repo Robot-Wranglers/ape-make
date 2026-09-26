@@ -274,7 +274,100 @@ against one state kept for the life of that process, so a global one call sets i
 for the next. Its result is what the chunk prints. Init and hooks both live on this state.
 Under a zygote the state is forked with the parse, so each request starts from what the
 parse left. Persist, init and hooks are three entries on an engine's row: init comes with
-persist, and a hook entry is written per guest. Today lua and micropy supply both.
+persist, and a hook entry is written per guest. Lua and micropy supply both; jq supplies a persist
+entry whose state is a [store](#jq-store).
+
+#### jq store
+
+`$(jq.persistent op name prog)` holds named JSON values for the life of the make process
+and runs jq programs over them in that process, with no fork. The store is a map from name
+to value; a missing name is `null`, and a name is any word, so a caller scopes names to a
+run the way it would name files. Every call names the entry it works on:
+
+| call | runs | stores | returns |
+| --- | --- | --- | --- |
+| `get NAME PROG` | the program over the value | nothing | every output |
+| `update NAME PROG` | the program over the value | the first output | the rest |
+| `take NAME PROG` | a program yielding `[new, out...]` | `new` | `out...` |
+| `load NAME PATH` | | the one JSON text in the file | nothing |
+| `load NAME,TEXT` | | the one JSON text given as the input | nothing |
+| `dump NAME` | | nothing | the value as compact JSON |
+| `filter [OPTS] PROG,TEXT` | the program over every JSON text in the input | nothing | every output |
+
+Words before the program bind variables as the jq tool does, `--arg k v` for a string and
+`--argjson k v` for a value, and `-r` prints a string output bare. A program compiles once
+per text and set of bound names, so a loop that binds a new value each turn never
+recompiles. A program error is a nonzero `.SHELLSTATUS` with jq's message on stderr, never
+a make error, and the value stays as it was.
+
+```make
+# a stack in the store: push, then pop the top and keep the rest
+seed  := $(jq.persistent update stack [1] + [2])
+push  := $(jq.persistent update stack --argjson v 3 . + [$$v])
+pop.prog := [.[:-1], .[-1]]
+pop   := $(jq.persistent take stack $(pop.prog))
+depth := $(jq.persistent get stack length)
+# a string output printed bare
+name := $(jq.persistent update who {"name": "a b"})
+who  := $(jq.persistent get who -r .name)
+```
+
+`pop` is `3`, `depth` is `2` and `who` is `a b`. A comma at the top level of a program ends
+the argument, as for every builtin, so a program with one goes in a variable and the call
+names the variable, as `pop.prog` does. Under a zygote each request starts from the store
+the parse left.
+
+#### Calls from a recipe
+
+A builtin expands before a recipe runs, so a value that changes while the recipe runs, a
+stack popped in a loop, needs a call at recipe time. Every make process names two
+descriptors to its recipes, `AMK_CALL` and `AMK_REPLY`, a request pipe and a reply pipe,
+and answers on them from the jq store while the recipe's shell runs. Everything is line
+framed and carries JSON as it is: a request is one line, the store call; a reply is a
+`STATUS N` line, then N lines, one output each. Shell builtins do the whole exchange, so a
+call costs a write and a read and never a fork:
+
+```make
+SHELL := bash
+define ask
+printf '%s\n' "$(1)" >&$$AMK_CALL && read -r st n <&$$AMK_REPLY && { [ "$$n" = 0 ] || IFS= read -r $(2) <&$$AMK_REPLY; }
+endef
+
+drain:
+	$(call ask,update S [3$(,) 1$(,) 2],x)
+	while :; do $(call ask,take S [.[:-1]$(,) .[-1]],top); \
+	  $(call ask,get S length,n); echo "popped $$top"; [ "$$n" != 0 ] || break; done
+, := ,
+```
+
+The status is the store's, `0` when the program ran clean. A sub-make and a spawned job
+hold no store of their own: each inherits a live pair and sends every request up it, its own
+`$(jq.persistent)` expansions included, so every process of a run reads and writes the same
+entries. A request served by a zygote starts as an owner, from the store the parse left.
+
+**Tags.** Recipe shells of one process share its pair, so two callers running at once, two
+stages of one pipeline or two lines under `-j`, would read each other's replies. A request
+that opens with `@TAG` is answered instead into a private FIFO, `$AMK_REPLY_DIR/TAG`, which
+the answering process makes and removes; one empty line on `AMK_REPLY` says the FIFO is
+there before the caller opens it. `$BASHPID` is a tag no other caller holds.
+
+**The shell side, once.** `amk.sh` sits on `PATH` beside the payload tools, so a recipe
+runs `source amk.sh` and has two functions. `amk.call REQUEST [LINE...]` sends a tagged
+request, with input lines after it, prints the reply lines and returns the status.
+`jq.pipe [OPTS] PROG` reads stdin and runs the program over it in the make process, so a
+pipeline converts by replacing the command word:
+
+```make
+SHELL := bash
+names:
+	source amk.sh; printf '{"n":"a"}\n{"n":"b"}\n' | jq.pipe -r .n | sort -r
+	source amk.sh; amk.call 'get S length'
+```
+
+`jq.pipe` sends `filter N [OPTS] PROG` and then N input lines; the outputs come back as
+jq would print them. OPTS is exactly `-r -c -e -n -s --arg --argjson`, and any other option
+is status 2 with nothing run, so a site that needs more fails when it converts rather than
+later. jq's messages go to make's stderr.
 
 #### Init
 

@@ -27,6 +27,9 @@ readme: check
 	$(if $(filter micropy,$(.FEATURES)),test "$(built)" = "cc debug flags shorten targets.app targets.lib")
 	$(if $(filter micropy,$(.FEATURES)),test "$(summary)" = "clang -O2 -Wall true lib: core c")
 	$(if $(filter jq,$(.FEATURES)),test "$(version)" = "1.2.3")
+	$(if $(filter jq,$(.FEATURES)),test "$(pop)" = "3")
+	$(if $(filter jq,$(.FEATURES)),test "$(depth)" = "2")
+	$(if $(filter jq,$(.FEATURES)),test "$(who)" = "a b")
 	$(if $(filter wasm,$(.FEATURES)),test "$(echoed)" = "Args: test.wasm; hello;")
 	$(if $(filter wasm,$(.FEATURES)),test "$(strip $(fibs))" = "55 6765 832040")
 	echo "readme: every example holds"
