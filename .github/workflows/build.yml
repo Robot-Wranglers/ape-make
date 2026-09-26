@@ -110,6 +110,9 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: amk-${{ matrix.name }}
+      # Artifacts drop the mode, and the bootstrap finds itself by command -v, which on macOS skips a file that is not executable.
+      - name: Restore the exec bit
+        run: chmod +x amk
       # A host with no ape loader registered cannot exec the file directly; sh runs the bootstrap.
       - name: Version
         run: sh ./amk --version

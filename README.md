@@ -5,7 +5,7 @@
 A drop in replacement, but also with brand new superpowers.
 
 
-**Overview:** [Bundling & Distribution](#bundling--distribution) | [Standard Guests](#standard-guests) | [Special Guests](#special-guests) | [Zygote / Resident Mode](#resident-dispatch)
+**Overview:** [Install](#install) | [Bundling & Distribution](#bundling--distribution) | [Standard Guests](#standard-guests) | [Special Guests](#special-guests) | [Zygote / Resident Mode](#resident-dispatch)
 
 **Details:** [Payloads](#payloads) | [The load directive](#the-load-directive) | [Command line](#command-line) | [Running an ape](#running-an-ape) | [Developers](#developers)
 
@@ -26,6 +26,36 @@ The main use-cases:
 Put this stuff together, and it's a kind of *pseudo-compilation* over a make-dialect that can produce a platform-independent binary, can link libraries into something like Makefile-as-modules for code-reuse, and indeed even supports a kind of bidirectional FFI.  
 
 Have fun.
+
+## Install
+
+One file runs on Linux, macOS, and the BSDs:
+
+```bash
+curl -fsSLO https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk
+chmod +x amk
+mkdir -p ~/.local/bin && mv amk ~/.local/bin/
+amk --version
+```
+
+On Apple silicon the first run needs a C compiler; run `xcode-select --install` if `cc` is missing.
+
+### Verifying the download
+
+Each release carries a checksum beside the binary:
+
+```bash
+curl -fsSLO https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk.sha256
+sha256sum -c amk.sha256   # on macOS: shasum -a 256 -c amk.sha256
+```
+
+### Docker
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/robot-wranglers/amk:latest <target>
+```
+
+The image runs `amk` in `/work`. Use the `wasm3` tag for the build with the [wasm](#wasm) engine.
 
 ## Bundling & Distribution
 
@@ -505,6 +535,11 @@ A shell runs an ape where a bare `execve` cannot: the file's header is a shell s
 that installs a small loader in `$TMPDIR` on first run. `sh`, `make`, and any shell-based
 wrapper all go through one. Python `subprocess` does not; wrap the call in `sh -c`.
 
+The file must keep its exec bit even when run as `sh ./amk`: the header finds itself with
+`command -v`, which on macOS skips a file that is not executable, and the first run then fails
+with `gzip: (stdin): unexpected end of file`. Anything that copies it without its mode, such as
+a CI artifact, needs a `chmod +x` first.
+
 ## Developers
 
 ### Building
@@ -607,9 +642,10 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The `Release` workflow builds `amk` from a clean tree on Linux, runs `make smoke`, runs
 the built file on x86_64 Linux, arm64 Linux, and macOS without rebuilding it, and
-publishes `amk` and `amk.sha256` as a GitHub Release named after the tag. Running the
-workflow by hand on a branch is a dry run: it builds and checks, and the publish step is
-skipped. Every push and pull request runs the same build through the `Build` workflow and
+publishes `amk` and `amk.sha256` as a GitHub Release named after the tag, and the
+container image to `ghcr.io/robot-wranglers/amk` after smoking it on amd64. Running the
+workflow by hand on a branch is a dry run: it builds and checks, builds the image for both
+platforms, and pushes nothing. Every push and pull request runs the same build through the `Build` workflow and
 keeps the result as a workflow artifact. A weekly `Pins` workflow fetches every input cold
 and verifies it, so a digest that moved upstream surfaces before it breaks a release.
 
