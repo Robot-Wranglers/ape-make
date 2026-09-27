@@ -72,3 +72,26 @@ def test_a_served_request_can_spawn(amk, tmp_path, zygote):
   r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)
   assert r.returncode == 0, r.stdout + r.stderr
   assert "one" in r.stdout and "r=success" in r.stdout, r.stdout + r.stderr
+
+
+goals = "\n".join([
+  "seed := $(lua.persistent)",
+  "all:",
+  "\t@: $(lua.persistent amk.wait(amk.spawn({'one', 'two'})))",
+  "one:",
+  "\t@echo one sees [$(MAKECMDGOALS)]",
+  "two:",
+  "\t@echo two sees [$(MAKECMDGOALS)]",
+  "",
+])
+
+
+@pytest.mark.engines("lua")
+def test_a_spawned_job_sees_its_own_goals(amk, tmp_path):
+  """The spawn runs while a recipe expands; its goals must reach every target, not the expanding one's set."""
+  mk = tmp_path / "goals.mk"
+  mk.write_text(goals)
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "one sees [ one two]" in r.stdout, r.stdout + r.stderr
+  assert "two sees [ one two]" in r.stdout, r.stdout + r.stderr

@@ -45,6 +45,7 @@ patch that adds that guest.
 | `0038-mail-over-client.patch` | a request carries the caller's mail pipe as a fourth descriptor, so a served request a hop made through the client writes `AMK_MAIL` into the pipe the loop drains; a caller without one sends stderr in the slot and drops the name |
 | `0039-serve-across-restart.patch` | a zygote whose parse remakes an included file keeps its serve words through make's re-exec, so it parks after the restart instead of running its goal and exiting unbound |
 | `0040-api-exit-code.patch` | a guest names the status the process leaves with and die uses it in place of make's own, so a loop run as a recipe carries its marked code past make's exit 2 for a failed goal; Lua adds `amk.exit_code` |
+| `0041-spawn-goals-global.patch` | a job spawned while a recipe expands defines its command goals in the global variable set, not the expanding target's, so every target of the job reads its own `MAKECMDGOALS` |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,
