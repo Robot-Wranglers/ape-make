@@ -6,6 +6,8 @@ code, a child make's own reaping saw first under -j still reaches wait, and a re
 by a zygote can spawn.
 """
 
+import re
+
 import pytest
 
 from conftest import sh
@@ -84,6 +86,30 @@ goals = "\n".join([
   "\t@echo two sees [$(MAKECMDGOALS)]",
   "",
 ])
+
+
+rearmed = "\n".join([
+  "seed := $(lua.persistent)",
+  "me := $(shell echo $$PPID)",
+  "all:",
+  "\t@echo parent=$(me)",
+  "\t@: $(lua.persistent amk.wait(amk.spawn({'one'})) amk.wait(amk.spawn({'one'})))",
+  "one:",
+  "\t@echo child=$(me)",
+  "",
+])
+
+
+@pytest.mark.engines("lua")
+def test_a_spawned_job_rearms_its_pid(amk, tmp_path):
+  """A name in AMK_REARM_PID is the job's own pid, as it is a served child's, not the parent's."""
+  mk = tmp_path / "rearmed.mk"
+  mk.write_text(rearmed)
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_REARM_PID": "me"}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  pids = re.findall(r"^(?:parent|child)=(\d+)$", r.stdout, re.M)
+  assert len(pids) == 3, r.stdout + r.stderr
+  assert len(set(pids)) == 3, f"a job kept another's pid: {pids}\n{r.stdout}"
 
 
 @pytest.mark.engines("lua")

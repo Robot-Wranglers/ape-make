@@ -46,6 +46,7 @@ patch that adds that guest.
 | `0039-serve-across-restart.patch` | a zygote whose parse remakes an included file keeps its serve words through make's re-exec, so it parks after the restart instead of running its goal and exiting unbound |
 | `0040-api-exit-code.patch` | a guest names the status the process leaves with and die uses it in place of make's own, so a loop run as a recipe carries its marked code past make's exit 2 for a failed goal; Lua adds `amk.exit_code` |
 | `0041-spawn-goals-global.patch` | a job spawned while a recipe expands defines its command goals in the global variable set, not the expanding target's, so every target of the job reads its own `MAKECMDGOALS` |
+| `0042-spawn-rearm-pid.patch` | a spawned job rearms the names `AMK_REARM_PID` lists to its own pid as a served child does, in the global set, so a makefile that recorded its process at parse answers for the job |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,
