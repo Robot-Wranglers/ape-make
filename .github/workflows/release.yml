@@ -82,6 +82,9 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: amk-default
+      # The binary's banner must name the tag it ships under; a mismatch means the build did not see the tag.
+      - name: Version matches the tag
+        run: sh ./amk --version | sed -n 2p | grep -E "\(amk ${GITHUB_REF_NAME#v}[ :]"
       - name: Stage assets
         run: |
           mkdir -p dist

@@ -26,8 +26,12 @@ jobs:
           - name: wasm3
             with: wasm3
     steps:
+      # The Makefile reads the version from the nearest v-tag, so the checkout needs the tags and the history behind them.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across engine sets.
       - name: Cache downloads and toolchain
         uses: actions/cache@v6

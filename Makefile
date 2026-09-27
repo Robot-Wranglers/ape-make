@@ -4,8 +4,9 @@ SHELL := bash
 MAKEFLAGS = -s -S --warn-undefined-variables
 HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-# The version the banner and .AMK_VERSION carry; make's own stays 4.4.1 on the first line.
-amk.version := 0.1.0
+# The version the banner and .AMK_VERSION carry comes from the nearest v-tag; make's own stays 4.4.1 on the first line.
+amk.describe := $(shell git -C $(HERE) describe --tags --always --dirty --match 'v*' 2>/dev/null)
+amk.version  ?= $(or $(patsubst v%,%,$(filter v%,$(amk.describe))),0.0.0-$(or $(amk.describe),dev))
 
 # Every input is pinned by version and digest; upstream ships no checksum files.
 make.version := 4.4.1
@@ -248,7 +249,7 @@ die  = { printf '$(tty.red)via/amk $(strip $(1)) failed$(tty.off) %s\n' "$(strip
 show = printf '%-8s %-24s %-6s %s\n' '$(strip $(1))' '$(strip $(2))' \
          "$$(du -sh '$(strip $(2))' 2>/dev/null | cut -f1 || echo -)" '$(strip $(3))'
 
-.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.readme smoke.demos test test.native build.docker smoke.docker install install.user install.global stat st status clean help FORCE
+.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.readme smoke.demos test test.native build.docker smoke.docker install install.user install.global release release.preflight release.watch stat st status clean help FORCE
 .DEFAULT_GOAL := amk
 
 help:
@@ -714,6 +715,44 @@ stat:
 	$(call show, input, $(guests.host), the same from the host compiler)
 	$(call show, input, src, unpacked sources -- make patched and the guests pristine)
 	$(call show, input, cosmocc, the unpacked toolchain)
+
+#░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+# A release is a v-tag pushed from any branch; the Release workflow builds and publishes it.
+version ?=
+release.remote ?= origin
+release.tag     = v$(version)
+release.branch  = $$(git branch --show-current)
+
+release: release.preflight
+	@# Tag the head commit v$(version), push the branch and then the tag, and watch the run when gh is on PATH.
+	$(call log, release, tagging $(release.tag) on $(release.branch))
+	git tag -a $(release.tag) -m "amk $(release.tag)"
+	git push $(release.remote) "$(release.branch)"
+	git push $(release.remote) $(release.tag)
+	$(call log, release, pushed $(release.tag) -- the Release workflow builds and publishes it)
+	if command -v gh >/dev/null; then $(MAKE) release.watch version=$(version); else $(call log, release, gh is not on PATH -- watch the run under Actions); fi
+
+release.preflight:
+	@# The version is X.Y.Z, the tree is committed, and the tag is free both locally and on the remote.
+	printf '%s' '$(version)' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' \
+	  || $(call die, release, version=X.Y.Z is required -- got '$(version)')
+	[ -z "$$(git status --porcelain --untracked-files=no)" ] \
+	  || { git status --short --untracked-files=no >&2; $(call die, release, the working tree has uncommitted changes); }
+	! git rev-parse -q --verify refs/tags/$(release.tag) >/dev/null \
+	  || $(call die, release, $(release.tag) already exists locally)
+	! git ls-remote --exit-code --tags $(release.remote) refs/tags/$(release.tag) >/dev/null 2>&1 \
+	  || $(call die, release, $(release.tag) already exists on $(release.remote))
+	$(call log, release, preflight ok -- $(release.tag) on $(release.branch) is committed and the tag is free)
+
+release.watch:
+	@# Stream the Release run for v$(version) to completion; rerun this alone to reattach.
+	rid=; for i in $$(seq 1 30); do \
+	  rid=$$(gh run list --workflow release.yml --branch $(release.tag) --limit 1 --json databaseId --jq '.[0].databaseId'); \
+	  if [ -n "$$rid" ]; then break; fi; sleep 5; \
+	done; \
+	[ -n "$$rid" ] || $(call die, release, no Release run found for $(release.tag)); \
+	$(call log, release, streaming run $$rid); gh run watch "$$rid" --exit-status
 
 clean:
 	@# Drop the landed deliverable, the unpacked sources, build trees, and outputs.

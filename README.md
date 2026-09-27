@@ -656,14 +656,22 @@ host is.
 
 ### Releases
 
-A release is a pushed tag that starts with `v`. The tag is the version; nothing is stamped
-into the binary.
+A release is a pushed tag that starts with `v`, and the tag is the version: the Makefile
+reads `amk.version` from the nearest `v` tag with `git describe`, so the banner and
+`.AMK_VERSION` say `0.2.0` at the tag and something like `0.2.0-3-gabc1234-dirty` on a
+build past it. One command cuts a release from any branch:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+version=0.2.0 make release
 ```
 
-The `Release` workflow builds `amk` from a clean tree on Linux, runs `make smoke`, runs
+It refuses to run unless the version is `X.Y.Z`, every tracked change is committed, and
+`v0.2.0` exists neither locally nor on `origin`. Then it tags the head, pushes the branch
+and the tag, and streams the workflow run when `gh` is installed; `make release.watch
+version=0.2.0` reattaches to a run. `release.remote=` names another remote.
+
+The `Release` workflow builds `amk` from a clean tree on Linux, runs `make smoke`, checks
+that the banner names the tag, runs
 the built file on x86_64 Linux, arm64 Linux, and macOS without rebuilding it, and
 publishes `amk` and `amk.sha256` as a GitHub Release named after the tag, and the
 container image to `ghcr.io/robot-wranglers/amk` after smoking it on amd64. Running the
