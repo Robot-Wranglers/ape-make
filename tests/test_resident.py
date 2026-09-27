@@ -170,3 +170,19 @@ def test_a_served_request_keeps_the_clients_streams(amk, tmp_path, zygote):
   r = sh(amk, ["--client", str(sock), "filter"], cwd=tmp_path, stdin="piped\n")
   assert r.returncode == 0, r.stderr
   assert r.stdout == "PIPED\n"
+
+
+def test_a_zygote_parks_after_remaking_an_included_file(amk, tmp_path, zygote):
+  """A parse that remakes an included file restarts make; the re-exec keeps the serve words."""
+  (tmp_path / "Makefile").write_text("\n".join([
+    "-include generated.mk",
+    "generated.mk:",
+    "\t@printf 'gen := made\\n' > $@",
+    "show:",
+    "\t@printf 'gen=%s restarts=%s\\n' '$(gen)' '$(MAKE_RESTARTS)'",
+    "",
+  ]))
+  sock = zygote(["-f", "Makefile", "show"], tmp_path)
+  r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stderr[-2000:]
+  assert "gen=made restarts=1" in r.stdout, r.stdout

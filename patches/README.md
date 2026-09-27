@@ -43,6 +43,8 @@ patch that adds that guest.
 | `0036-api-jq-store.patch` | a persist entry on the jq row: a store of named JSON values held for the life of the process, and `$(jq.persistent op name prog)` runs a program over one of them through libjq with no fork, or `filter` over an input; the entry is `guest/jq_main.c`, compiled beside jq's objects, and its shell side `guest/amk.sh` rides in the payload's `bin/` |
 | `0037-api-call.patch` | the recipe-time call: `AMK_CALL` and `AMK_REPLY`, a request pipe and a reply pipe every make process names to its recipes and every spawned job gets a pair of, answered from the jq store while make waits on children, line framed with a count; a tagged request is answered into a private FIFO under `AMK_REPLY_DIR`, the directory remade when a sibling hop took it down; a sub-make or job forwards up the pair it inherited, so a run shares one store |
 | `0038-mail-over-client.patch` | a request carries the caller's mail pipe as a fourth descriptor, so a served request a hop made through the client writes `AMK_MAIL` into the pipe the loop drains; a caller without one sends stderr in the slot and drops the name |
+| `0039-serve-across-restart.patch` | a zygote whose parse remakes an included file keeps its serve words through make's re-exec, so it parks after the restart instead of running its goal and exiting unbound |
+| `0040-api-exit-code.patch` | a guest names the status the process leaves with and die uses it in place of make's own, so a loop run as a recipe carries its marked code past make's exit 2 for a failed goal; Lua adds `amk.exit_code` |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

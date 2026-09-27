@@ -1,0 +1,40 @@
+Exit code from a guest: a guest names the status the process leaves with, and die
+uses it in place of make's own, so a loop that runs as a recipe carries its marked
+code past make's exit 2 for a failed goal. The served client hears the same status.
+Lua adds amk.exit_code, in guest/lua_main.c beside the spawn api.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -347,6 +347,9 @@
+
+ /* Nonzero in a resident dispatch child, which shares state with its parent.  */
+ unsigned int amk_child;
++
++/* A status a guest asked this process to leave with, in place of make's own.  */
++int amk_exit_status = -1;
+
+ /* Socket named by --serve, parked on once the makefiles are read.  */
+ static const char *amk_serve_path;
+@@ -6235,6 +6238,13 @@
+ int
+ amk_kill_child (pid_t pid, int sig) {
+   return killpg (pid, sig);
++}
++
++/* A guest names the status this process leaves with; a loop run as a recipe
++   carries its own code past make's exit 2 for a failed goal.  */
++void
++amk_exit_with (int status) {
++  amk_exit_status = status;
+ }
+
+ /* The terminal to a job, and the job continued: what a shell's fg does.  */
+@@ -6741,6 +6751,8 @@
+     {
+       int err;
+
++      if (amk_exit_status >= 0)
++        status = amk_exit_status;
+       amk_sweep_spawned ();
+       amk_call_cleanup ();
+       dying = 1;

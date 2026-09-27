@@ -22,6 +22,7 @@ extern pid_t amk_spawn_goals (int n, char **words, int foreground, const char *s
 extern int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
 extern int amk_kill_child (pid_t pid, int sig);
 extern int amk_foreground (pid_t pid);
+extern void amk_exit_with (int status);
 extern int amk_mail_take (pid_t pid, char **buf, size_t *len);
 extern int amk_mail_send (const char *s, size_t n);
 

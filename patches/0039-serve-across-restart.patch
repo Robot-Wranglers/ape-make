@@ -1,0 +1,31 @@
+Serve across a restart: the zygote's serve words leave argv before option decoding,
+and make's re-exec after remaking a makefile rebuilt its command line from that argv,
+so a zygote whose parse remade an included file came back as an ordinary make, ran its
+goal, and exited without binding. The re-exec now puts the two words back, so a zygote
+parks after a restart as it does without one.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -3656,6 +3656,22 @@
+               if (bad)
+                 O (fatal, NILF,
+                    _("Couldn't change back to original directory"));
++            }
++
++          /* The serve words left argv before option decoding, so the re-exec
++             puts them back; without them the zygote runs its goal and exits.  */
++          if (amk_serve_path != 0)
++            {
++              const char **sv = alloca (sizeof (char*) * (argc + 4));
++              const char **p = nargv;
++              const char **q = sv;
++              *(q++) = *(p++);
++              *(q++) = "--serve";
++              *(q++) = amk_serve_path;
++              while (*p != 0)
++                *(q++) = *(p++);
++              *q = 0;
++              nargv = sv;
+             }
+
+           ++restarts;

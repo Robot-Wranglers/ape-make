@@ -648,6 +648,14 @@ lua_export_globals (lua_State *L)
   return 0;
 }
 
+/* The status this process leaves with, whatever make's own turns out to be. */
+static int
+lua_amk_exit_code (lua_State *L)
+{
+  amk_exit_with ((int) luaL_checkinteger (L, 1));
+  return 0;
+}
+
 /* The amk table on the stack, created on first use with an empty amk.on, the variable proxy, and the spawn api beside it. */
 static void
 lua_push_amk (lua_State *L)
@@ -682,6 +690,8 @@ lua_push_amk (lua_State *L)
       lua_setfield (L, -2, "foreground");
       lua_pushcfunction (L, lua_amk_send);
       lua_setfield (L, -2, "send");
+      lua_pushcfunction (L, lua_amk_exit_code);
+      lua_setfield (L, -2, "exit_code");
       lua_pushvalue (L, -1);
       lua_setglobal (L, "amk");
     }

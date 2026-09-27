@@ -69,6 +69,25 @@ def test_each_request_starts_from_the_parse(amk, tmp_path, zygote):
     assert r.stdout.strip() == "n=8", r.stdout + r.stderr
 
 
+coded = "\n".join([
+  "fail:",
+  "\t@: $(lua.persistent amk.exit_code(70)); exit 1",
+  "",
+])
+
+
+@pytest.mark.engines("lua")
+def test_a_guest_names_the_exit_code(amk, tmp_path, zygote):
+  """A failed recipe is make's exit 2, unless a guest named the status; a served client hears the same."""
+  mk = tmp_path / "coded.mk"
+  mk.write_text(coded)
+  r = sh(amk, ["-f", str(mk), "fail"], cwd=tmp_path, timeout=60)
+  assert r.returncode == 70, r.stdout + r.stderr
+  sock = zygote(["-f", str(mk)], cwd=tmp_path)
+  r = sh(amk, ["--client", str(sock), "fail"], cwd=tmp_path, timeout=60)
+  assert r.returncode == 70, r.stdout + r.stderr
+
+
 micropy_parse_time = "\n".join([
   "seed := $(micropy.persistent n = 41)",
   "kept := $(micropy.persistent print(n + 1))",
