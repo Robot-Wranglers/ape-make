@@ -427,6 +427,24 @@ lua_func_call (const char *nm, unsigned int argc, char **argv)
   return out;
 }
 
+/* The function at idx becomes make's function of that name, or replaces the one this state defined before; a name make has from elsewhere is an error. */
+static void
+lua_define_func (lua_State *L, const char *name, int idx)
+{
+  idx = lua_absindex (L, idx);
+  lua_push_func_table (L);
+  if (lua_getfield (L, -1, name) == LUA_TNIL)
+    {
+      if (amk_function_exists (name))
+        luaL_error (L, "amk.func: %s is a make function already", name);
+      gmk_add_function (name, lua_func_call, 0, 0, 0);
+    }
+  lua_pop (L, 1);
+  lua_pushvalue (L, idx);
+  lua_setfield (L, -2, name);
+  lua_pop (L, 1);
+}
+
 /* amk.func(name, fn): make gains a function of that name whose arguments, expanded, reach fn as strings and whose result is what fn returns; only the persistent state outlives the call to answer. */
 static int
 lua_amk_func (lua_State *L)
@@ -436,17 +454,197 @@ lua_amk_func (lua_State *L)
   if (L != persistent)
     return luaL_error (L, "amk.func: only from lua.persistent, since a one-shot call's state ends with the call");
   lua_need_make (L, "amk.func");
-  lua_push_func_table (L);
-  if (lua_getfield (L, -1, name) == LUA_TNIL)
+  lua_define_func (L, name, 2);
+  return 0;
+}
+
+/* Whether the table at idx is a sequence: a first element and nothing under a string key. */
+static int
+lua_is_sequence (lua_State *L, int idx)
+{
+  int seq;
+  idx = lua_absindex (L, idx);
+  if (lua_rawgeti (L, idx, 1) == LUA_TNIL)
     {
-      if (amk_function_exists (name))
-        return luaL_error (L, "amk.func: %s is a make function already", name);
-      gmk_add_function (name, lua_func_call, 0, 0, 0);
+      lua_pop (L, 1);
+      return 0;
     }
   lua_pop (L, 1);
-  lua_pushvalue (L, 2);
-  lua_setfield (L, -2, name);
+  seq = 1;
+  lua_pushnil (L);
+  while (lua_next (L, idx))
+    {
+      if (lua_type (L, -2) != LUA_TNUMBER)
+        seq = 0;
+      lua_pop (L, 1);
+    }
+  return seq;
+}
+
+/* The exported names, space separated, grown in C so the Lua stack stays free for the walk. */
+struct lua_names
+{
+  char *s;
+  size_t n, cap;
+};
+
+static void
+lua_names_add (struct lua_names *names, const char *name)
+{
+  size_t len = strlen (name);
+  if (names->n + len + 2 > names->cap)
+    names->s = realloc (names->s, names->cap = (names->n + len + 2) * 2);
+  if (names->n > 0)
+    names->s[names->n++] = ' ';
+  memcpy (names->s + names->n, name, len);
+  names->n += len;
+  names->s[names->n] = '\0';
+}
+
+static void lua_export_value (lua_State *L, const char *name, int idx, struct lua_names *names);
+
+static int
+lua_name_cmp (const void *a, const void *b)
+{
+  return strcmp (*(const char *const *) a, *(const char *const *) b);
+}
+
+/* The string keys of the table at idx, sorted, in a malloc'd array the caller frees; the strings stay the table's. */
+static const char **
+lua_sorted_keys (lua_State *L, int idx, size_t *count)
+{
+  const char **keys = NULL;
+  size_t n = 0, cap = 0;
+  idx = lua_absindex (L, idx);
+  lua_pushnil (L);
+  while (lua_next (L, idx))
+    {
+      if (lua_type (L, -2) == LUA_TSTRING)
+        {
+          if (n == cap)
+            keys = realloc (keys, (cap += 32) * sizeof *keys);
+          keys[n++] = lua_tostring (L, -2);
+        }
+      lua_pop (L, 1);
+    }
+  qsort (keys, n, sizeof *keys, lua_name_cmp);
+  *count = n;
+  return keys;
+}
+
+/* A table with string keys: one variable per key as name.key, in key order, recursing. */
+static void
+lua_export_fields (lua_State *L, const char *name, int idx, struct lua_names *names)
+{
+  size_t n, i;
+  const char **keys;
+  idx = lua_absindex (L, idx);
+  keys = lua_sorted_keys (L, idx, &n);
+  for (i = 0; i < n; i++)
+    {
+      if (!amk_name_ok (keys[i]))
+        {
+          free (keys);
+          luaL_error (L, "amk export: %s has a key make cannot spell: %s", name, keys[i]);
+        }
+      lua_pushfstring (L, "%s.%s", name, keys[i]);
+      lua_getfield (L, idx, keys[i]);
+      lua_export_value (L, lua_tostring (L, -2), -1, names);
+      lua_pop (L, 2);
+    }
+  free (keys);
+}
+
+/* One global into make: a function as a make function, a sequence as words, a table as fields, a boolean as true or nothing, and a string or number as its text; nil and anything else are skipped. */
+static void
+lua_export_value (lua_State *L, const char *name, int idx, struct lua_names *names)
+{
+  luaL_Buffer words;
+  idx = lua_absindex (L, idx);
+  switch (lua_type (L, idx))
+    {
+    case LUA_TFUNCTION:
+      lua_define_func (L, name, idx);
+      break;
+    case LUA_TSTRING:
+    case LUA_TNUMBER:
+      amk_var_set (name, lua_tostring (L, idx));
+      break;
+    case LUA_TBOOLEAN:
+      amk_var_set (name, lua_toboolean (L, idx) ? "true" : "");
+      break;
+    case LUA_TTABLE:
+      if (!lua_is_sequence (L, idx))
+        {
+          lua_export_fields (L, name, idx, names);
+          return;
+        }
+      luaL_buffinit (L, &words);
+      {
+        lua_Integer i, n = luaL_len (L, idx);
+        for (i = 1; i <= n; i++)
+          {
+            lua_rawgeti (L, idx, i);
+            if (i > 1)
+              luaL_addchar (&words, ' ');
+            luaL_addvalue (&words);
+          }
+      }
+      luaL_pushresult (&words);
+      amk_var_set (name, lua_tostring (L, -1));
+      lua_pop (L, 1);
+      break;
+    default:
+      return;
+    }
+  lua_names_add (names, name);
+}
+
+/* The globals as they were before an export chunk, kept in the registry so what the chunk added or rebound can be told apart. */
+static void
+lua_snapshot_globals (lua_State *L)
+{
+  lua_newtable (L);
+  lua_pushglobaltable (L);
+  lua_pushnil (L);
+  while (lua_next (L, -2))
+    {
+      lua_pushvalue (L, -2);
+      lua_pushvalue (L, -2);
+      lua_rawset (L, -6);
+      lua_pop (L, 1);
+    }
   lua_pop (L, 1);
+  lua_setfield (L, LUA_REGISTRYINDEX, "amk.before");
+}
+
+/* Every global that is new or rebound since the snapshot, exported in name order, and the names to the sink given as the argument. */
+static int
+lua_export_globals (lua_State *L)
+{
+  struct amk_sink *out = lua_touserdata (L, 1);
+  const char **names;
+  size_t n, i;
+  struct lua_names exported = { NULL, 0, 0 };
+
+  lua_getfield (L, LUA_REGISTRYINDEX, "amk.before");
+  lua_pushglobaltable (L);
+  names = lua_sorted_keys (L, -1, &n);
+  for (i = 0; i < n; i++)
+    {
+      if (!amk_name_ok (names[i]))
+        continue;
+      lua_getfield (L, -1, names[i]);
+      lua_getfield (L, -3, names[i]);
+      if (!lua_rawequal (L, -1, -2))
+        lua_export_value (L, names[i], -2, &exported);
+      lua_pop (L, 2);
+    }
+  free (names);
+  if (exported.n > 0)
+    out->write (out, exported.s, exported.n);
+  out->write (out, "\n", 1);
+  free (exported.s);
   return 0;
 }
 
@@ -494,6 +692,7 @@ __attribute__ ((visibility ("default"))) int
 lua_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   lua_State *L = persistent;
+  int export = amk_entry_is (argv[0], "export");
   int rc;
 
   if (argc < 2 || argv[1] == NULL)
@@ -512,7 +711,7 @@ lua_persist_main (struct amk_sink *out, int argc, char **argv)
       lua_bind_sink (L);
     }
 
-  lua_sink = out;
+  lua_sink = export ? &amk_sink_stderr : out;
   lua_push_amk (L);
   if (argc > 2 && argv[2] != NULL)
     lua_pushstring (L, argv[2]);
@@ -521,7 +720,21 @@ lua_persist_main (struct amk_sink *out, int argc, char **argv)
   lua_setfield (L, -2, "input");
   lua_pop (L, 1);
 
+  if (export)
+    lua_snapshot_globals (L);
   rc = lua_run_chunk (L, argv[1]);
+  if (export && rc == 0)
+    {
+      lua_pushcfunction (L, lua_export_globals);
+      lua_pushlightuserdata (L, out);
+      if (lua_pcall (L, 1, 0, 0) != LUA_OK)
+        {
+          const char *msg = lua_tostring (L, -1);
+          fprintf (stderr, "lua.export: %s\n", msg ? msg : "unknown error");
+          lua_pop (L, 1);
+          rc = 1;
+        }
+    }
   lua_sink = &amk_sink_stderr;
   return rc;
 }

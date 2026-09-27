@@ -166,6 +166,96 @@ def test_micropy_func_defines_a_make_function(amk, tmp_path):
   assert "join is a make function already" in r.stderr, r.stderr
 
 
+# An export chunk per engine: strings, a list, both booleans, a nested dict, a private name, a module, and a function.
+exports = {
+  "lua": dict(
+    chunk=" ".join([
+      'cc = "clang"',
+      'flags = {"-O2", "-Wall"}',
+      "debug = true",
+      "quiet = false",
+      'targets = {lib = "core c", app = {name = "app", tags = "ui"}}',
+      "_private = 1",
+      "function title(s) return s:upper() end",
+    ]),
+    again='cc = "gcc"',
+    order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
+  ),
+  "micropy": dict(
+    chunk="; ".join([
+      'cc = "clang"',
+      'flags = ["-O2", "-Wall"]',
+      "debug = True",
+      "quiet = False",
+      'targets = {"lib": "core c", "app": {"name": "app", "tags": "ui"}}',
+      "_private = 1",
+      "import os",
+      "title = lambda s: s.upper()",
+    ]),
+    again='cc = "gcc"',
+    order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
+  ),
+}
+
+
+@pytest.mark.parametrize("engine", sorted(exports))
+def test_export_makes_functions_and_variables(amk, tmp_path, request, engine):
+  if engine not in request.getfixturevalue("engines"):
+    pytest.skip(f"no {engine} in this build")
+  e = exports[engine]
+  mk = tmp_path / f"export-{engine}.mk"
+  mk.write_text("\n".join([
+    "names := $(%s.export %s)" % (engine, e["chunk"]),
+    "$(info names=[$(names)])",
+    "$(info cc=[$(cc)] flags=[$(flags)] debug=[$(debug)] quiet=[$(quiet)] quiet.origin=[$(origin quiet)])",
+    "$(info lib=[$(targets.lib)] app=[$(targets.app.name)/$(targets.app.tags)] title=[$(title hello)])",
+    "$(info private=[$(origin _private)] os=[$(origin os)] targets=[$(origin targets)])",
+    "again := $(%s.export %s)" % (engine, e["again"]),
+    "$(info again=[$(again)] cc=[$(cc)])",
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "names=[%s]" % e["order"] in r.stdout, r.stdout + r.stderr
+  assert "cc=[clang] flags=[-O2 -Wall] debug=[true] quiet=[] quiet.origin=[file]" in r.stdout, r.stdout
+  assert "lib=[core c] app=[app/ui] title=[HELLO]" in r.stdout, r.stdout
+  assert "private=[undefined] os=[undefined] targets=[undefined]" in r.stdout, r.stdout
+  assert "again=[cc] cc=[gcc]" in r.stdout, r.stdout
+
+
+@pytest.mark.engines("micropy")
+def test_export_refuses_a_key_make_cannot_spell(amk, tmp_path):
+  mk = tmp_path / "export-key.mk"
+  mk.write_text("\n".join([
+    'names := $(micropy.export bad = {"a b": 1})',
+    "$(info names=[$(names)])",
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert "names=[]" in r.stdout, r.stdout + r.stderr
+  assert "bad has a key make cannot spell: a b" in r.stderr, r.stderr
+
+
+@pytest.mark.engines("micropy")
+def test_amk_is_bound_without_an_import(amk, tmp_path):
+  mk = tmp_path / "bound.mk"
+  mk.write_text("\n".join([
+    "CC := clang",
+    "seen := $(micropy.persistent print(amk.var.CC))",
+    "$(info seen=[$(seen)])",
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[clang]" in r.stdout, r.stdout
+
+
 @pytest.mark.engines("micropy")
 def test_a_command_line_override_still_wins(amk, tmp_path):
   mk = tmp_path / "override.mk"

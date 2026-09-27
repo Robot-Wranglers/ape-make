@@ -160,9 +160,9 @@ column's section below says what the capability is.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | awk | yes | yes | yes | - | - | - | - | - | - | - |
 | jq | yes | yes | yes | - | - | - | - | - | - | - |
-| lua | yes | - | yes | yes | yes | yes | yes | yes | yes | - |
+| lua | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | s7 | yes | - | yes | - | - | - | yes | yes | - | - |
-| micropy | yes | - | yes | yes | yes | yes | yes | yes | yes | - |
+| micropy | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | js | yes | - | yes | - | - | - | yes | yes | - | - |
 | wasm | module | yes | - | - | - | - | - | - | - | - |
 
@@ -315,8 +315,9 @@ command-line override still wins. Eval reads text as makefile syntax, rules incl
 | eval | `amk.eval(text)` | `amk.eval(text)` | `(amk-eval text)` | `amk.eval(text)` |
 | undefined | `nil` | `None` | `#f` | `undefined` |
 
-micropy needs `import amk` first. A dotted or hyphenated name goes through the item
-form, since attribute syntax cannot spell it.
+`amk` is bound in every state, so micropy needs no import, though `import amk` still
+works. A dotted or hyphenated name goes through the item form, since attribute syntax
+cannot spell it.
 
 ```make
 CC := clang
@@ -347,11 +348,35 @@ the name, since `$(name)` alone is a variable reference.
 
 ```make
 $(lua.persistent amk.func("shout", function(s) return s:upper() end))
-$(micropy.persistent import amk; amk.func("glue", lambda *a: "+".join(a)))
+$(micropy.persistent amk.func("glue", lambda *a: "+".join(a)))
 
 # make functions now: HELLO, and A+B
 loud := $(shout hello)
 joined := $(shout $(glue a,b))
+```
+
+`$(<name>.export chunk)` does the same without the registration calls. It runs the
+chunk in the persistent state and exports every global the chunk defined or rebound: a
+function or callable becomes a make function of its own name, and any other value
+becomes a simple variable, at file origin like an `amk.var` write. A string or number is
+its text, a boolean is `true` or empty, a list or sequence is its items as words, and a
+table or dict becomes one variable per key as `name.key`, recursing. A name with a
+leading underscore is private and stays put, as do `nil`, `None`, modules, and classes.
+The result is the exported names in name order, and whatever the chunk prints goes to
+stderr.
+
+```make
+define micropy.build
+cc = "clang"
+flags = ["-O2", "-Wall"]
+debug = True
+targets = {"lib": "core c", "app": "core c ui"}
+def shorten(s): return s[:3]
+endef
+built := $(micropy.export $(value micropy.build))
+
+# cc debug flags shorten targets.app targets.lib, and clang -O2 -Wall true lib: core c
+summary := $(cc) $(flags) $(debug) $(shorten library): $(targets.lib)
 ```
 
 #### s7

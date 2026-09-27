@@ -303,16 +303,11 @@ amk_func_call (const char *nm, unsigned int argc, char **argv)
   return out;
 }
 
-/* amk.func(name, fn): make gains a function of that name whose arguments, expanded, reach fn as strings and whose result is what fn returns; only the persistent state outlives the call to answer. */
-static mp_obj_t
-amk_func (mp_obj_t name, mp_obj_t fn)
+/* The callable becomes make's function of that name, or replaces the one this state defined before; a name make has from elsewhere is an error. */
+static void
+amk_define_func (mp_obj_t name, mp_obj_t fn)
 {
   const char *nm = mp_obj_str_get_str (name);
-  if (!persistent_ready)
-    mp_raise_msg (&mp_type_RuntimeError, MP_ERROR_TEXT ("amk.func: only from micropy.persistent, since a one-shot call's state ends with the call"));
-  amk_need_make ();
-  if (!mp_obj_is_callable (fn))
-    mp_raise_TypeError (MP_ERROR_TEXT ("amk.func: fn must be callable"));
   if (amk_dict_lookup (AMK_MUTABLE_FUNCS, nm) == NULL)
     {
       if (amk_function_exists (nm))
@@ -320,9 +315,126 @@ amk_func (mp_obj_t name, mp_obj_t fn)
       gmk_add_function (nm, amk_func_call, 0, 0, 0);
     }
   mp_obj_dict_store (MP_STATE_VM (amk_mutable)[AMK_MUTABLE_FUNCS], name, fn);
+}
+
+/* amk.func(name, fn): make gains a function of that name whose arguments, expanded, reach fn as strings and whose result is what fn returns; only the persistent state outlives the call to answer. */
+static mp_obj_t
+amk_func (mp_obj_t name, mp_obj_t fn)
+{
+  if (!persistent_ready)
+    mp_raise_msg (&mp_type_RuntimeError, MP_ERROR_TEXT ("amk.func: only from micropy.persistent, since a one-shot call's state ends with the call"));
+  amk_need_make ();
+  if (!mp_obj_is_callable (fn))
+    mp_raise_TypeError (MP_ERROR_TEXT ("amk.func: fn must be callable"));
+  amk_define_func (name, fn);
   return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_2 (amk_func_obj, amk_func);
+
+static int
+amk_elem_cmp (const void *a, const void *b)
+{
+  return strcmp (mp_obj_str_get_str ((*(const mp_map_elem_t *const *) a)->key),
+                 mp_obj_str_get_str ((*(const mp_map_elem_t *const *) b)->key));
+}
+
+/* The filled entries of a map whose keys are all str, in key order; a key that is not a str is an error naming the owner. */
+static size_t
+amk_sorted_entries (mp_map_t *map, mp_map_elem_t **out, const char *owner)
+{
+  size_t n = 0, i;
+  for (i = 0; i < map->alloc; i++)
+    {
+      if (!mp_map_slot_is_filled (map, i))
+        continue;
+      if (!mp_obj_is_str (map->table[i].key))
+        mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk export: %s has a key that is not a str"), owner);
+      out[n++] = &map->table[i];
+    }
+  qsort (out, n, sizeof *out, amk_elem_cmp);
+  return n;
+}
+
+/* One global into make: a callable as a make function, a list or tuple as words, a dict as fields named name.key, a bool as true or nothing, and a str or number as its text; None, modules, and types are skipped. The names exported are appended to the vstr. */
+static void
+amk_export_value (const char *name, mp_obj_t value, vstr_t *names)
+{
+  vstr_t text = { 0 };
+  if (value == mp_const_none || mp_obj_is_type (value, &mp_type_module) || mp_obj_is_type (value, &mp_type_type))
+    return;
+  if (mp_obj_is_type (value, &mp_type_dict))
+    {
+      mp_map_t *map = &((mp_obj_dict_t *) MP_OBJ_TO_PTR (value))->map;
+      mp_map_elem_t **fields = alloca (map->alloc * sizeof *fields);
+      size_t n = amk_sorted_entries (map, fields, name), i;
+      for (i = 0; i < n; i++)
+        {
+          const char *key = mp_obj_str_get_str (fields[i]->key);
+          vstr_t child = { 0 };
+          if (!amk_name_ok (key))
+            mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk export: %s has a key make cannot spell: %s"), name, key);
+          vstr_init (&child, strlen (name) + strlen (key) + 2);
+          vstr_printf (&child, "%s.%s", name, key);
+          amk_export_value (vstr_null_terminated_str (&child), fields[i]->value, names);
+          vstr_clear (&child);
+        }
+      return;
+    }
+  if (mp_obj_is_callable (value))
+    amk_define_func (mp_obj_new_str_from_cstr (name), value);
+  else if (value == mp_const_true || value == mp_const_false)
+    amk_var_set (name, value == mp_const_true ? "true" : "");
+  else if (mp_obj_is_type (value, &mp_type_list) || mp_obj_is_type (value, &mp_type_tuple))
+    {
+      size_t n, i;
+      mp_obj_t *items;
+      mp_obj_get_array (value, &n, &items);
+      vstr_init (&text, 16);
+      for (i = 0; i < n; i++)
+        {
+          vstr_t item = { 0 };
+          if (i > 0)
+            vstr_add_char (&text, ' ');
+          vstr_add_str (&text, amk_obj_text (items[i], &item));
+          vstr_clear (&item);
+        }
+      amk_var_set (name, vstr_null_terminated_str (&text));
+      vstr_clear (&text);
+    }
+  else
+    {
+      amk_var_set (name, amk_obj_text (value, &text));
+      vstr_clear (&text);
+    }
+  if (names->len > 0)
+    vstr_add_char (names, ' ');
+  vstr_add_str (names, name);
+}
+
+/* Every global that is new or rebound since the snapshot, exported in name order since the globals dict keeps none, and the names as the result. */
+static void
+amk_export_globals (mp_obj_t before, struct amk_sink *out)
+{
+  mp_map_t *now = &mp_globals_get ()->map;
+  mp_map_t *was = &((mp_obj_dict_t *) MP_OBJ_TO_PTR (before))->map;
+  mp_map_elem_t **all = alloca (now->alloc * sizeof *all);
+  size_t n = amk_sorted_entries (now, all, "globals"), i;
+  vstr_t names;
+
+  vstr_init (&names, 64);
+  for (i = 0; i < n; i++)
+    {
+      const char *key = mp_obj_str_get_str (all[i]->key);
+      mp_map_elem_t *old = mp_map_lookup (was, all[i]->key, MP_MAP_LOOKUP);
+      if (!amk_name_ok (key) || (old != NULL && old->value == all[i]->value))
+        continue;
+      amk_export_value (key, all[i]->value, &names);
+    }
+  if (names.len > 0)
+    out->write (out, names.buf, names.len);
+  out->write (out, "\n", 1);
+  vstr_clear (&names);
+}
 
 static const mp_rom_map_elem_t amk_module_globals_table[] = {
   { MP_ROM_QSTR (MP_QSTR___name__), MP_ROM_QSTR (MP_QSTR_amk) },
@@ -362,6 +474,7 @@ micropy_state_open (void)
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_INPUT] = MP_OBJ_NEW_QSTR (MP_QSTR_);
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_ON] = mp_obj_new_dict (0);
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_FUNCS] = mp_obj_new_dict (0);
+  mp_store_global (MP_QSTR_amk, MP_OBJ_FROM_PTR (&amk_module));
   return 0;
 }
 
@@ -429,6 +542,9 @@ micropy_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   struct amk_capture capture;
   const char *input = argc > 2 && argv[2] != NULL ? argv[2] : "";
+  int export = amk_entry_is (argv[0], "export");
+  mp_obj_t before;
+  nlr_buf_t nlr;
   int rc;
 
   if (argc < 2 || argv[1] == NULL)
@@ -448,10 +564,29 @@ micropy_persist_main (struct amk_sink *out, int argc, char **argv)
     }
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_INPUT] = mp_obj_new_str (input, strlen (input));
 
+  if (!export)
+    {
+      amk_capture_begin (&capture);
+      rc = run_chunk (argv[1]);
+      amk_capture_end (&capture, out);
+      return rc;
+    }
+
+  before = mp_obj_dict_copy (MP_OBJ_FROM_PTR (mp_globals_get ()));
   amk_capture_begin (&capture);
   rc = run_chunk (argv[1]);
-  amk_capture_end (&capture, out);
-  return rc;
+  amk_capture_end (&capture, &amk_sink_stderr);
+  if (rc != 0)
+    return rc;
+  if (nlr_push (&nlr) == 0)
+    {
+      amk_export_globals (before, out);
+      nlr_pop ();
+      return 0;
+    }
+  fprintf (stderr, "micropy.export: ");
+  mp_obj_print_exception (&mp_stderr_print, MP_OBJ_FROM_PTR (nlr.ret_val));
+  return 1;
 }
 
 /* The hook entry: amk.on[event], when the persistent state holds a callable there, is called with the event as a dict. Its print goes to stderr, and an error reports there and is otherwise ignored. */

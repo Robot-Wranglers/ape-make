@@ -1,0 +1,32 @@
+Export: every row with a persist entry also answers $(<name>.export chunk), through the
+same persistent function, and the entry learns which builtin called it from its first
+argument, the builtin's own name, where before it always saw the bare engine name. The
+guest runs the chunk in its persistent state and then exports what the chunk left in its
+global namespace: a callable as a make function, anything else as a make variable.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -2843,4 +2843,6 @@
+   av[0] = (char *) e->name;
+   av[1] = argv[0];
++  if (strchr (funcname, '.'))
++    av[0] = (char *) funcname;
+   if (argv[1] != NULL)
+     av[ac++] = argv[1];
+@@ -3257,4 +3259,16 @@
+           hash_insert (&function_table, f++);
+         }
++      if (e->persist)
++        {
++          char *name = xmalloc (strlen (e->name) + 8);
++          sprintf (name, "%s.export", e->name);
++          f->fptr.func_ptr = func_persistent;
++          f->name = name;
++          f->len = strlen (name);
++          f->minimum_args = 1;
++          f->maximum_args = 1;
++          f->expand_args = 1;
++          hash_insert (&function_table, f++);
++        }
+     }
+ }

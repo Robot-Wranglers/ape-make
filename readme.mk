@@ -24,6 +24,8 @@ readme: check
 	$(if $(filter micropy,$(.FEATURES)),test "$(now)" = "-O2 -g")
 	$(if $(filter lua,$(.FEATURES)),test "$(loud)" = "HELLO")
 	$(if $(filter lua,$(.FEATURES)),test "$(joined)" = "A+B")
+	$(if $(filter micropy,$(.FEATURES)),test "$(built)" = "cc debug flags shorten targets.app targets.lib")
+	$(if $(filter micropy,$(.FEATURES)),test "$(summary)" = "clang -O2 -Wall true lib: core c")
 	$(if $(filter jq,$(.FEATURES)),test "$(version)" = "1.2.3")
 	$(if $(filter wasm,$(.FEATURES)),test "$(echoed)" = "Args: test.wasm; hello;")
 	$(if $(filter wasm,$(.FEATURES)),test "$(strip $(fibs))" = "55 6765 832040")

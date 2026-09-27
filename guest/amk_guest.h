@@ -37,6 +37,28 @@ extern char *amk_var_get (const char *name);
 extern void amk_var_set (const char *name, const char *value);
 extern void amk_eval (const char *text);
 
+/* Whether the builtin that called a persistent entry, its first argument, carries the given suffix, as name.export does. */
+static inline int
+amk_entry_is (const char *argv0, const char *suffix)
+{
+  const char *dot = argv0 ? strrchr (argv0, '.') : NULL;
+  return dot != NULL && strcmp (dot + 1, suffix) == 0;
+}
+
+/* Whether a name is one make can spell for a variable or a function. */
+static inline int
+amk_name_ok (const char *name)
+{
+  const char *p = name;
+  if (*p == '\0' || *p == '_')
+    return 0;
+  for (; *p; p++)
+    if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9')
+          || *p == '_' || *p == '-' || *p == '.'))
+      return 0;
+  return 1;
+}
+
 /* A capture of standard output for a persistent entry whose engine writes the descriptor rather than a function the guest can rebind: what the chunk wrote goes to the sink when the capture ends. */
 struct amk_capture
 {
