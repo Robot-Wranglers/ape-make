@@ -678,7 +678,7 @@ assimilate.amd64 := -x
 assimilate.arm64 := -a
 # Inside the image the artifact is the installed one; the wasm demo builds its module with docker, which the image does not carry.
 docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.mk \
-  $(foreach v,with without flavor patch.dirs,$(v)='$($(v))')
+  $(foreach v,amk.version with without flavor patch.dirs,$(v)='$($(v))')
 
 build.docker: $(docker.dir)/.context
 	@# The image from the artifact make build lands, for this platform, tagged $(docker.image):$(docker.tag).

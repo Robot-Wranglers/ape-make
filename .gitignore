@@ -16,3 +16,4 @@ __pycache__
 .claude/
 .env
 .tkt.fossil .tkt.fossil.pid
+.tkt.*
