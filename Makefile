@@ -386,13 +386,13 @@ guests.native: $(foreach e,$(engines),$(guests.host)/$(e).o)
 # Lua's library files, our entry point, and nothing that carries a main of its own.
 lua.compile = for c in $(HERE)$(lua.src)/src/*.c $(HERE)guest/lua_main.c; do \
                 case " $(lua.exclude) " in *" $$(basename $$c) "*) continue;; esac; \
-                $(1) $(call guest.cflags,lua) $(lua.cflags) -I$(HERE)$(lua.src)/src \
+                $(1) $(call guest.cflags,lua) $(lua.cflags) -I$(HERE)$(lua.src)/src -I$(HERE)guest \
                   -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
               done
 
 # s7's one source file and our entry point, both against the header beside them.
 s7.compile = for c in $(HERE)$(s7.src)/s7.c $(HERE)guest/s7_main.c; do \
-               $(1) $(call guest.cflags,s7) $(s7.cflags) -I$(HERE)$(s7.src) \
+               $(1) $(call guest.cflags,s7) $(s7.cflags) -I$(HERE)$(s7.src) -I$(HERE)guest \
                  -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
              done
 
@@ -400,7 +400,7 @@ s7.compile = for c in $(HERE)$(s7.src)/s7.c $(HERE)guest/s7_main.c; do \
 micropython.make = cd guest && env $(1) MAKEFLAGS=-s MICROPY_GIT_TAG=v$(micropython.version) make -f micropy.mk -j$(jobs) CC=$(2) \
                      MICROPYTHON_TOP=$(HERE)$(micropython.src) BUILD=$(HERE)$(3) \
                      CFLAGS_EXTRA='$(call guest.cflags,micropython)' objects
-micropython.inputs := guest/micropy.mk guest/micropy_main.c guest/mpconfigport.h guest/mphalport.h
+micropython.inputs := guest/micropy.mk guest/micropy_main.c guest/mpconfigport.h guest/mphalport.h guest/amk_guest.h
 
 # wasm3's interpreter sources and its cli, whose main is renamed and kept visible like gawk's.
 wasm3.compile = for c in $(HERE)$(wasm3.src)/source/*.c $(HERE)$(wasm3.src)/platforms/app/main.c; do \
@@ -411,7 +411,7 @@ wasm3.compile = for c in $(HERE)$(wasm3.src)/source/*.c $(HERE)$(wasm3.src)/plat
 # quickjs's engine, its std library, and our entry point, less the programs that carry a main of their own.
 quickjs.compile = for c in $(HERE)$(quickjs.src)/*.c $(HERE)guest/js_main.c; do \
                     case " $(quickjs.exclude) " in *" $$(basename $$c) "*) continue;; esac; \
-                    $(1) $(call guest.cflags,quickjs) $(quickjs.cflags) -I$(HERE)$(quickjs.src) \
+                    $(1) $(call guest.cflags,quickjs) $(quickjs.cflags) -I$(HERE)$(quickjs.src) -I$(HERE)guest \
                       -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
                   done
 
@@ -446,26 +446,26 @@ build/%-ape/.built: build/%-ape/Makefile
 	  || $(call die, guest, $* compiled no objects -- see the tail of $(@D)/build.log)
 	touch $@
 
-build/lua-native/.built: $(lua.src) guest/lua_main.c
+build/lua-native/.built: $(lua.src) guest/lua_main.c guest/amk_guest.h
 	$(call log, guest, compiling lua for the host compiler -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && $(call lua.compile,$${CC:-cc}) >build.log 2>&1 \
 	  || $(call die, guest, lua did not compile -- see the tail of $(@D)/build.log)
 	touch $@
-build/lua-ape/.built: $(lua.src) guest/lua_main.c $(cosmocc.dir)/bin/cosmocc
+build/lua-ape/.built: $(lua.src) guest/lua_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
 	$(call log, guest, compiling lua for cosmocc -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call lua.compile,cosmocc)' >build.log 2>&1 \
 	  || $(call die, guest, lua did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
-build/s7-native/.built: $(s7.src) guest/s7_main.c
+build/s7-native/.built: $(s7.src) guest/s7_main.c guest/amk_guest.h
 	$(call log, guest, compiling s7 for the host compiler -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && $(call s7.compile,$${CC:-cc}) >build.log 2>&1 \
 	  || $(call die, guest, s7 did not compile -- see the tail of $(@D)/build.log)
 	touch $@
-build/s7-ape/.built: $(s7.src) guest/s7_main.c $(cosmocc.dir)/bin/cosmocc
+build/s7-ape/.built: $(s7.src) guest/s7_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
 	$(call log, guest, compiling s7 for cosmocc -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call s7.compile,cosmocc)' >build.log 2>&1 \
@@ -498,13 +498,13 @@ build/wasm3-ape/.built: $(wasm3.src) $(cosmocc.dir)/bin/cosmocc
 	  || $(call die, guest, wasm3 did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
-build/quickjs-native/.built: $(quickjs.src) guest/js_main.c
+build/quickjs-native/.built: $(quickjs.src) guest/js_main.c guest/amk_guest.h
 	$(call log, guest, compiling quickjs for the host compiler -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && $(call quickjs.compile,$${CC:-cc}) >build.log 2>&1 \
 	  || $(call die, guest, quickjs did not compile -- see the tail of $(@D)/build.log)
 	touch $@
-build/quickjs-ape/.built: $(quickjs.src) guest/js_main.c $(cosmocc.dir)/bin/cosmocc
+build/quickjs-ape/.built: $(quickjs.src) guest/js_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
 	$(call log, guest, compiling quickjs for cosmocc -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call quickjs.compile,cosmocc)' >build.log 2>&1 \

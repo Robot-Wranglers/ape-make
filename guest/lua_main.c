@@ -9,20 +9,9 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
-/* make's side of the spawn api, resolved at link; the guest keeps no header of make's. */
-extern pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
-extern int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
-extern int amk_kill_child (pid_t pid, int sig);
-extern int amk_foreground (pid_t pid);
-extern int amk_mail_take (pid_t pid, char **buf, size_t *len);
-extern int amk_mail_send (const char *s, size_t n);
+#include "amk_guest.h"
 
-/* make's sink, where the persistent entry's result goes: one write function, and make decides where the bytes land. */
-struct amk_sink
-{
-  void (*write) (struct amk_sink *, const char *, size_t);
-};
-extern struct amk_sink amk_sink_stderr;
+static void lua_push_amk (lua_State *L);
 
 /* A state with the standard libraries and the payload's lib/ on the module path, so require finds what the build zipped in. */
 static lua_State *
@@ -75,6 +64,8 @@ lua_run_main (int argc, char **argv)
       fprintf (stderr, "lua: cannot create state\n");
       return 1;
     }
+  lua_push_amk (L);
+  lua_pop (L, 1);
 
   rc = lua_run_chunk (L, argv[1]);
   lua_close (L);
@@ -322,7 +313,144 @@ lua_amk_foreground (lua_State *L)
   return 1;
 }
 
-/* The amk table on the stack, created on first use with an empty amk.on and the spawn api beside it. */
+/* Under the engine flag make has parsed nothing, so the handle refuses rather than reads. */
+static void
+lua_need_make (lua_State *L, const char *what)
+{
+  if (!amk_has_db ())
+    luaL_error (L, "%s: no make database, running outside a makefile", what);
+}
+
+/* amk.expand(text): the text expanded by make. */
+static int
+lua_amk_expand (lua_State *L)
+{
+  const char *text = luaL_checkstring (L, 1);
+  char *s;
+  lua_need_make (L, "amk.expand");
+  s = gmk_expand (text);
+  lua_pushstring (L, s ? s : "");
+  gmk_free (s);
+  return 1;
+}
+
+/* amk.eval(text): the text read by make as makefile syntax. */
+static int
+lua_amk_eval (lua_State *L)
+{
+  lua_need_make (L, "amk.eval");
+  amk_eval (luaL_checkstring (L, 1));
+  return 0;
+}
+
+/* amk.var[name] reads a variable, expanded, or nil when make has never seen the name. */
+static int
+lua_amk_var_index (lua_State *L)
+{
+  char *s;
+  lua_need_make (L, "amk.var");
+  s = amk_var_get (luaL_checkstring (L, 2));
+  if (s == NULL)
+    lua_pushnil (L);
+  else
+    {
+      lua_pushstring (L, s);
+      gmk_free (s);
+    }
+  return 1;
+}
+
+/* amk.var[name] = value defines a simple variable with the literal text of the value; nil is the empty string. */
+static int
+lua_amk_var_newindex (lua_State *L)
+{
+  const char *name = luaL_checkstring (L, 2);
+  lua_need_make (L, "amk.var");
+  if (lua_isnoneornil (L, 3))
+    amk_var_set (name, "");
+  else
+    {
+      amk_var_set (name, luaL_tolstring (L, 3, NULL));
+      lua_pop (L, 1);
+    }
+  return 0;
+}
+
+/* The registry table of make functions the persistent state has defined, by name, on the stack. */
+static void
+lua_push_func_table (lua_State *L)
+{
+  if (lua_getfield (L, LUA_REGISTRYINDEX, "amk.func") != LUA_TTABLE)
+    {
+      lua_pop (L, 1);
+      lua_newtable (L);
+      lua_pushvalue (L, -1);
+      lua_setfield (L, LUA_REGISTRYINDEX, "amk.func");
+    }
+}
+
+/* make's call into a defined function: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
+static char *
+lua_func_call (const char *nm, unsigned int argc, char **argv)
+{
+  lua_State *L = persistent;
+  const char *s = "";
+  size_t len = 0;
+  unsigned int i;
+  char *out;
+
+  if (L == NULL)
+    return NULL;
+  lua_push_func_table (L);
+  if (lua_getfield (L, -1, nm) != LUA_TFUNCTION)
+    {
+      lua_pop (L, 2);
+      return NULL;
+    }
+  for (i = 0; i < argc; i++)
+    lua_pushstring (L, argv[i]);
+  if (lua_pcall (L, (int) argc, 1, 0) != LUA_OK)
+    {
+      const char *msg = lua_tostring (L, -1);
+      fprintf (stderr, "lua $(%s ...): %s\n", nm, msg ? msg : "unknown error");
+      lua_pop (L, 2);
+      return NULL;
+    }
+  if (!lua_isnoneornil (L, -1))
+    s = luaL_tolstring (L, -1, &len);
+  else
+    lua_pushliteral (L, "");
+  out = gmk_alloc ((unsigned int) len + 1);
+  memcpy (out, s, len);
+  out[len] = '\0';
+  lua_pop (L, 3);
+  return out;
+}
+
+/* amk.func(name, fn): make gains a function of that name whose arguments, expanded, reach fn as strings and whose result is what fn returns; only the persistent state outlives the call to answer. */
+static int
+lua_amk_func (lua_State *L)
+{
+  const char *name = luaL_checkstring (L, 1);
+  luaL_checktype (L, 2, LUA_TFUNCTION);
+  if (L != persistent)
+    return luaL_error (L, "amk.func: only from lua.persistent, since a one-shot call's state ends with the call");
+  lua_need_make (L, "amk.func");
+  lua_push_func_table (L);
+  if (lua_getfield (L, -1, name) == LUA_TNIL)
+    {
+      if (amk_function_exists (name))
+        return luaL_error (L, "amk.func: %s is a make function already", name);
+      gmk_add_function (name, lua_func_call, 0, 0, 0);
+    }
+  lua_pop (L, 1);
+  lua_pushvalue (L, 2);
+  lua_setfield (L, -2, name);
+  lua_pop (L, 1);
+  return 0;
+}
+
+/* The amk table on the stack, created on first use with an empty amk.on, the variable proxy, and the spawn api beside it. */
 static void
 lua_push_amk (lua_State *L)
 {
@@ -332,6 +460,20 @@ lua_push_amk (lua_State *L)
       lua_newtable (L);
       lua_newtable (L);
       lua_setfield (L, -2, "on");
+      lua_newtable (L);
+      lua_newtable (L);
+      lua_pushcfunction (L, lua_amk_var_index);
+      lua_setfield (L, -2, "__index");
+      lua_pushcfunction (L, lua_amk_var_newindex);
+      lua_setfield (L, -2, "__newindex");
+      lua_setmetatable (L, -2);
+      lua_setfield (L, -2, "var");
+      lua_pushcfunction (L, lua_amk_expand);
+      lua_setfield (L, -2, "expand");
+      lua_pushcfunction (L, lua_amk_eval);
+      lua_setfield (L, -2, "eval");
+      lua_pushcfunction (L, lua_amk_func);
+      lua_setfield (L, -2, "func");
       lua_pushcfunction (L, lua_amk_spawn);
       lua_setfield (L, -2, "spawn");
       lua_pushcfunction (L, lua_amk_wait);

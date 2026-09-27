@@ -7,6 +7,113 @@
 #include <unistd.h>
 
 #include "s7.h"
+#include "amk_guest.h"
+
+/* Under the engine flag make has parsed nothing, so the handle raises rather than reads. */
+static s7_pointer
+s7_amk_need_make (s7_scheme *sc, const char *who)
+{
+  if (amk_has_db ())
+    return NULL;
+  return s7_error (sc, s7_make_symbol (sc, "amk-error"),
+                   s7_list (sc, 1, s7_make_string (sc, "no make database, running outside a makefile")));
+}
+
+/* A variable name as a symbol or a string, or a wrong-type error. */
+static const char *
+s7_amk_name (s7_scheme *sc, s7_pointer args, const char *who)
+{
+  s7_pointer p = s7_car (args);
+  if (s7_is_symbol (p))
+    return s7_symbol_name (p);
+  if (s7_is_string (p))
+    return s7_string (p);
+  s7_wrong_type_arg_error (sc, who, 1, p, "a symbol or a string");
+  return NULL;
+}
+
+/* (amk-expand text): the text expanded by make. */
+static s7_pointer
+s7_amk_expand (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-expand");
+  char *s;
+  s7_pointer r;
+  if (err != NULL)
+    return err;
+  if (!s7_is_string (s7_car (args)))
+    return s7_wrong_type_arg_error (sc, "amk-expand", 1, s7_car (args), "a string");
+  s = gmk_expand (s7_string (s7_car (args)));
+  r = s7_make_string (sc, s ? s : "");
+  gmk_free (s);
+  return r;
+}
+
+/* (amk-eval text): the text read by make as makefile syntax. */
+static s7_pointer
+s7_amk_eval (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-eval");
+  if (err != NULL)
+    return err;
+  if (!s7_is_string (s7_car (args)))
+    return s7_wrong_type_arg_error (sc, "amk-eval", 1, s7_car (args), "a string");
+  amk_eval (s7_string (s7_car (args)));
+  return s7_unspecified (sc);
+}
+
+/* (amk-var name): the variable expanded, or #f when make has never seen the name. */
+static s7_pointer
+s7_amk_var (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var");
+  const char *name;
+  char *s;
+  s7_pointer r;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var");
+  s = amk_var_get (name);
+  if (s == NULL)
+    return s7_f (sc);
+  r = s7_make_string (sc, s);
+  gmk_free (s);
+  return r;
+}
+
+/* (set! (amk-var name) value) defines a simple variable with the value's display text; #f is the empty string. */
+static s7_pointer
+s7_amk_var_set (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var");
+  const char *name;
+  s7_pointer value;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var");
+  value = s7_cadr (args);
+  if (value == s7_f (sc))
+    amk_var_set (name, "");
+  else if (s7_is_string (value))
+    amk_var_set (name, s7_string (value));
+  else
+    {
+      char *text = s7_object_to_c_string (sc, value);
+      amk_var_set (name, text ? text : "");
+      free (text);
+    }
+  return value;
+}
+
+/* amk-var is a dilambda, so generalized set! reaches the setter. */
+static void
+s7_bind_amk (s7_scheme *sc)
+{
+  s7_define_function (sc, "amk-expand", s7_amk_expand, 1, 0, false, "(amk-expand text) the text expanded by make");
+  s7_define_function (sc, "amk-eval", s7_amk_eval, 1, 0, false, "(amk-eval text) the text read by make as makefile syntax");
+  s7_dilambda (sc, "amk-var", s7_amk_var, 1, 0, s7_amk_var_set, 2, 0,
+               "(amk-var name) a make variable expanded, or #f; (set! (amk-var name) value) defines it");
+}
 
 /* An uncaught error reports itself and answers with a sentinel, so the chunk never unwinds past s7. */
 static const char *s7_guest_wrapper =
@@ -61,6 +168,7 @@ s7_run_main (int argc, char **argv)
       fprintf (stderr, "s7: cannot create interpreter\n");
       return 1;
     }
+  s7_bind_amk (s7);
 
   len = strlen (s7_guest_wrapper) + strlen (argv[1]) + 1;
   chunk = malloc (len);

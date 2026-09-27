@@ -5,6 +5,113 @@
 
 #include "quickjs.h"
 #include "quickjs-libc.h"
+#include "amk_guest.h"
+
+static JSValue
+js_amk_has (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  (void) this_val;
+  (void) argc;
+  (void) argv;
+  return JS_NewBool (ctx, amk_has_db ());
+}
+
+static JSValue
+js_amk_expand (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *text;
+  char *s;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || (text = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  s = gmk_expand (text);
+  r = JS_NewString (ctx, s ? s : "");
+  gmk_free (s);
+  JS_FreeCString (ctx, text);
+  return r;
+}
+
+static JSValue
+js_amk_eval (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *text;
+  (void) this_val;
+  if (argc < 1 || (text = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  amk_eval (text);
+  JS_FreeCString (ctx, text);
+  return JS_UNDEFINED;
+}
+
+static JSValue
+js_amk_get (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name;
+  char *s;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  s = amk_var_get (name);
+  JS_FreeCString (ctx, name);
+  if (s == NULL)
+    return JS_UNDEFINED;
+  r = JS_NewString (ctx, s);
+  gmk_free (s);
+  return r;
+}
+
+static JSValue
+js_amk_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name, *value;
+  (void) this_val;
+  if (argc < 2 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  value = JS_ToCString (ctx, argv[1]);
+  if (value == NULL)
+    {
+      JS_FreeCString (ctx, name);
+      return JS_EXCEPTION;
+    }
+  amk_var_set (name, value);
+  JS_FreeCString (ctx, value);
+  JS_FreeCString (ctx, name);
+  return JS_UNDEFINED;
+}
+
+/* The raw calls under a private global, which the prelude wraps and removes. */
+static void
+js_bind_amk (JSContext *ctx)
+{
+  JSValue g = JS_GetGlobalObject (ctx);
+  JSValue raw = JS_NewObject (ctx);
+  JS_SetPropertyStr (ctx, raw, "has", JS_NewCFunction (ctx, js_amk_has, "has", 0));
+  JS_SetPropertyStr (ctx, raw, "expand", JS_NewCFunction (ctx, js_amk_expand, "expand", 1));
+  JS_SetPropertyStr (ctx, raw, "eval", JS_NewCFunction (ctx, js_amk_eval, "eval", 1));
+  JS_SetPropertyStr (ctx, raw, "get", JS_NewCFunction (ctx, js_amk_get, "get", 1));
+  JS_SetPropertyStr (ctx, raw, "set", JS_NewCFunction (ctx, js_amk_set, "set", 2));
+  JS_SetPropertyStr (ctx, g, "__amk", raw);
+  JS_FreeValue (ctx, g);
+}
+
+/* amk over the raw calls: expand, eval, and a var proxy that reads, assigns, and answers in; every call refuses under the engine flag, where make has parsed nothing. */
+static const char *js_amk_prelude =
+  "globalThis.amk = (function (raw) {\n"
+  "  const need = () => { if (!raw.has()) throw new Error('amk: no make database, running outside a makefile'); };\n"
+  "  const text = (v) => v == null ? '' : String(v);\n"
+  "  return {\n"
+  "    expand: (t) => { need(); return raw.expand(String(t)); },\n"
+  "    eval: (t) => { need(); raw.eval(String(t)); },\n"
+  "    var: new Proxy({}, {\n"
+  "      get: (_, k) => { need(); return raw.get(String(k)); },\n"
+  "      set: (_, k, v) => { need(); raw.set(String(k), text(v)); return true; },\n"
+  "      has: (_, k) => { need(); return raw.get(String(k)) !== undefined; },\n"
+  "    }),\n"
+  "  };\n"
+  "})(globalThis.__amk);\n"
+  "delete globalThis.__amk;\n";
 
 /* The std and os modules are bound as globals the way qjs does it, so a plain chunk can use them without import. */
 static const char *js_guest_prelude =
@@ -74,8 +181,11 @@ js_run_main (int argc, char **argv)
   JS_SetModuleLoaderFunc2 (rt, NULL, js_module_loader, js_module_check_attributes, NULL);
   JS_SetHostPromiseRejectionTracker (rt, js_std_promise_rejection_tracker, NULL);
   js_std_add_helpers (ctx, argc - 1, argv + 1);
+  js_bind_amk (ctx);
 
   rc = js_guest_eval (ctx, js_guest_prelude, "<prelude>", JS_EVAL_TYPE_MODULE);
+  if (rc == 0)
+    rc = js_guest_eval (ctx, js_amk_prelude, "<amk>", JS_EVAL_TYPE_GLOBAL);
   if (rc == 0)
     {
       flags = JS_DetectModule (argv[1], strlen (argv[1])) ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;

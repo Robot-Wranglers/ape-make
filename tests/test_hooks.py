@@ -57,3 +57,50 @@ def test_a_hook_error_reports_and_make_goes_on(amk, tmp_path):
   assert r.returncode == 0, r.stdout + r.stderr
   assert r.stdout.strip() == "ran", r.stdout
   assert "lua hook recipe_start" in r.stderr and "no all" in r.stderr, r.stderr
+
+
+micropy_subscribe = "; ".join([
+  "import amk",
+  "log = []",
+  "amk.on['goals'] = lambda e: log.append(e['event'] + '=' + e['target'])",
+  "amk.on['recipe_start'] = lambda e: log.append(e['target'] + '?')",
+  "amk.on['recipe_end'] = lambda e: log.append(e['target'] + ':' + e['status'] + '/' + str(e['code']))",
+])
+
+micropy_makefile = "\n".join([
+  "seed := $(micropy.persistent %s)" % micropy_subscribe,
+  "all: a b c",
+  "a:",
+  "\t@true",
+  "b:",
+  "\t@exit 3",
+  "c:",
+  "\t@echo [$(micropy.persistent print(' '.join(log)))]",
+  "",
+])
+
+micropy_erring = "\n".join([
+  "seed := $(micropy.persistent import amk; amk.on['recipe_start'] = lambda e: 1 / 0)",
+  "all:",
+  "\t@echo ran",
+  "",
+])
+
+
+@pytest.mark.engines("micropy")
+def test_micropy_events_fire_in_order(amk, tmp_path):
+  mk = tmp_path / "hooks-py.mk"
+  mk.write_text(micropy_makefile)
+  r = sh(amk, ["-s", "-k", "-f", str(mk)], timeout=120)
+  assert r.returncode == 2, r.stdout + r.stderr
+  assert "[goals=all a? a:success/0 b? b:failed/3]" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.engines("micropy")
+def test_a_micropy_hook_error_reports_and_make_goes_on(amk, tmp_path):
+  mk = tmp_path / "erring-py.mk"
+  mk.write_text(micropy_erring)
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "ran", r.stdout
+  assert "micropy hook recipe_start" in r.stderr and "ZeroDivisionError" in r.stderr, r.stderr

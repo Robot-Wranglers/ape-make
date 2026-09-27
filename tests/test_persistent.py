@@ -1,10 +1,10 @@
-"""Pins the persistent builtins.
+"""Pins the persistent builtins, for lua and micropy alike.
 
-`$(lua.persistent program[,input])` runs in the make process against one Lua state kept
-for its life, where `$(lua ...)` forks a fresh one per call. Pinned: state carries across
-calls, input arrives as `amk.input`, an error leaves the state as it was, output is trimmed
-like every builtin's even mid-expansion, print and io.write reach an unclosable result that
-holds a megabyte whole, and a zygote's requests each start from what the parse left.
+`$(<name>.persistent program[,input])` runs in the make process against one state kept
+for its life, where `$(<name> ...)` forks a fresh one per call. Pinned: state carries
+across calls, input arrives as `amk.input`, an error leaves the state as it was, output is
+trimmed like every builtin's even mid-expansion and holds a megabyte whole, and a zygote's
+requests each start from what the parse left.
 """
 
 import pytest
@@ -62,6 +62,62 @@ def test_state_outlives_a_call(amk, tmp_path):
 def test_each_request_starts_from_the_parse(amk, tmp_path, zygote):
   mk = tmp_path / "served.mk"
   mk.write_text(served)
+  sock = zygote(["-f", str(mk)], cwd=tmp_path)
+  for _ in range(2):
+    r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip() == "n=8", r.stdout + r.stderr
+
+
+micropy_parse_time = "\n".join([
+  "seed := $(micropy.persistent n = 41)",
+  "kept := $(micropy.persistent print(n + 1))",
+  'fresh := $(micropy print(globals().get("n")))',
+  "upper := $(micropy.persistent import amk; print(amk.input.upper()),abc)",
+  'none := $(micropy.persistent import amk; print(repr(amk.input)))',
+  'oops := $(micropy.persistent raise ValueError("boom"))',
+  "after := $(micropy.persistent print(n))",
+  'multi := $(micropy.persistent print("a"); print("b"))',
+  'wrote := $(micropy.persistent import sys; sys.stdout.write("w"); print("y"))',
+  'big := $(micropy.persistent import sys; sys.stdout.write("x" * 1048576))',
+  "biglen := $(micropy.persistent import amk; print(len(amk.input)),$(big))",
+  'mixed := pre$(micropy.persistent print("a"))mid$(micropy.persistent print())post',
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] none=[$(none)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "all:",
+  "\ttrue",
+  "",
+])
+
+micropy_served = "\n".join([
+  "seed := $(micropy.persistent n = 7)",
+  "show:",
+  "\t@echo n=$(micropy.persistent n = n + 1; print(n))",
+  "",
+])
+
+
+@pytest.mark.engines("micropy")
+def test_micropy_state_outlives_a_call(amk, tmp_path):
+  mk = tmp_path / "persist-py.mk"
+  mk.write_text(micropy_parse_time)
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "kept=[42]" in r.stdout, r.stdout
+  assert "fresh=[None]" in r.stdout, r.stdout
+  assert "upper=[ABC]" in r.stdout, r.stdout
+  assert "none=['']" in r.stdout, r.stdout
+  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
+  assert "after=[41]" in r.stdout, r.stdout
+  assert "multi=[a\nb]" in r.stdout, r.stdout
+  assert "wrote=[wy]" in r.stdout, r.stdout
+  assert "biglen=[1048576]" in r.stdout, r.stdout[-400:]
+  assert "mixed=[preamidpost]" in r.stdout, r.stdout[-400:]
+
+
+@pytest.mark.engines("micropy")
+def test_micropy_requests_start_from_the_parse(amk, tmp_path, zygote):
+  mk = tmp_path / "served-py.mk"
+  mk.write_text(micropy_served)
   sock = zygote(["-f", str(mk)], cwd=tmp_path)
   for _ in range(2):
     r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)

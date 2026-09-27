@@ -1,0 +1,22 @@
+MicroPython joins the persistent family: its row gains the persist and hook entries, so
+$(micropy.persistent ...), the AMK_MICROPY_INIT chunk, and amk.on hooks all run against
+one interpreter kept for the life of the make process, the way Lua's do.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -74,6 +74,8 @@
+ extern int lua_persist_main (struct amk_sink *out, int argc, char **argv);
+ extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int s7_run_main (int argc, char **argv);
++extern int micropy_persist_main (struct amk_sink *out, int argc, char **argv);
++extern void micropy_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+ extern int micropy_run_main (int argc, char **argv);
+ extern int wasm3_main (int argc, char **argv);
+ extern int js_run_main (int argc, char **argv);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2508,3 +2508,3 @@
+ #ifdef AMK_ENGINE_MICROPY
+-    { "micropy", 0, micropy_run_main, 0, 0, 0 },
++    { "micropy", 0, micropy_run_main, 0, 0, 0, micropy_persist_main, micropy_hook_main },
+ #endif

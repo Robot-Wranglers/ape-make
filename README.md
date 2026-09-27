@@ -150,6 +150,26 @@ words.
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | `$(js)` | 2.0 MB | on |
 | [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | `$(wasm)`, `$(wasm.argv)`, `amk --wasm` | 0.4 MB | off |
 
+#### Capabilities by engine
+
+Engines do not all support the same forms, and the gap widens as the persistent family
+grows. One row per engine, one column per capability; a dash means not yet, and each
+column's section below says what the capability is.
+
+| engine | `$(name ...)` | `.argv` | `define.<name>` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.export` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| awk | yes | yes | yes | - | - | - | - | - | - | - |
+| jq | yes | yes | yes | - | - | - | - | - | - | - |
+| lua | yes | - | yes | yes | yes | yes | yes | yes | yes | - |
+| s7 | yes | - | yes | - | - | - | yes | yes | - | - |
+| micropy | yes | - | yes | yes | yes | yes | yes | yes | yes | - |
+| js | yes | - | yes | - | - | - | yes | yes | - | - |
+| wasm | module | yes | - | - | - | - | - | - | - | - |
+
+Handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and
+`amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a
+row gains them together once it has a persistent entry.
+
 #### Passing programs and input
 
 make expands `$` and splits on commas before an engine sees its arguments:
@@ -254,7 +274,7 @@ against one state kept for the life of that process, so a global one call sets i
 for the next. Its result is what the chunk prints. Init and hooks both live on this state.
 Under a zygote the state is forked with the parse, so each request starts from what the
 parse left. Persist, init and hooks are three entries on an engine's row: init comes with
-persist, and a hook entry is written per guest. Today lua supplies both.
+persist, and a hook entry is written per guest. Today lua and micropy supply both.
 
 #### Init
 
@@ -272,9 +292,67 @@ make announces three moments: `goals`, once the goal list is known, and `recipe_
 and `recipe_end` around each target's recipe. Every engine that supplies a hook entry
 hears them, with the event name, the target (or the space-joined goals), the recipe's
 status word and exit code, and the pid. How a guest subscribes is its own spelling: in
-Lua, a function at `amk.on.<event>` in the persistent state. Hooks observe; they cannot
+Lua, a function at `amk.on.<event>` in the persistent state, called with a table whose
+fields are `event`, `target`, `status`, `code`, `signal`, and `pid`; in micropy, a
+callable at `amk.on["<event>"]`, called with a dict of the same keys. Hooks observe; they cannot
 veto or replace a recipe. Anything a hook prints goes to stderr, and an error in a hook is
 reported there and does not stop make.
+
+#### The guest handle
+
+Lua, micropy, s7, and js each carry a handle into make: the same four calls, spelled the
+way each language expects. A read of a variable answers it expanded as a reference
+would be, and answers the language's own nothing for a name make has never seen, which
+expansion alone cannot say. Expand runs any text through make, functions included. A
+write defines a simple variable holding the literal text, at file origin, so a
+command-line override still wins. Eval reads text as makefile syntax, rules included.
+
+| | lua | micropy | s7 | js |
+| --- | --- | --- | --- | --- |
+| read | `amk.var.CC`, `amk.var["a.b"]` | `amk.var.CC`, `amk.var["a.b"]` | `(amk-var 'CC)`, `(amk-var "a.b")` | `amk.var.CC`, `amk.var["a.b"]` |
+| write | `amk.var.CC = "cc"` | `amk.var.CC = "cc"` | `(set! (amk-var 'CC) "cc")` | `amk.var.CC = "cc"` |
+| expand | `amk.expand(text)` | `amk.expand(text)` | `(amk-expand text)` | `amk.expand(text)` |
+| eval | `amk.eval(text)` | `amk.eval(text)` | `(amk-eval text)` | `amk.eval(text)` |
+| undefined | `nil` | `None` | `#f` | `undefined` |
+
+micropy needs `import amk` first. A dotted or hyphenated name goes through the item
+form, since attribute syntax cannot spell it.
+
+```make
+CC := clang
+flags = -O2 $(EXTRA)
+
+# reads and expansion, from a one-shot call: clang, -O2, and 3
+seen := $(lua print(amk.var.CC, amk.expand("$$(strip $$(flags))"), amk.expand("$$(words a b c)")))
+
+# a write from a one-shot call lands once the call returns, so the next line sees it
+$(micropy import amk; amk.var.EXTRA = "-g"; amk.eval("debug: ; @echo $$(flags)"))
+now := $(flags)
+```
+
+`now` is `-O2 -g` and `debug` is a target. A one-shot call runs in a forked child, so
+its writes are queued and applied, in order, when the call completes; the chunk that
+made them cannot read them back, so it keeps its own copy of anything it needs again. A
+[persistent](#persistent-state) call runs in the make process and its writes apply at
+once, visible to the same chunk's expand. Under an engine flag, `amk --lua ...`, there
+is no makefile and every call of the handle raises.
+
+The reverse direction is `amk.func(name, fn)`, in lua and micropy, from the persistent
+state only, since a one-shot call's state ends with the call. make gains `$(name ...)`:
+its arguments, expanded, reach `fn` as strings, and what `fn` returns is the result. A
+nil or None result is empty, an error reports on stderr and answers empty, and a second
+`amk.func` of the same name replaces the function. A name make already has, builtin or
+otherwise, is refused. As with any make function, a call needs at least a space after
+the name, since `$(name)` alone is a variable reference.
+
+```make
+$(lua.persistent amk.func("shout", function(s) return s:upper() end))
+$(micropy.persistent import amk; amk.func("glue", lambda *a: "+".join(a)))
+
+# make functions now: HELLO, and A+B
+loud := $(shout hello)
+joined := $(shout $(glue a,b))
+```
 
 #### s7
 
