@@ -87,6 +87,48 @@ micropy_erring = "\n".join([
 ])
 
 
+js_subscribe = "; ".join([
+  "var log = []",
+  "amk.on.goals = e => log.push(e.event + '=' + e.target)",
+  "amk.on.recipe_start = e => log.push(e.target + '?')",
+  "amk.on.recipe_end = e => log.push(e.target + ':' + e.status + '/' + e.code)",
+])
+
+
+@pytest.mark.engines("js")
+def test_js_events_fire_in_order(amk, tmp_path):
+  mk = tmp_path / "hooks-js.mk"
+  mk.write_text("\n".join([
+    "seed := $(js.persistent %s)" % js_subscribe,
+    "all: a b c",
+    "a:",
+    "\t@true",
+    "b:",
+    "\t@exit 3",
+    "c:",
+    "\t@echo [$(js.persistent print(log.join(' ')))]",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-k", "-f", str(mk)], timeout=120)
+  assert r.returncode == 2, r.stdout + r.stderr
+  assert "[goals=all a? a:success/0 b? b:failed/3]" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.engines("js")
+def test_a_js_hook_error_reports_and_make_goes_on(amk, tmp_path):
+  mk = tmp_path / "erring-js.mk"
+  mk.write_text("\n".join([
+    "seed := $(js.persistent amk.on.recipe_start = e => { throw new Error('no ' + e.target) })",
+    "all:",
+    "\t@echo ran",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "ran", r.stdout
+  assert "js hook recipe_start" in r.stderr and "no all" in r.stderr, r.stderr
+
+
 @pytest.mark.engines("micropy")
 def test_micropy_events_fire_in_order(amk, tmp_path):
   mk = tmp_path / "hooks-py.mk"

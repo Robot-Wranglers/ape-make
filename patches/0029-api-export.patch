@@ -24,7 +24,7 @@ global namespace: a callable as a make function, anything else as a make variabl
 +          f->name = name;
 +          f->len = strlen (name);
 +          f->minimum_args = 1;
-+          f->maximum_args = 1;
++          f->maximum_args = 2;
 +          f->expand_args = 1;
 +          hash_insert (&function_table, f++);
 +        }

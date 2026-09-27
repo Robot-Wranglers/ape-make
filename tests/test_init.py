@@ -50,6 +50,22 @@ def test_the_micropy_environment_chunk_runs_before_the_parse(amk, tmp_path):
   assert "goals=all" in r.stderr, r.stderr
 
 
+@pytest.mark.engines("js")
+def test_the_js_environment_chunk_runs_before_the_parse(amk, tmp_path):
+  mk = tmp_path / "reader-js.mk"
+  mk.write_text("\n".join([
+    "$(info seen=[$(js.persistent print(seen))])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  chunk = "var seen = 7; amk.on.goals = e => std.err.puts('goals=' + e.target + '\\n')"
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_JS_INIT": chunk}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[7]" in r.stdout, r.stdout + r.stderr
+  assert "goals=all" in r.stderr, r.stderr
+
+
 @pytest.mark.engines("lua")
 def test_an_at_path_names_the_chunk_and_a_missing_one_says_so(amk, tmp_path):
   mk = tmp_path / "reader.mk"

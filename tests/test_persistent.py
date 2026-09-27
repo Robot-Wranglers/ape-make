@@ -114,6 +114,60 @@ def test_micropy_state_outlives_a_call(amk, tmp_path):
   assert "mixed=[preamidpost]" in r.stdout, r.stdout[-400:]
 
 
+js_parse_time = "\n".join([
+  "seed := $(js.persistent var n = 41)",
+  "kept := $(js.persistent print(n + 1))",
+  "fresh := $(js print(typeof n))",
+  "upper := $(js.persistent print(amk.input.toUpperCase()),abc)",
+  "none := $(js.persistent print(JSON.stringify(amk.input)))",
+  'oops := $(js.persistent throw new Error("boom"))',
+  "after := $(js.persistent print(n))",
+  'multi := $(js.persistent print("a"); print("b"))',
+  'wrote := $(js.persistent std.out.puts("w"); print("y"))',
+  'big := $(js.persistent std.out.puts("x".repeat(1048576)))',
+  "biglen := $(js.persistent print(amk.input.length),$(big))",
+  'mixed := pre$(js.persistent print("a"))mid$(js.persistent print())post',
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] none=[$(none)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "all:",
+  "\ttrue",
+  "",
+])
+
+
+@pytest.mark.engines("js")
+def test_js_state_outlives_a_call(amk, tmp_path):
+  mk = tmp_path / "persist-js.mk"
+  mk.write_text(js_parse_time)
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "kept=[42]" in r.stdout, r.stdout
+  assert "fresh=[undefined]" in r.stdout, r.stdout
+  assert "upper=[ABC]" in r.stdout, r.stdout
+  assert 'none=[""]' in r.stdout, r.stdout
+  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
+  assert "after=[41]" in r.stdout, r.stdout
+  assert "multi=[a\nb]" in r.stdout, r.stdout
+  assert "wrote=[wy]" in r.stdout, r.stdout
+  assert "biglen=[1048576]" in r.stdout, r.stdout[-400:]
+  assert "mixed=[preamidpost]" in r.stdout, r.stdout[-400:]
+
+
+@pytest.mark.engines("js")
+def test_js_requests_start_from_the_parse(amk, tmp_path, zygote):
+  mk = tmp_path / "served-js.mk"
+  mk.write_text("\n".join([
+    "seed := $(js.persistent var n = 7)",
+    "show:",
+    "\t@echo n=$(js.persistent n = n + 1; print(n))",
+    "",
+  ]))
+  sock = zygote(["-f", str(mk)], cwd=tmp_path)
+  for _ in range(2):
+    r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip() == "n=8", r.stdout + r.stderr
+
+
 @pytest.mark.engines("micropy")
 def test_micropy_requests_start_from_the_parse(amk, tmp_path, zygote):
   mk = tmp_path / "served-py.mk"

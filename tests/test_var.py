@@ -195,6 +195,19 @@ exports = {
     again='cc = "gcc"',
     order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
   ),
+  "js": dict(
+    chunk="; ".join([
+      'var cc = "clang"',
+      'var flags = ["-O2", "-Wall"]',
+      "var debug = true",
+      "var quiet = false",
+      'var targets = {lib: "core c", app: {name: "app", tags: "ui"}}',
+      "var _private = 1",
+      "function title(s) { return s.toUpperCase() }",
+    ]),
+    again='cc = "gcc"',
+    order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
+  ),
 }
 
 
@@ -205,7 +218,10 @@ def test_export_makes_functions_and_variables(amk, tmp_path, request, engine):
   e = exports[engine]
   mk = tmp_path / f"export-{engine}.mk"
   mk.write_text("\n".join([
-    "names := $(%s.export %s)" % (engine, e["chunk"]),
+    "define chunk",
+    e["chunk"],
+    "endef",
+    "names := $(%s.export $(value chunk))" % engine,
     "$(info names=[$(names)])",
     "$(info cc=[$(cc)] flags=[$(flags)] debug=[$(debug)] quiet=[$(quiet)] quiet.origin=[$(origin quiet)])",
     "$(info lib=[$(targets.lib)] app=[$(targets.app.name)/$(targets.app.tags)] title=[$(title hello)])",
@@ -223,6 +239,53 @@ def test_export_makes_functions_and_variables(amk, tmp_path, request, engine):
   assert "lib=[core c] app=[app/ui] title=[HELLO]" in r.stdout, r.stdout
   assert "private=[undefined] os=[undefined] targets=[undefined]" in r.stdout, r.stdout
   assert "again=[cc] cc=[gcc]" in r.stdout, r.stdout
+
+
+@pytest.mark.engines("js")
+def test_js_func_defines_a_make_function(amk, tmp_path):
+  mk = tmp_path / "func-js.mk"
+  mk.write_text("\n".join([
+    '$(js.persistent amk.func("shout", s => s.toUpperCase()))',
+    '$(js.persistent amk.func("glue", (...a) => a.join("+")))',
+    '$(js.persistent amk.func("none", s => undefined))',
+    '$(js.persistent amk.func("boom", s => { throw new Error("kaput") }))',
+    "$(info shout=[$(shout hello)] glue=[$(glue a,b,c)] nested=[$(shout $(glue x,y))] none=[$(none x)] boom=[$(boom x)])",
+    '$(js.persistent amk.func("shout", s => s + "!"))',
+    "$(info again=[$(shout hello)])",
+    'oneshot := $(js amk.func("x", print))',
+    'taken := $(js.persistent amk.func("join", print))',
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "shout=[HELLO] glue=[a+b+c] nested=[X+Y] none=[] boom=[]" in r.stdout, r.stdout + r.stderr
+  assert "kaput" in r.stderr, r.stderr
+  assert "again=[hello!]" in r.stdout, r.stdout
+  assert "only from js.persistent" in r.stderr, r.stderr
+  assert "join is a make function already" in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("engine,chunk", [
+  ("lua", "n = #amk.input"),
+  ("micropy", "n = len(amk.input)"),
+  ("js", "var n = amk.input.length"),
+])
+def test_export_takes_input(amk, tmp_path, request, engine, chunk):
+  if engine not in request.getfixturevalue("engines"):
+    pytest.skip(f"no {engine} in this build")
+  mk = tmp_path / f"export-input-{engine}.mk"
+  mk.write_text("\n".join([
+    "names := $(%s.export %s,ab cd)" % (engine, chunk),
+    "$(info names=[$(names)] n=[$(n)])",
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "names=[n] n=[5]" in r.stdout, r.stdout + r.stderr
 
 
 @pytest.mark.engines("micropy")
