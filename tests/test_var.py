@@ -195,6 +195,19 @@ exports = {
     again='cc = "gcc"',
     order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
   ),
+  "s7": dict(
+    chunk=" ".join([
+      '(define cc "clang")',
+      '(define flags (list "-O2" "-Wall"))',
+      "(define debug #t)",
+      "(define quiet #f)",
+      '(define targets (hash-table \'lib "core c" \'app (hash-table \'name "app" \'tags "ui")))',
+      "(define _private 1)",
+      "(define (title s) (string-upcase s))",
+    ]),
+    again='(set! cc "gcc")',
+    order="cc debug flags quiet targets.app.name targets.app.tags targets.lib title",
+  ),
   "js": dict(
     chunk="; ".join([
       'var cc = "clang"',
@@ -271,6 +284,7 @@ def test_js_func_defines_a_make_function(amk, tmp_path):
   ("lua", "n = #amk.input"),
   ("micropy", "n = len(amk.input)"),
   ("js", "var n = amk.input.length"),
+  ("s7", "(define n (length amk-input))"),
 ])
 def test_export_takes_input(amk, tmp_path, request, engine, chunk):
   if engine not in request.getfixturevalue("engines"):
@@ -286,6 +300,32 @@ def test_export_takes_input(amk, tmp_path, request, engine, chunk):
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert "names=[n] n=[5]" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.engines("s7")
+def test_s7_func_defines_a_make_function(amk, tmp_path):
+  mk = tmp_path / "func-s7.mk"
+  mk.write_text("\n".join([
+    "$(s7.persistent (amk-func 'shout string-upcase))",
+    "$(s7.persistent (amk-func 'glue (lambda args (format #f \"~{~A~^+~}\" args))))",
+    "$(s7.persistent (amk-func 'none (lambda (s) #f)))",
+    "$(s7.persistent (amk-func 'boom (lambda (s) (error 'kaput \"kaput\"))))",
+    "$(info shout=[$(shout hello)] glue=[$(glue a,b,c)] nested=[$(shout $(glue x,y))] none=[$(none x)] boom=[$(boom x)])",
+    "$(s7.persistent (amk-func 'shout (lambda (s) (string-append s \"!\"))))",
+    "$(info again=[$(shout hello)])",
+    "oneshot := $(s7 (amk-func 'x display))",
+    "taken := $(s7.persistent (amk-func 'join display))",
+    "all:",
+    "\ttrue",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "shout=[HELLO] glue=[a+b+c] nested=[X+Y] none=[] boom=[]" in r.stdout, r.stdout + r.stderr
+  assert "kaput" in r.stderr, r.stderr
+  assert "again=[hello!]" in r.stdout, r.stdout
+  assert "only from s7.persistent" in r.stderr, r.stderr
+  assert "is a make function already" in r.stderr and "join" in r.stderr, r.stderr
 
 
 @pytest.mark.engines("micropy")

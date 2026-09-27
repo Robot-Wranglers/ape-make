@@ -168,6 +168,60 @@ def test_js_requests_start_from_the_parse(amk, tmp_path, zygote):
     assert r.stdout.strip() == "n=8", r.stdout + r.stderr
 
 
+s7_parse_time = "\n".join([
+  "seed := $(s7.persistent (define n 41))",
+  "kept := $(s7.persistent (display (+ n 1)))",
+  "fresh := $(s7 (display (defined? 'n)))",
+  "upper := $(s7.persistent (display (string-upcase amk-input)),abc)",
+  "none := $(s7.persistent (write amk-input))",
+  "oops := $(s7.persistent (error 'kaput \"boom\"))",
+  "after := $(s7.persistent (display n))",
+  'multi := $(s7.persistent (display "a") (newline) (display "b"))',
+  'wrote := $(s7.persistent (write-string "w") (display "y"))',
+  'big := $(s7.persistent (display (apply string-append (make-list 131072 "abcdefgh"))))',
+  "biglen := $(s7.persistent (display (length amk-input)),$(big))",
+  'mixed := pre$(s7.persistent (display "a") (newline))mid$(s7.persistent (newline))post',
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] none=[$(none)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "all:",
+  "\ttrue",
+  "",
+])
+
+
+@pytest.mark.engines("s7")
+def test_s7_state_outlives_a_call(amk, tmp_path):
+  mk = tmp_path / "persist-s7.mk"
+  mk.write_text(s7_parse_time)
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "kept=[42]" in r.stdout, r.stdout
+  assert "fresh=[#f]" in r.stdout, r.stdout
+  assert "upper=[ABC]" in r.stdout, r.stdout
+  assert 'none=[""]' in r.stdout, r.stdout
+  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
+  assert "after=[41]" in r.stdout, r.stdout
+  assert "multi=[a\nb]" in r.stdout, r.stdout
+  assert "wrote=[wy]" in r.stdout, r.stdout
+  assert "biglen=[1048576]" in r.stdout, r.stdout[-400:]
+  assert "mixed=[preamidpost]" in r.stdout, r.stdout[-400:]
+
+
+@pytest.mark.engines("s7")
+def test_s7_requests_start_from_the_parse(amk, tmp_path, zygote):
+  mk = tmp_path / "served-s7.mk"
+  mk.write_text("\n".join([
+    "seed := $(s7.persistent (define n 7))",
+    "show:",
+    "\t@echo n=$(s7.persistent (set! n (+ n 1)) (display n))",
+    "",
+  ]))
+  sock = zygote(["-f", str(mk)], cwd=tmp_path)
+  for _ in range(2):
+    r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip() == "n=8", r.stdout + r.stderr
+
+
 @pytest.mark.engines("micropy")
 def test_micropy_requests_start_from_the_parse(amk, tmp_path, zygote):
   mk = tmp_path / "served-py.mk"

@@ -33,6 +33,7 @@ patch that adds that guest.
 | `0026-grammar-define-engine.patch` | `define.<engine> name` through `endef`: the define is stored as usual, and a phony target of that name hands the body to the engine and prints the result |
 | `0027-api-var.patch` | the guest handle's make side: a variable read that tells undefined from empty, a predicate for whether make has built its tables, a variable write and an eval, and the queue that carries a forked guest's writes back to the parent |
 | `0028-micropy-persistent.patch` | the micropy row gains persist and hook entries, so its persistent form, init chunk, and hooks run against one interpreter kept for the make process |
+| `0031-s7-persistent.patch` | the s7 row gains persist and hook entries, so its persistent and export forms, init chunk, and hooks run against one interpreter kept for the make process |
 | `0030-js-persistent.patch` | the js row gains persist and hook entries, so its persistent and export forms, init chunk, and hooks run against one runtime kept for the make process |
 | `0029-api-export.patch` | every row with a persist entry also answers `<name>.export`, through the same entry, which learns the builtin's name from its first argument and exports what the chunk left in its namespace |
 

@@ -66,6 +66,22 @@ def test_the_js_environment_chunk_runs_before_the_parse(amk, tmp_path):
   assert "goals=all" in r.stderr, r.stderr
 
 
+@pytest.mark.engines("s7")
+def test_the_s7_environment_chunk_runs_before_the_parse(amk, tmp_path):
+  mk = tmp_path / "reader-s7.mk"
+  mk.write_text("\n".join([
+    "$(info seen=[$(s7.persistent (display seen))])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  chunk = "(define seen 7) (set! (amk-on 'goals) (lambda (e) (format *stderr* \"goals=~A~%\" (e 'target))))"
+  r = sh(amk, ["-s", "-f", str(mk)], env={"AMK_S7_INIT": chunk}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=[7]" in r.stdout, r.stdout + r.stderr
+  assert "goals=all" in r.stderr, r.stderr
+
+
 @pytest.mark.engines("lua")
 def test_an_at_path_names_the_chunk_and_a_missing_one_says_so(amk, tmp_path):
   mk = tmp_path / "reader.mk"
