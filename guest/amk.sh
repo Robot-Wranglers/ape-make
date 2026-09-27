@@ -19,9 +19,15 @@ amk.call() {
   return "$st"
 }
 
-# A pipeline stage: the jq program, with the tool's options, over stdin in the make process.
+# The arguments as words on a request line, each double-quoted with backslash, quote and newline escaped, so any value survives the split and the line framing.
+amk.words() {
+  local a
+  for a ; do a=${a//\\/\\\\} ; a=${a//\"/\\\"} ; a=${a//$'\n'/\\n} ; printf '"%s" ' "$a" ; done
+}
+
+# A pipeline stage: the tool's options then the jq program, over stdin in the make process; the program rides raw as the rest of the line.
 jq.pipe() {
   local -a lines
   mapfile -t lines
-  amk.call "filter ${#lines[@]} $*" "${lines[@]}"
+  amk.call "filter ${#lines[@]} $(amk.words "${@:1:$#-1}")${@: -1}" "${lines[@]}"
 }

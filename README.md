@@ -294,8 +294,11 @@ run the way it would name files. Every call names the entry it works on:
 | `dump NAME` | | nothing | the value as compact JSON |
 | `filter [OPTS] PROG,TEXT` | the program over every JSON text in the input | nothing | every output |
 
-Words before the program bind variables as the jq tool does, `--arg k v` for a string and
-`--argjson k v` for a value, and `-r` prints a string output bare. A program compiles once
+Words before the program bind variables as the jq tool does, `--arg k v` for a string,
+`--argjson k v` for a value, `--slurpfile k path` for every JSON text in a file as an
+array and `--rawfile k path` for a file's text, and `-r` prints a string output bare. A
+value with a space or a quote inside it travels quoted as a shell would write it, and
+inside double quotes `\n` reads as a newline. A program compiles once
 per text and set of bound names, so a loop that binds a new value each turn never
 recompiles. A program error is a nonzero `.SHELLSTATUS` with jq's message on stderr, never
 a make error, and the value stays as it was.
@@ -349,7 +352,9 @@ entries. A request served by a zygote starts as an owner, from the store the par
 stages of one pipeline or two lines under `-j`, would read each other's replies. A request
 that opens with `@TAG` is answered instead into a private FIFO, `$AMK_REPLY_DIR/TAG`, which
 the answering process makes and removes; one empty line on `AMK_REPLY` says the FIFO is
-there before the caller opens it. `$BASHPID` is a tag no other caller holds.
+there before the caller opens it. `$BASHPID` is a tag no other caller holds. Hops forked
+from one parse share the directory, and the one that answers after a sibling took it down
+makes it again.
 
 **The shell side, once.** `amk.sh` sits on `PATH` beside the payload tools, so a recipe
 runs `source amk.sh` and has two functions. `amk.call REQUEST [LINE...]` sends a tagged
@@ -365,9 +370,11 @@ names:
 ```
 
 `jq.pipe` sends `filter N [OPTS] PROG` and then N input lines; the outputs come back as
-jq would print them. OPTS is exactly `-r -c -e -n -s --arg --argjson`, and any other option
-is status 2 with nothing run, so a site that needs more fails when it converts rather than
-later. jq's messages go to make's stderr.
+jq would print them. OPTS is exactly `-r -c -e -n -s --arg --argjson --slurpfile
+--rawfile`, and any other option is status 2 with nothing run, so a site that needs more
+fails when it converts rather than later. `amk.words ARG...` writes its arguments as
+words for a request line, so a caller building `get` or `update` by hand quotes its
+option values with it and passes the program raw. jq's messages go to make's stderr.
 
 #### Init
 

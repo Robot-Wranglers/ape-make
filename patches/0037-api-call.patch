@@ -102,7 +102,7 @@ inherited descriptor.
    /* MAKEFLAGS was built before the hook point, so rebuild it for sub-makes.  */
    define_makeflags (0);
 
-@@ -5413,7 +5421,486 @@
+@@ -5413,7 +5421,489 @@
  static size_t amk_maillen[AMK_SPAWNED];
  static struct { pid_t pid; char *buf; size_t len; } amk_mails[AMK_SPAWNED];
  static int amk_mail_fd = -1;
@@ -440,6 +440,9 @@ inherited descriptor.
 +    sprintf (path, "%s/%s", amk_reply_dir, tag);
 +    unlink (path);
 +    made = amk_mkfifo (path, 0600) == 0;
++    /* A hop forked from one parse shares the directory with its siblings, and the first to exit takes it down; the next to answer makes it again.  */
++    if (!made && errno == ENOENT && mkdir (amk_reply_dir, 0700) == 0)
++      made = amk_mkfifo (path, 0600) == 0;
 +    if (!made)
 +      fprintf (stderr, "amk: call: %s: %s\n", path, strerror (errno));
 +  }

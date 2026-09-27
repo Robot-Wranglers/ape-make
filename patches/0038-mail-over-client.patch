@@ -1,0 +1,86 @@
+Mail over the client: a request carries the caller's mail pipe as a fourth descriptor
+beside the three standard ones, so a served request that a hop's recipe made through
+the client writes AMK_MAIL into the pipe the loop drains, as the hop itself does. A
+caller without a mail pipe sends its stderr in that slot and drops the AMK_MAIL name
+from the request, and the served child closes the slot. With it, the child rebinds
+AMK_MAIL to the descriptor's number in its own process and takes it as its mail end.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -4760,7 +4760,12 @@
+ #define AMK_STALE     75
+ #define AMK_MAXREQ    (4 * 1024 * 1024)
+ #define AMK_MAXCONN   1024
+-#define AMK_NFD       3
++/* The three standard descriptors and the caller's mail pipe, so a hop's recursive call answers the loop that spawned it.  */
++#define AMK_NFD       4
++#define AMK_MAILFD    3
++
++static int amk_fd_is_pipe (const char *spec);
++static int amk_mail_fd;
+
+ /* Client mode runs before make is initialized, so its failures cannot go
+    through the usual reporting.  */
+@@ -4920,8 +4925,10 @@
+ static int amk_bsd_cmsg_unpack (const char *b, size_t n, int fds[AMK_NFD]) { (void) b; (void) n; (void) fds; return 0; }
+ #endif
+
+-/* Hand the request over with the three standard descriptors attached.  A
+-   zygote that answered and closed before the send gives 0, not a signal.  */
++/* Hand the request over with the standard descriptors and the mail pipe
++   attached; a caller without a mail pipe sends its stderr in that slot and no
++   AMK_MAIL in the environment.  A zygote that answered and closed before the
++   send gives 0, not a signal.  */
+
+ static int
+ amk_send_request (int fd, const char *buf, size_t len) {
+@@ -4935,6 +4942,9 @@
+   fds[0] = STDIN_FILENO;
+   fds[1] = STDOUT_FILENO;
+   fds[2] = STDERR_FILENO;
++  fds[AMK_MAILFD] = amk_fd_is_pipe (getenv ("AMK_MAIL"));
++  if (fds[AMK_MAILFD] < 0)
++    fds[AMK_MAILFD] = STDERR_FILENO;
+
+   memset (&msg, '\0', sizeof msg);
+   memset (&cbuf, '\0', sizeof cbuf);
+@@ -5289,9 +5299,9 @@
+   /* Buffered parse-time output belongs to the zygote, not to this request.  */
+   fflush (NULL);
+
+-  for (i = 0; i < AMK_NFD; ++i) {
++  for (i = 0; i < AMK_MAILFD; ++i) {
+     dup2 (fds[i], (int) i);
+-    if (fds[i] > STDERR_FILENO) close (fds[i]);
++    if (fds[i] > STDERR_FILENO && fds[i] != fds[AMK_MAILFD]) close (fds[i]);
+   }
+
+   p = buf;
+@@ -5329,6 +5339,16 @@
+                rearm != 0 ? rearm : "", aspid != 0 ? aspid : "");
+
+     amk_import_env (p, envc, rearm);
++
++    /* The caller's mail pipe arrived as a descriptor of this process, so the name it gives recipes is rebound to that number.  */
++    if (amk_env_value (p, envc, "AMK_MAIL") != 0) {
++      char mail[16];
++
++      amk_mail_fd = fds[AMK_MAILFD];
++      sprintf (mail, "%d", amk_mail_fd);
++      define_variable_global ("AMK_MAIL", 8, mail, o_env, 0, NILF)->export = v_export;
++    } else if (fds[AMK_MAILFD] > STDERR_FILENO)
++      close (fds[AMK_MAILFD]);
+
+     /* A name whose value is this process rather than the caller's: only the
+        child knows it, so it is set here rather than promoted from the request.  */
+@@ -6623,6 +6643,10 @@
+   amk_catch (SIGHUP);
+   amk_catch (SIGQUIT);
+
++  /* A mail name with no pipe behind it would name a closed descriptor in the request.  */
++  if (amk_fd_is_pipe (getenv ("AMK_MAIL")) < 0)
++    unsetenv ("AMK_MAIL");
++
+   buf = amk_build_request (argc, argv, &len);
+   if (!amk_send_request (fd, buf, len))
+     amk_cold (argc, argv);

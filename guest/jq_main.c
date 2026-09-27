@@ -87,6 +87,12 @@ jq_word (const char **p, char *buf, size_t size)
           quote = 0;
           ++s;
         }
+      else if (quote == '"' && *s == '\\' && s[1] == 'n')
+        {
+          if (n + 1 < size)
+            buf[n++] = '\n';
+          s += 2;
+        }
       else
         {
           if (*s == '\\' && s[1] && (!quote || (quote == '"' && (s[1] == '"' || s[1] == '\\'))))
@@ -262,22 +268,27 @@ jq_run_op (struct amk_sink *out, const char *op, const char *name, const char *r
         null_input = 1;
       else if (strcmp (word, "-s") == 0)
         slurp = 1;
-      else if (word[0] == '-' && word[1] != '\0' && strcmp (word, "--arg") != 0 && strcmp (word, "--argjson") != 0)
+      else if (word[0] == '-' && word[1] != '\0' && strcmp (word, "--arg") != 0 && strcmp (word, "--argjson") != 0
+               && strcmp (word, "--slurpfile") != 0 && strcmp (word, "--rawfile") != 0)
         {
-          fprintf (stderr, "jq.persistent: %s: unsupported option %s; one of -r -c -e -n -s --arg --argjson\n", op, word);
+          fprintf (stderr, "jq.persistent: %s: unsupported option %s; one of -r -c -e -n -s --arg --argjson --slurpfile --rawfile\n", op, word);
           rc = JQ_STATUS_USAGE;
           goto done;
         }
-      else if (strcmp (word, "--arg") == 0 || strcmp (word, "--argjson") == 0)
+      else if (strcmp (word, "--arg") == 0 || strcmp (word, "--argjson") == 0
+               || strcmp (word, "--slurpfile") == 0 || strcmp (word, "--rawfile") == 0)
         {
-          int json = word[5] == 'j';
+          char *opt = strdup (word);
+          int json = strcmp (opt, "--argjson") == 0, slurpfile = strcmp (opt, "--slurpfile") == 0, rawfile = strcmp (opt, "--rawfile") == 0;
           if (nargs == JQ_MAXARGS || !jq_word (&p, key, sizeof key) || !jq_word (&p, word, sizeof word))
             {
-              fprintf (stderr, "jq.persistent: %s takes a name and a value\n", json ? "--argjson" : "--arg");
+              fprintf (stderr, "jq.persistent: %s takes a name and a value\n", opt);
+              free (opt);
               rc = JQ_STATUS_USAGE;
               goto done;
             }
-          values[nargs] = json ? jv_parse (word) : jv_string (word);
+          free (opt);
+          values[nargs] = json ? jv_parse (word) : slurpfile ? jv_load_file (word, 0) : rawfile ? jv_load_file (word, 1) : jv_string (word);
           if (!jv_is_valid (values[nargs]))
             {
               jv msg = jv_invalid_get_msg (values[nargs]);
