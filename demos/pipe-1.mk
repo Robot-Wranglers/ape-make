@@ -1,13 +1,8 @@
 # via/amk/demos/pipe-1.mk: every engine in one shell pipe, each stage adding its own version to a json object.
-SHELL := bash
-.SHELLFLAGS ?= -euo pipefail -c
-MAKEFLAGS = -s -S --warn-undefined-variables
-.DEFAULT_GOAL := all
-self := $(lastword $(MAKEFILE_LIST))
 
 # Stock make's feature list carries no engine word, so this demo stops before it reaches an engine.
 ifeq ($(filter jq s7,$(.FEATURES)),)
-  $(error $(self) needs amk -- run it as ./amk -f $(self), not under stock make)
+  $(error $(__file__) needs amk -- run it as ./amk -f $(__file__), not under stock make)
 endif
 
 # wasm takes a module rather than program text, so it has no stage here.
@@ -20,10 +15,10 @@ $1.%:
 endef
 $(foreach e,$(.ENGINES),$(eval $(call stage,$e)))
 
-all:
-	$(MAKE) -f $(self) s7.seed </dev/null \
-	  $(foreach e,$(filter-out s7,$(engines)),| $(MAKE) -f $(self) $e.add) \
-	  | $(MAKE) -f $(self) jq.check
+__main__:
+	$(MAKE) -f $(__file__) s7.seed </dev/null \
+	  $(foreach e,$(filter-out s7,$(engines)),| $(MAKE) -f $(__file__) $e.add) \
+	  | $(MAKE) -f $(__file__) jq.check
 
 define s7.seed
 (format #t "{\"s7\": \"~A\"}" (*s7* 'version))

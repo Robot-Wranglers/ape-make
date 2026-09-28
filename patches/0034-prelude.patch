@@ -1,0 +1,36 @@
+Prelude: make reads the payload's __init__.mk before any makefile, the way it reads a
+MAKEFILES entry, so a missing member is silent and a target in it never becomes the
+default goal, then empties MAKEFILE_LIST again so the first word still names the entry
+makefile, as every makefile that spells it that way expects. The member holds the
+defaults every makefile under amk would otherwise repeat, each one a plain assignment a
+later makefile overrides, and AMK_NO_PRELUDE skips it. No boot script and no shell is
+involved, so a start costs nothing extra.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -6,6 +6,9 @@
+ #include <stdio.h>
+ #include <sys/types.h>
+
++/* The payload member make reads before any makefile.  */
++#define AMK_PRELUDE_MK "/zip/__init__.mk"
++
+ /* The events make announces, and what each carries: goals names the goal list, the recipe events name their target. */
+ enum amk_event
+   {
+--- a/src/read.c
++++ b/src/read.c
+@@ -216,6 +216,13 @@
+     free (value);
+   }
+
++  /* The payload's prelude, read like an entry of the list above, then taken back out of the list so the first word still names the entry makefile.  */
++  if (!getenv ("AMK_NO_PRELUDE"))
++    {
++      eval_makefile (strcache_add (AMK_PRELUDE_MK), RM_NO_DEFAULT_GOAL|RM_INCLUDED|RM_DONTCARE);
++      define_variable_cname ("MAKEFILE_LIST", "", o_file, 0);
++    }
++
+   /* Read makefiles specified with -f switches.  */
+
+   if (makefiles != 0)

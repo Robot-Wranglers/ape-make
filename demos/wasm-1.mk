@@ -1,10 +1,5 @@
 # via/amk/demos/wasm-1.mk: a zig function compiled to wasm in a container, held in a make variable, and called from wasm3 without touching disk.
-SHELL := bash
-.SHELLFLAGS ?= -euo pipefail -c
-MAKEFLAGS = -s -S --warn-undefined-variables
-.DEFAULT_GOAL := all
-self := $(lastword $(MAKEFILE_LIST))
-$(if $(filter wasm,$(.ENGINES)),,$(error $(self) needs a build with wasm3: make build with=wasm3))
+$(if $(filter wasm,$(.ENGINES)),,$(error $(__file__) needs a build with wasm3: make build with=wasm3))
 
 define Dockerfile
 FROM alpine:3.21
@@ -45,14 +40,14 @@ endef
 
 # The image is built from its define, the module compiled from its define, and the session run, each once, at parse time, unless this run only streams a define.
 ifeq ($(filter def.%,$(MAKECMDGOALS)),)
-image := $(shell $(MAKE) -f $(self) def.Dockerfile | docker build -q -)
+image := $(shell $(MAKE) -f $(__file__) def.Dockerfile | docker build -q -)
 $(if $(filter-out 0,$(.SHELLSTATUS)),$(error docker build failed))
-wasm.hex := $(shell $(MAKE) -f $(self) def.fib.zig | docker run -i --rm -w /tmp $(image) sh -c '$(zig.build)' | od -An -v -tx1)
+wasm.hex := $(shell $(MAKE) -f $(__file__) def.fib.zig | docker run -i --rm -w /tmp $(image) sh -c '$(zig.build)' | od -An -v -tx1)
 $(if $(filter-out 0,$(.SHELLSTATUS)),$(error zig build failed))
 results := $(patsubst Result:%,%,$(subst Result: ,Result:,$(wasm.argv --repl,,$(session))))
 endif
 
-all:
+__main__:
 	echo "module: $(words $(wasm.hex)) bytes of wasm from $(words $(fib.zig)) words of zig"
 	echo "fib 10 20 30: $(results)"
 	test "$(lastword $(results))" = 832040

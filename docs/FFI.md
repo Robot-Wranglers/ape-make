@@ -53,6 +53,44 @@ each engine's one-shot entry starts its own state and does not see it as persist
 
 ### Defining a target in an engine
 
+`define.<engine> name` through `endef` makes the body a program for that engine and the
+name a target that runs it. The program's output is the target's value: it is kept in
+`$(goal.dir)/name`, with `goal.dir` defaulting to `.amk/goals`, through a real rule on
+that file, and the phony target `name` prints it. A makefile that wants another
+directory sets `goal.dir` before its first define.
+
+### Values between goals
+
+`$(goal name)` answers the value of a goal: it brings `$(goal.dir)/name` up to date, in
+a fork of the parsed image the way the spawn api runs a goal list, then reads the file,
+trimmed of one trailing newline like every builtin. A define cell's value is what its
+program printed. A plain file target has a value too, the file itself, copied into the
+value directory by a pattern rule the first define enters.
+
+Inside a define cell every `$(goal x)` is also a prerequisite on x's value file, so
+referencing a value declares the edge: a cell reruns only when a value it reads is
+newer, and independent cells run at once under `-j`. A plain rule that reads a value at
+recipe time names the goal as a prerequisite itself. At parse time the fork sees only
+the rules read so far, so `$(goal ...)` belongs in recipes and cell bodies.
+
+A cell's program is expanded with the recipe, so its value references resolve in the
+make process, and it reaches the engine on the job's standard input: the rule make
+writes is `@$(job.stdin ${name})$(MAKE) --<engine> - >$@`. No file carries the
+program and no argument limit bounds its size.
+
+### Feeding a job's standard input
+
+`$(job.stdin text)` expands to nothing and feeds the text to the command on the recipe
+line it appears in, through a pipe a detached helper fills, so the text may be any
+size. The pipe is bound to that line of that target, so two lines each get their own
+and targets that interleave under `-j` never cross. A line whose command never runs
+drops its pipe when the target's job ends. Outside a recipe the function is an error.
+
+Every text engine's flag form reads its program from standard input when its argument
+is a lone dash: `amk --lua -`, and the same for s7, micropy, and js. awk and jq keep
+their own command lines, so a cell hands awk `-f -` and jq `-n -f /dev/stdin`, which
+also gives a jq cell the null input it needs to run without data.
+
 ## Calling make from a guest
 
 ### The guest handle

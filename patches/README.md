@@ -33,9 +33,13 @@ patch that adds that guest.
 | `0026-grammar-define-engine.patch` | `define.<engine> name` through `endef`: the define is stored as usual, and a phony target of that name hands the body to the engine and prints the result |
 | `0027-api-var.patch` | the guest handle's make side: a variable read that tells undefined from empty, a predicate for whether make has built its tables, a variable write and an eval, and the queue that carries a forked guest's writes back to the parent |
 | `0028-micropy-persistent.patch` | the micropy row gains persist and hook entries, so its persistent form, init chunk, and hooks run against one interpreter kept for the make process |
+| `0033-api-job-stdin.patch` | `$(job.stdin text)` feeds the command on its recipe line through a pipe bound to that line of that target, and an engine flag followed by a lone dash reads its program from standard input |
+| `0032-api-goal.patch` | the value channel: `$(goal name)` brings a goal up to date in a fork and answers its value file, and a define for an engine keeps its output in that file and reruns only when a value it references is newer |
 | `0031-s7-persistent.patch` | the s7 row gains persist and hook entries, so its persistent and export forms, init chunk, and hooks run against one interpreter kept for the make process |
 | `0030-js-persistent.patch` | the js row gains persist and hook entries, so its persistent and export forms, init chunk, and hooks run against one runtime kept for the make process |
 | `0029-api-export.patch` | every row with a persist entry also answers `<name>.export`, through the same entry, which learns the builtin's name from its first argument and exports what the chunk left in its namespace |
+| `0035-main-goal.patch` | a target named `__main__` is the default goal when the makefile named none itself: it replaces make's first-rule pick, never a value a makefile or `AMK_GOAL` assigned, at both places the default is read |
+| `0034-prelude.patch` | the payload's `__init__.mk` read before any makefile, like a `MAKEFILES` entry: silent when missing, never the default goal, out of `MAKEFILE_LIST` once read, skipped by `AMK_NO_PRELUDE`; the member itself holds the defaults every makefile under amk would otherwise repeat |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

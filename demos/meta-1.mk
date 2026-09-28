@@ -1,9 +1,5 @@
 # via/amk/demos/meta-1.mk: a Scheme macro writes make rules, and eval feeds them back to the parser.
-SHELL := bash
-.SHELLFLAGS ?= -euo pipefail -c
-MAKEFLAGS = -s -S --warn-undefined-variables
 .RECIPEPREFIX := >
-.DEFAULT_GOAL := all
 
 # Stock make's feature list carries no engine word, so this demo stops before it reaches s7.
 ifeq ($(filter s7,$(.FEATURES)),)
@@ -29,7 +25,7 @@ greeters :=
 generated := $(s7 ${s7.greeters})
 $(eval $(generated))
 
-all: $(greeters)
+__main__: $(greeters)
 > echo "generated targets: $(greeters)"
 
 # Print the code the macro wrote, without running it.

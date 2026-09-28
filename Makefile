@@ -74,6 +74,9 @@ gmsl.url     := https://github.com/jgrahamc/gmsl/archive/refs/tags/v$(gmsl.versi
 gmsl.sha256  := 8f1d7a6a4bb76f4e934b2a1376a9ab0da0d84971e19edf0005689d67feb98a60
 gmsl.files   := gmsl __gmsl
 
+# amk's own payload members: the prelude patch 0034 reads before every makefile.
+payload.files := payload/__init__.mk
+
 # dkjson is one lua file, and its "tarball" is that file; it lands in the payload for require.
 dkjson.version := 2.8
 dkjson.tarball := dkjson-$(dkjson.version).lua
@@ -540,20 +543,21 @@ FORCE:
 
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree.
-$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src))
+$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files)
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix) $(bin)
 	cd build/ape$(suffix) \
 	  && export MAKEFLAGS=-s \
 	  && env $(cosmocc.env) $(HERE)$(make.src)/configure --disable-dependency-tracking --disable-load CPPFLAGS="$(engines.defs) $(version.defs)" \
 	  && env $(cosmocc.env) make -j$(jobs) LIBS="$(foreach e,$(engines),$(HERE)$(guests.ape)/$(e).o) -lm"
-	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/)
+	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/ with the prelude)
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
 	$(foreach t,$(tools),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(t);)
 	$(foreach l,$(libs),$(foreach f,$($(l).files),install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
+	$(foreach f,$(payload.files),install -m 0644 $(f) build/payload$(suffix)/$(notdir $(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
-	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs),lib)
+	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs),lib) $(notdir $(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
 	$(foreach n,$(engines.aliases),ln -sf amk $(bin)/$(n);)
 	$(call log, build, artifact $@ is ready -- $(bin) holds the $(engines.aliases) names for it)
