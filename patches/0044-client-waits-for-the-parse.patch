@@ -1,0 +1,56 @@
+The client waits out the parse: a client whose zygote was alive but had yet to
+bind waited ten seconds and then ran its cold command, so a parse that staged a
+cold cache for longer than that got a second parser beside it, staging the same
+slots into the same directory. The wait now ends with the zygote's life, not
+with a count.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -4773,8 +4773,8 @@
+    the request carries any option the zygote does not already hold.
+
+    A client whose socket is missing runs cold at once, unless AMK_ZYGOTE names
+-   a live pid that has yet to bind it; then the client waits in process, bounded,
+-   so a loader can hand off the moment it forks the zygote.  */
++   a live pid that has yet to bind it; then the client waits in process for as
++   long as that pid lives, so a loader can hand off the moment it forks the zygote.  */
+
+ #define AMK_STALE     75
+ #define AMK_MAXREQ    (4 * 1024 * 1024)
+@@ -6623,15 +6623,14 @@
+ }
+
+ /* Connect to a zygote's socket, or return -1.  A socket that is not there yet
+-   is retried in process while the pid in AMK_ZYGOTE is alive, for at most
+-   ten seconds; any other failure, and a dead or absent zygote, answers at once.  */
++   is retried in process for as long as the pid in AMK_ZYGOTE is alive; any
++   other failure, and a dead or absent zygote, answers at once.  */
+
+ static int
+ amk_connect (const char *sockpath) {
+   struct sockaddr_un addr;
+   const char *spec = getenv ("AMK_ZYGOTE");
+   pid_t zygote = spec != 0 ? (pid_t) atoi (spec) : 0;
+-  int waited;
+
+   if (strlen (sockpath) >= sizeof addr.sun_path)
+     amk_die (sockpath, "socket path too long");
+@@ -6640,7 +6639,7 @@
+   addr.sun_family = AF_UNIX;
+   strcpy (addr.sun_path, sockpath);
+
+-  for (waited = 0; ; ++waited) {
++  for (;;) {
+     int fd = socket (AF_UNIX, SOCK_STREAM, 0);
+     int err;
+
+@@ -6650,7 +6649,8 @@
+       return fd;
+     err = errno;
+     close (fd);
+-    if (err != ENOENT || zygote <= 0 || waited >= 1000)
++    /* A parse that stages a cold cache runs as long as it runs; the wait ends with the zygote, not with a count.  */
++    if (err != ENOENT || zygote <= 0)
+       return -1;
+     if (kill (zygote, 0) < 0 && errno == ESRCH)
+       return -1;

@@ -172,6 +172,27 @@ def test_a_served_request_keeps_the_clients_streams(amk, tmp_path, zygote):
   assert r.stdout == "PIPED\n"
 
 
+def test_a_client_waits_out_a_long_parse(amk, tmp_path, sock, monkeypatch):
+  """A zygote still parsing is waited for as long as it lives, so no cold parse runs beside it."""
+  (tmp_path / "Makefile").write_text("\n".join([
+    "slow := $(shell sleep 25)",
+    "show:",
+    "\t@echo seen=$(lua.persistent print(seen))",
+    "",
+  ]))
+  monkeypatch.setenv("AMK_LUA_INIT", "seen = 'zygote'")
+  z = popen(amk, ["--serve", str(sock), "-f", "Makefile"], cwd=tmp_path, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  monkeypatch.delenv("AMK_LUA_INIT")
+  try:
+    r = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, env={"AMK_ZYGOTE": str(z.pid)}, timeout=120)
+  finally:
+    z.kill()
+    z.wait(timeout=30)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "seen=zygote" in r.stdout, r.stdout + r.stderr
+
+
 def test_a_zygote_parks_after_remaking_an_included_file(amk, tmp_path, zygote):
   """A parse that remakes an included file restarts make; the re-exec keeps the serve words."""
   (tmp_path / "Makefile").write_text("\n".join([
