@@ -15,13 +15,13 @@ This build / fork starts from make-4.4.1 and creates one file that runs on Linux
 
 The main use-cases:
 
-1. **[Bundling & Distribution](#bundling--distribution):** Besides solving for *runs anywhere*, this also solves *bundles anything*.  APEs are bins and zip files at once, so `amk` is also a way to [distribute payloads](#payloads). Corollary: we can also *bundle and distribute* Makefile-as-scripts, and it works with more than one Makefile too.  Now you've got modules/libraries.
+1. **[Bundling & Distribution](#bundling--distribution):** Besides solving for *runs anywhere*, this also solves *bundles anything*.  APEs are bins and zip files at once, so `amk` is also a way to [distribute payloads](#payloads). Corollary: we can also *bundle and distribute* Makefile-as-scripts, and it works with more than one Makefile too.  TL;DR -- Modules and libraries from monoliths.
 
-1. **[Standard Guests](#standard-guests)** are the other part of (1), meaning that the *rest* of the shell toolchain can also be APE'd riders.  Now you don't care which `awk` is available *or* which `make` is available, or if either are available.  Now you've got a portable shell-scripting environment, without containers.
+1. **[Standard Guests](#standard-guests)** are the other part of (1), meaning that the *rest* of the shell toolchain can also be APE'd riders.  Now you don't care which `make` is available **or** which `awk` is available, or if either is available.  TL;DR -- Portable shell-scripting environment, no containers.
 
 1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!**  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  Now you've got graal, without JDK.
 
-1. **[Zygote / Resident Mode](#resident-dispatch):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Now you can opt in to trade the incremental computing model for massively improved recursion and FP.
+1. **[Zygote / Resident Mode](#resident-dispatch):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  TL;DR -- Keep most of the "incremental computing" model, get improved recursion and FP, workflows, dataflows.
 
 Put this stuff together, and it's a kind of *pseudo-compilation* over a make-dialect that can produce a platform-independent binary, can link libraries into something like Makefile-as-modules for code-reuse, and indeed even supports a kind of bidirectional FFI.  
 
@@ -29,24 +29,29 @@ Have fun.
 
 ## Install
 
-One file runs on Linux, macOS, and the BSDs:
+Just grab a release.
 
 ```bash
-curl -fsSLO https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk
+curl -fsSLO \
+  https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk
 chmod +x amk
 mkdir -p ~/.local/bin && mv amk ~/.local/bin/
 amk --version
 ```
 
-On Apple silicon the first run needs a C compiler; run `xcode-select --install` if `cc` is missing.
-
-### Verifying the download
+For Apple silicon the first run may need a C compiler.. run `xcode-select --install` if `cc` is missing.  (Annoying, but it's an upstream thing about code-signing, see [cosmo docs](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas))
 
 Each release carries a checksum beside the binary:
 
 ```bash
-curl -fsSLO https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk.sha256
-sha256sum -c amk.sha256   # on macOS: shasum -a 256 -c amk.sha256
+curl -fsSLO \
+  https://github.com/Robot-Wranglers/ape-make/releases/latest/download/amk.sha256
+
+# linux 
+sha256sum -c amk.sha256   
+
+# on macOS: 
+shasum -a 256 -c amk.sha256
 ```
 
 ### Docker
@@ -59,7 +64,9 @@ The image runs `amk` in `/work`. Use the `wasm3` tag for the build with the [was
 
 ## Bundling & Distribution
 
-The typical use-case for bundling is creating a new standalone. This works by cloning the `amk` runtime, bundling extras, and setting the new entrypoint:
+The typical use-case for bundling is creating a new standalone executable (pseudo-compilation). 
+
+This works by cloning the `amk` runtime, bundling extras, and setting the new entrypoint:
 
 ```bash
 # make the bundle
@@ -79,9 +86,9 @@ So, `amk` ships with exactly those tools.  They are not only bundled, but where 
 
 ## Standard Guests
 
-Standard guests are mostly **bundled tools**, plus two libraries.  
+Standard guests are the default riders which are mostly **bundled tools**.  There's also a few libraries that are useful enough to get a place.
 
-Tools are themselves portable APEs, and they usual suspects; the goal is no more ambiguity about whether sed/awk are GNU, no more wondering if bash is modern.
+All tools are themselves portable APEs, and they usual suspects; the goal is no more ambiguity about whether things like `sed` and `awk` are GNU, no more worrying if `bash` is modern.
 
 | tool | version | from | run as |
 | --- | --- | --- | --- |
@@ -92,16 +99,15 @@ Tools are themselves portable APEs, and they usual suspects; the goal is no more
 | [sed](#tools) | GNU sed 4.9 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `sed` on `PATH` |
 | [bash](#tools) | 5.2.0 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `bash` on `PATH` |
 
-Tools are bundled internally, available by default on PATH for any recipe, for any host.
+Bundled tools are available by default on PATH for any recipe, for any host, before the system path.  Reference by name just works, getting a modern bash on MacOS, working bash even in a container where it doesn't ship.
 
 ```make
-SHELL := bash
-
+SHELL:=bash 
 check:
-	test "$${BASH_VERSINFO[0]}" -ge 5
+	echo "$${BASH_VERSINFO[0]}"
 ```
 
-Since awk and jq are standard *and* [special](#special-guests), they are also available as part of `amk` itself.
+Since `awk` and `jq` are standard *and* [special](#special-guests), they are also available as part of `amk` itself.
 
 ```bash
 # Flag first, then the rest goes to the tool
@@ -109,15 +115,6 @@ Since awk and jq are standard *and* [special](#special-guests), they are also av
 
 # Same for jq
 printf '{"n":41}' | ./amk --jq .n+1
-
-# Every engine answers its own flag the same way, with the rest of the line as its arguments
-./amk --lua 'print(6 * 7)'
-./amk --s7 '(display (* 6 7))'
-./amk --micropy 'print(6 * 7)'
-./amk --js 'print(6 * 7)'
-
-# One engine per line: its builtin name, then the names it answers to, if any
-./amk --list-engines
 ```
 
 Since `amk` knows the name it's called by, a symlink named for the tool works the same.
@@ -125,20 +122,13 @@ Since `amk` knows the name it's called by, a symlink named for the tool works th
 ```bash
 ln -s amk awk && ./awk 'BEGIN { print "hello" }'
 ```
+### Builtin Libraries
 
 GMSL, the GNU Make Standard Library, adds datastructures and other primitives.  Any bundle can write `include lib/gmsl` and use it from anywhere to enjoy *sets, associative arrays, stacks, and integer and strings* written efficiently in make.
 
 ## Special Guests
 
-Special guests are embedded engines, linked into `amk` directly and callable as make functions: 
-
-```Makefile
-# Calling an engine with a program
-$(engine_name program[,input])
-```
-Each runs in-process with the input on stdin and returns its output less one trailing
-newline, so a one-line result is ready to use. `$(strip)` folds a multi-line result into
-words.
+Special guests are embedded engines, linked into `amk` directly and callable as make functions, but *also* available in tool mode.
 
 | engine | version | from | gives | adds | default |
 | --- | --- | --- | --- | --- | --- |
@@ -150,11 +140,36 @@ words.
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | `$(js)` | 2.0 MB | on |
 | [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | `$(wasm)`, `$(wasm.argv)`, `amk --wasm` | 0.4 MB | off |
 
-#### Capabilities by engine
+From CLI:
 
-Engines do not all support the same forms, and the gap widens as the persistent family
-grows. One row per engine, one column per capability; a dash means not yet, and each
-column's section below says what the capability is.
+```bash
+# List engines
+./amk --list-engines
+
+# Every engine answers its own flag
+./amk --lua 'print(6 * 7)'
+./amk --s7 '(display (* 6 7))'
+./amk --micropy 'print(6 * 7)'
+./amk --js 'print(6 * 7)'
+```
+
+From a Makefile, calling an engine looks the way you'd expect:
+
+```Makefile
+$(engine_name program[,input])
+```
+
+#### Capabilities by Engine
+
+The goal is a unified interface for all engines, but what can be done easily depends on what the upstream embedded projects actually expose.  Among other things, the variations on this theme includes questions like
+
+* CLI / argv exposed for runtime config, or code only?
+* Exec vs Eval: persistent kernel or one-shot only?
+* Singleton kernel or many possible?
+
+The most interesting question is around whether FFI is *bidirectional* yet, i.e. whether `amk` can simply run the guest or if the guest can actually reach into the `amk` runtime to change it, or possibly to *call other guests*.
+
+This table tracks the current breakdown of per-engine support:
 
 | engine | `$(name ...)` | `.argv` | `define.<name>` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.export` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -166,9 +181,7 @@ column's section below says what the capability is.
 | js | yes | - | yes | - | - | - | yes | yes | - | - |
 | wasm | module | yes | - | - | - | - | - | - | - | - |
 
-Handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and
-`amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a
-row gains them together once it has a persistent entry.
+Roughly: handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and `amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a row gains them together once it has a persistent entry.
 
 #### Passing programs and input
 
@@ -200,26 +213,22 @@ any commas.
 
 #### Defining a target in an engine
 
-`define.<engine> name` says the body is a program for that engine, and that the name is a
-target that runs it. make stores a plain define of that name, and beside it a phony target
-whose recipe is `@$(info $(<engine> ${name}))`: what the program prints is what the target
-prints.
+A small grammar change to vanilla Makefiles allows `amk` Makefiles to **automatically** declare targets-in-engines.
+
 
 ```make
+# a lua target: reachable with `amk greet`
 define.lua greet
 print("hello from " .. _VERSION)
 endef
 
+# a lisp target: reachable with `amk answer`
 define.s7 answer
 (display (* 6 7))
 endef
 ```
 
-`amk greet answer` prints `hello from Lua 5.4` and `42`, and `$(greet)` is still the
-program text for any other use. The target is phony, so a file called `greet` does not stop
-it, and it does not become the default goal by coming first: the first real rule keeps that.
-The word after `define.` must name an engine in the build, and one that does not is an
-error at that line.
+This is just a convenience to avoid some plumbing, so you can do iit anywyay *without* opting in to the new grammar.  But it's tidy!
 
 #### awk and jq
 
@@ -331,7 +340,6 @@ framed and carries JSON as it is: a request is one line, the store call; a reply
 call costs a write and a read and never a fork:
 
 ```make
-SHELL := bash
 define ask
 printf '%s\n' "$(1)" >&$$AMK_CALL && read -r st n <&$$AMK_REPLY && { [ "$$n" = 0 ] || IFS= read -r $(2) <&$$AMK_REPLY; }
 endef
@@ -363,7 +371,6 @@ request, with input lines after it, prints the reply lines and returns the statu
 pipeline converts by replacing the command word:
 
 ```make
-SHELL := bash
 names:
 	source amk.sh; printf '{"n":"a"}\n{"n":"b"}\n' | jq.pipe -r .n | sort -r
 	source amk.sh; amk.call 'get S length'
@@ -398,7 +405,7 @@ callable at `amk.on["<event>"]`, called with a dict of the same keys. Hooks obse
 veto or replace a recipe. Anything a hook prints goes to stderr, and an error in a hook is
 reported there and does not stop make.
 
-#### The guest handle
+#### The Guest Handle
 
 Lua, micropy, s7, and js each carry a handle into make: the same four calls, spelled the
 way each language expects. A read of a variable answers it expanded as a reference
@@ -577,22 +584,22 @@ endef
 fibs := $(subst Result: ,,$(wasm.argv --repl,,$(session)))
 ```
 
-### Feature words
+### Features and Version Info
 
-`.FEATURES` carries `awk jq lua s7 micropy js`, plus `wasm` when it is built in, and
-`.ENGINES` carries the same names on their own. Stock make has no `.ENGINES`, so testing
-it gives a clean no rather than an error, and one makefile can run under either.
-`.AMK_VERSION` carries amk's own version, while `$(MAKE_VERSION)` stays make's.
+`.FEATURES` is a standard builtin var for `make` which `amk` honors and extends.  You can consult to find out what's available in the current runtime, for use with `ifeq..endefs` guards and so on.  Default values with the default `amk` build would include default engine names, e.g. `awk jq lua s7 micropy js`, plus e.g. `wasm` if/when it is built in.
 
-`--version` keeps make's first line for everything that parses it, and its second line
-names amk, the flavor when the build has one, and the engines linked in:
+`.ENGINES` is similar, but `amk` specific, thus the *mere presence* can confirm/deny whether the runtime is `amk`.  
+
+Also available and related.. `.AMK_VERSION` carries amk's own version, while `$(MAKE_VERSION)` stays make's.
+
+From the CLI, `--version` details everything like so:
 
 ```
 GNU Make 4.4.1
 Built for x86_64 and aarch64 as an actually portable executable (amk 0.1.0: awk jq lua s7 micropy js)
 ```
 
-Gating on an engine, so a makefile takes its fallback under stock make:
+Typical pattern for guards is something like:
 
 ```make
 ifneq ($(filter jq,$(.FEATURES)),)
