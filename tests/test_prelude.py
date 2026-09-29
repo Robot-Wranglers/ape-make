@@ -104,12 +104,12 @@ def test_a_named_default_goal_beats_main(amk, tmp_path):
   assert r.stdout.strip() == "other"
 
 
-def test_a_main_cell_is_the_default(amk, tmp_path):
+def test_a_main_imported_target_is_the_default(amk, tmp_path):
   mk = tmp_path / "a.mk"
-  mk.write_text("other:\n\t@echo wrong\ndefine.awk __main__\nBEGIN { print \"from a cell\" }\nendef\n")
+  mk.write_text("other:\n\t@echo wrong\n@awk.import.target\ndefine __main__\nBEGIN { print \"from an import\" }\nendef\n")
   r = sh(amk, ["-f", str(mk)], cwd=tmp_path)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert r.stdout.strip() == "from a cell"
+  assert r.stdout.strip() == "from an import"
 
 
 def test_a_makefile_assignment_overrides_the_prelude(amk, tmp_path):

@@ -1,7 +1,7 @@
-Export: every row with a persist entry also answers $(<name>.export chunk), through the
+Import: every row with a persist entry also answers $(<name>.import chunk), through the
 same persistent function, and the entry learns which builtin called it from its first
 argument, the builtin's own name, where before it always saw the bare engine name. The
-guest runs the chunk in its persistent state and then exports what the chunk left in its
+guest runs the chunk in its persistent state and make imports what the chunk left in its
 global namespace: a callable as a make function, anything else as a make variable.
 
 --- a/src/function.c
@@ -19,7 +19,7 @@ global namespace: a callable as a make function, anything else as a make variabl
 +      if (e->persist)
 +        {
 +          char *name = xmalloc (strlen (e->name) + 8);
-+          sprintf (name, "%s.export", e->name);
++          sprintf (name, "%s.import", e->name);
 +          f->fptr.func_ptr = func_persistent;
 +          f->name = name;
 +          f->len = strlen (name);

@@ -17,7 +17,7 @@
 Engines do not all support the same forms. One row per engine, one column per
 capability; a dash means not yet.
 
-| engine | `$(name ...)` | `.argv` | `define.<name>` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.export` |
+| engine | `$(name ...)` | `.argv` | `.import.target` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.import` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | awk | yes | yes | yes | - | - | - | - | - | - | - |
 | jq | yes | yes | yes | - | - | - | - | - | - | - |
@@ -28,7 +28,7 @@ capability; a dash means not yet.
 | wasm | module | yes | - | - | - | - | - | - | - | - |
 
 Handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and
-`amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a
+`amk.eval`. Init, hooks, `amk.func`, and `.import` all need the persistent state, so a
 row gains them together once it has a persistent entry.
 
 ## Calling a guest from make
@@ -53,30 +53,32 @@ each engine's one-shot entry starts its own state and does not see it as persist
 
 ### Defining a target in an engine
 
-`define.<engine> name` through `endef` makes the body a program for that engine and the
-name a target that runs it. The program's output is the target's value: it is kept in
-`$(goal.dir)/name`, with `goal.dir` defaulting to `.amk/goals`, through a real rule on
-that file, and the phony target `name` prints it. A makefile that wants another
-directory sets `goal.dir` before its first define.
+`@<engine>.import.target` above `define name` through `endef` makes the body a program
+for that engine and the name a target that runs it. The program's output is the target's
+value: it is kept in `$(goal.dir)/name`, with `goal.dir` defaulting to `.amk/goals`,
+through a real rule on that file, and the phony target `name` prints it. A makefile that
+wants another directory sets `goal.dir` before its first define.
 
 ### Values between goals
 
 `$(goal name)` answers the value of a goal: it brings `$(goal.dir)/name` up to date, in
 a fork of the parsed image the way the spawn api runs a goal list, then reads the file,
-trimmed of one trailing newline like every builtin. A define cell's value is what its
-program printed. A plain file target has a value too, the file itself, copied into the
-value directory by a pattern rule the first define enters.
+trimmed of one trailing newline like every builtin. An imported target's value is what
+its program printed. A plain file target has a value too, the file itself, copied into
+the value directory by a pattern rule the first define enters.
 
-Inside a define cell every `$(goal x)` is also a prerequisite on x's value file, so
-referencing a value declares the edge: a cell reruns only when a value it reads is
-newer, and independent cells run at once under `-j`. A plain rule that reads a value at
-recipe time names the goal as a prerequisite itself. At parse time the fork sees only
-the rules read so far, so `$(goal ...)` belongs in recipes and cell bodies.
+An imported body reaches its engine as written, so `$` is the guest's. Its one form is
+`@x@`, the value of goal x spliced in raw: a name of letters, digits and `_ . - /`, in
+any case, that must match exactly one target. Each is a prerequisite on x's value file,
+so a target reruns only when a value it reads is newer, and independent targets run at
+once under `-j`. Names resolve after the makefiles are read, so a reference may come
+first. `$(goal ...)` belongs in recipes, and a plain rule names the goal as a prerequisite.
 
-A cell's program is expanded with the recipe, so its value references resolve in the
-make process, and it reaches the engine on the job's standard input: the rule make
-writes is `@$(job.stdin ${name})$(MAKE) --<engine> - >$@`. No file carries the
-program and no argument limit bounds its size.
+An imported target's job is a fork of make with no exec, so the guest handle reads make
+state there; its writes end with the job. The fork splices the values into the program
+and runs the engine on it with standard output on the value file. No file carries the
+program and no argument limit bounds its size. A failed target keeps what it wrote, as
+any recipe does, unless the makefile names `.DELETE_ON_ERROR:`.
 
 ### Feeding a job's standard input
 
@@ -88,8 +90,8 @@ drops its pipe when the target's job ends. Outside a recipe the function is an e
 
 Every text engine's flag form reads its program from standard input when its argument
 is a lone dash: `amk --lua -`, and the same for s7, micropy, and js. awk and jq keep
-their own command lines, so a cell hands awk `-f -` and jq `-n -f /dev/stdin`, which
-also gives a jq cell the null input it needs to run without data.
+their own command lines, so a recipe hands awk `-f -` and jq `-n -f /dev/stdin`, which
+also gives jq the null input it needs to run without data.
 
 ## Calling make from a guest
 
@@ -108,8 +110,8 @@ returns is the result. A nil, None, undefined, or null result is empty, an error
 on stderr and answers empty, and a second `amk.func` of the same name replaces the
 function. A name make already has, builtin or otherwise, is refused.
 
-`$(<name>.export chunk)` does the same without the calls: it runs the chunk in the
-persistent state and exports every global the chunk defined or rebound, a callable as a
+`$(<name>.import chunk)` does the same without the calls: it runs the chunk in the
+persistent state and imports every global the chunk defined or rebound, a callable as a
 make function and any other value as a simple variable, in name order. A string or
 number is its text, a boolean is `true` or empty, a list or array is its items as words,
 and a table, dict, or object is one variable per key as `name.key`, recursing. A leading

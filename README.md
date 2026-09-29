@@ -156,18 +156,18 @@ Engines do not all support the same forms, and the gap widens as the persistent 
 grows. One row per engine, one column per capability; a dash means not yet, and each
 column's section below says what the capability is.
 
-| engine | `$(name ...)` | `.argv` | `define.<name>` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.export` |
+| engine | `$(name ...)` | `.argv` | `.import.target` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.import` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | awk | yes | yes | yes | - | - | - | - | - | - | - |
 | jq | yes | yes | yes | - | - | - | - | - | - | - |
 | lua | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
-| s7 | yes | - | yes | - | - | - | yes | yes | - | - |
+| s7 | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | micropy | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
-| js | yes | - | yes | - | - | - | yes | yes | - | - |
+| js | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | wasm | module | yes | - | - | - | - | - | - | - | - |
 
 Handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and
-`amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a
+`amk.eval`. Init, hooks, `amk.func`, and `.import` all need the persistent state, so a
 row gains them together once it has a persistent entry.
 
 #### Passing programs and input
@@ -200,26 +200,27 @@ any commas.
 
 #### Defining a target in an engine
 
-`define.<engine> name` says the body is a program for that engine, and that the name is a
-target that runs it. make stores a plain define of that name, and beside it a phony target
-whose recipe is `@$(info $(<engine> ${name}))`: what the program prints is what the target
-prints.
+`@<engine>.import.target` above `define name` says the body is a program for that engine,
+and that the name is a target that runs it. make stores a plain define of that name, and
+beside it a phony target whose recipe is `@$(info $(<engine> ${name}))`: what the program
+prints is what the target prints.
 
 ```make
-define.lua greet
-print("hello from " .. _VERSION)
+@lua.import.target
+define greet
+  print("hello from " .. _VERSION)
 endef
 
-define.s7 answer
-(display (* 6 7))
+@s7.import.target
+define answer
+  (display (* 6 7))
 endef
 ```
 
 `amk greet answer` prints `hello from Lua 5.4` and `42`, and `$(greet)` is still the
 program text for any other use. The target is phony, so a file called `greet` does not stop
 it, and it does not become the default goal by coming first: the first real rule keeps that.
-The word after `define.` must name an engine in the build, and one that does not is an
-error at that line.
+An `@` line with no define after it is an error at that line.
 
 #### awk and jq
 
@@ -338,10 +339,11 @@ made them cannot read them back, so it keeps its own copy of anything it needs a
 once, visible to the same chunk's expand. Under an engine flag, `amk --lua ...`, there
 is no makefile and every call of the handle raises.
 
-The reverse direction is `amk.func(name, fn)`, in lua and micropy, from the persistent
-state only, since a one-shot call's state ends with the call. make gains `$(name ...)`:
-its arguments, expanded, reach `fn` as strings, and what `fn` returns is the result. A
-nil or None result is empty, an error reports on stderr and answers empty, and a second
+The reverse direction is `amk.func(name, fn)`, or `(amk-func 'name fn)` in s7, in lua,
+s7, micropy, and js, from the persistent state only, since a one-shot call's state ends
+with the call. make gains `$(name ...)`: its arguments, expanded, reach `fn` as strings,
+and what `fn` returns is the result. A nil, None, undefined, null, or `#f` result is
+empty, an error reports on stderr and answers empty, and a second
 `amk.func` of the same name replaces the function. A name make already has, builtin or
 otherwise, is refused. As with any make function, a call needs at least a space after
 the name, since `$(name)` alone is a variable reference.
@@ -355,15 +357,17 @@ loud := $(shout hello)
 joined := $(shout $(glue a,b))
 ```
 
-`$(<name>.export chunk)` does the same without the registration calls. It runs the
-chunk in the persistent state and exports every global the chunk defined or rebound: a
+`$(<name>.import chunk)` does the same without the registration calls. It runs the
+chunk in the persistent state and imports every global the chunk defined or rebound: a
 function or callable becomes a make function of its own name, and any other value
 becomes a simple variable, at file origin like an `amk.var` write. A string or number is
-its text, a boolean is `true` or empty, a list or sequence is its items as words, and a
-table or dict becomes one variable per key as `name.key`, recursing. A name with a
-leading underscore is private and stays put, as do `nil`, `None`, modules, and classes.
-The result is the exported names in name order, and whatever the chunk prints goes to
-stderr.
+its text, a boolean is `true` or empty, a list, sequence, or array is its items as words,
+and a table, dict, object, hash table, or let becomes one variable per key as
+`name.key`, recursing. A name with a leading underscore is private and stays put, as do
+`nil`, `None`, `null`, `undefined`, modules, and classes.
+The result is the imported names in name order, and whatever the chunk prints goes to
+stderr. The star form, `$(<name>.import* var)`, takes a variable's name instead of the
+chunk and hands over its unexpanded value, dedented.
 
 ```make
 define micropy.build
@@ -373,7 +377,7 @@ debug = True
 targets = {"lib": "core c", "app": "core c ui"}
 def shorten(s): return s[:3]
 endef
-built := $(micropy.export $(value micropy.build))
+built := $(micropy.import* micropy.build)
 
 # cc debug flags shorten targets.app targets.lib, and clang -O2 -Wall true lib: core c
 summary := $(cc) $(flags) $(debug) $(shorten library): $(targets.lib)

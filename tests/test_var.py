@@ -234,12 +234,12 @@ def test_export_makes_functions_and_variables(amk, tmp_path, request, engine):
     "define chunk",
     e["chunk"],
     "endef",
-    "names := $(%s.export $(value chunk))" % engine,
+    "names := $(%s.import $(value chunk))" % engine,
     "$(info names=[$(names)])",
     "$(info cc=[$(cc)] flags=[$(flags)] debug=[$(debug)] quiet=[$(quiet)] quiet.origin=[$(origin quiet)])",
     "$(info lib=[$(targets.lib)] app=[$(targets.app.name)/$(targets.app.tags)] title=[$(title hello)])",
     "$(info private=[$(origin _private)] os=[$(origin os)] targets=[$(origin targets)])",
-    "again := $(%s.export %s)" % (engine, e["again"]),
+    "again := $(%s.import %s)" % (engine, e["again"]),
     "$(info again=[$(again)] cc=[$(cc)])",
     "all:",
     "\ttrue",
@@ -291,7 +291,7 @@ def test_export_takes_input(amk, tmp_path, request, engine, chunk):
     pytest.skip(f"no {engine} in this build")
   mk = tmp_path / f"export-input-{engine}.mk"
   mk.write_text("\n".join([
-    "names := $(%s.export %s,ab cd)" % (engine, chunk),
+    "names := $(%s.import %s,ab cd)" % (engine, chunk),
     "$(info names=[$(names)] n=[$(n)])",
     "all:",
     "\ttrue",
@@ -332,7 +332,7 @@ def test_s7_func_defines_a_make_function(amk, tmp_path):
 def test_export_refuses_a_key_make_cannot_spell(amk, tmp_path):
   mk = tmp_path / "export-key.mk"
   mk.write_text("\n".join([
-    'names := $(micropy.export bad = {"a b": 1})',
+    'names := $(micropy.import bad = {"a b": 1})',
     "$(info names=[$(names)])",
     "all:",
     "\ttrue",

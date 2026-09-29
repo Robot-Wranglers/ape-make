@@ -1,3 +1,5 @@
+#!/usr/bin/env -S amk -f
+
 # via/amk/demos/wasm-1.mk: a zig function compiled to wasm in a container, held in a make variable, and called from wasm3 without touching disk.
 $(if $(filter wasm,$(.ENGINES)),,$(error $(__file__) needs a build with wasm3: make build with=wasm3))
 
@@ -40,9 +42,9 @@ endef
 
 # The image is built from its define, the module compiled from its define, and the session run, each once, at parse time, unless this run only streams a define.
 ifeq ($(filter def.%,$(MAKECMDGOALS)),)
-image := $(shell $(MAKE) -f $(__file__) def.Dockerfile | docker build -q -)
+image := $(shell ${amk} def.Dockerfile | docker build -q -)
 $(if $(filter-out 0,$(.SHELLSTATUS)),$(error docker build failed))
-wasm.hex := $(shell $(MAKE) -f $(__file__) def.fib.zig | docker run -i --rm -w /tmp $(image) sh -c '$(zig.build)' | od -An -v -tx1)
+wasm.hex := $(shell ${amk} def.fib.zig | docker run -i --rm -w /tmp $(image) sh -c '$(zig.build)' | od -An -v -tx1)
 $(if $(filter-out 0,$(.SHELLSTATUS)),$(error zig build failed))
 results := $(patsubst Result:%,%,$(subst Result: ,Result:,$(wasm.argv --repl,,$(session))))
 endif

@@ -76,6 +76,8 @@ gmsl.files   := gmsl __gmsl
 
 # amk's own payload members: the prelude patch 0034 reads before every makefile.
 payload.files := payload/__init__.mk
+# The mip library needs the micropython and jq engines, so it ships only in a build that has both.
+payload.mip = $(if $(filter-out $(engines),micropython jq),,payload/lib/mip.mk)
 
 # dkjson is one lua file, and its "tarball" is that file; it lands in the payload for require.
 dkjson.version := 2.8
@@ -176,7 +178,12 @@ s7.objdirs     := .
 # s7 is one translation unit and ships no main of its own; its c loader wants dlopen, which an ape has not.
 s7.cflags      := -DWITH_C_LOADER=0
 # MicroPython compiles through its own makefiles, driven by guest/micropy.mk, and its objects land in these directories of the build tree.
-micropython.objdirs := . py extmod shared/runtime shared/libc shared/timeutils
+micropython.objdirs := . py extmod shared/runtime shared/libc shared/timeutils ports/unix extmod/mbedtls lib/mbedtls/library lib/mbedtls_errors
+# Python-side modules zipped as source under lib/, as payload path and tarball path: asyncio's Python half, and ssl, requests, and mip from micropython-lib.
+micropython.pylib := $(foreach f,__init__ core event funcs lock stream task,asyncio/$(f).py:extmod/asyncio/$(f).py) \
+  ssl.py:lib/micropython-lib/python-stdlib/ssl/ssl.py \
+  requests/__init__.py:lib/micropython-lib/python-ecosys/requests/requests/__init__.py \
+  mip/__init__.py:lib/micropython-lib/micropython/mip/mip/__init__.py
 # wasm3's own cli is the guest, built the way its cosmopolitan script builds it, with the built-in wasi and no libuv.
 wasm3.objdirs  := .
 wasm3.cflags   := -fno-strict-aliasing -fomit-frame-pointer -fno-stack-check -fno-stack-protector \
@@ -355,8 +362,8 @@ $(lua.src): $(lua.tarball)
 $(s7.src): $(s7.tarball)
 	$(call log, patch, unpacking $(s7.tarball) into $@ unpatched)
 	mkdir -p $@ && tar xzf $(s7.tarball) -C $@ --strip-components=1 && touch $@
-# The release tarball carries every port and vendored library; amk's port needs the core, the modules, the shared helpers, four in-tree libraries, and two files it borrows from unix.
-micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs LICENSE
+# The release tarball carries every port and vendored library; amk's port needs the core, the modules, the shared helpers, six in-tree libraries with mbedtls for ssl, and what it borrows from unix.
+micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c ports/unix/modsocket.c ports/unix/mbedtls lib/mbedtls lib/mbedtls_errors lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs $(foreach p,$(micropython.pylib),$(lastword $(subst :, ,$(p)))) LICENSE
 $(micropython.src): $(micropython.tarball)
 	$(call log, patch, unpacking $(words $(micropython.parts)) parts of $(micropython.tarball) into $@ unpatched)
 	mkdir -p src && tar xJf $(micropython.tarball) -C src $(addprefix micropython-$(micropython.version)/,$(micropython.parts)) && touch $@
@@ -543,7 +550,7 @@ FORCE:
 
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree.
-$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files)
+$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.mip)
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix) $(bin)
 	cd build/ape$(suffix) \
@@ -554,10 +561,12 @@ $(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) 
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
 	$(foreach t,$(tools),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(t);)
 	$(foreach l,$(libs),$(foreach f,$($(l).files),install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
+	$(if $(filter micropython,$(engines)),$(foreach p,$(micropython.pylib),mkdir -p $(dir build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)))) && install -m 0644 $(micropython.src)/$(lastword $(subst :, ,$(p))) build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)));))
 	$(foreach f,$(payload.files),install -m 0644 $(f) build/payload$(suffix)/$(notdir $(f));)
+	$(foreach f,$(payload.mip),install -m 0644 $(f) build/payload$(suffix)/lib/$(notdir $(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
-	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs),lib) $(notdir $(payload.files))
+	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython,$(engines)),lib) $(notdir $(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
 	$(foreach n,$(engines.aliases),ln -sf amk $(bin)/$(n);)
 	$(call log, build, artifact $@ is ready -- $(bin) holds the $(engines.aliases) names for it)

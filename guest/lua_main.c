@@ -545,7 +545,7 @@ lua_export_fields (lua_State *L, const char *name, int idx, struct lua_names *na
       if (!amk_name_ok (keys[i]))
         {
           free (keys);
-          luaL_error (L, "amk export: %s has a key make cannot spell: %s", name, keys[i]);
+          luaL_error (L, "amk import: %s has a key make cannot spell: %s", name, keys[i]);
         }
       lua_pushfstring (L, "%s.%s", name, keys[i]);
       lua_getfield (L, idx, keys[i]);
@@ -692,7 +692,7 @@ __attribute__ ((visibility ("default"))) int
 lua_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   lua_State *L = persistent;
-  int export = amk_entry_is (argv[0], "export");
+  int export = amk_entry_is (argv[0], "import");
   int rc;
 
   if (argc < 2 || argv[1] == NULL)
@@ -730,7 +730,7 @@ lua_persist_main (struct amk_sink *out, int argc, char **argv)
       if (lua_pcall (L, 1, 0, 0) != LUA_OK)
         {
           const char *msg = lua_tostring (L, -1);
-          fprintf (stderr, "lua.export: %s\n", msg ? msg : "unknown error");
+          fprintf (stderr, "lua.import: %s\n", msg ? msg : "unknown error");
           lua_pop (L, 1);
           rc = 1;
         }

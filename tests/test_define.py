@@ -1,9 +1,10 @@
-"""Pins the define for an engine.
+"""Pins the import target and the at line.
 
-`define.<engine> name` through `endef` stores an ordinary define of that name and enters a
+`@<engine>.import.target` above `define name` through `endef` keeps the define and enters a
 phony target of the same name that hands the body to the engine and prints what comes back.
 Pinned: the target prints the body's output, the define is still a plain variable, a file of
-the target's name does not stop it, the name is expanded, and an unknown engine is an error.
+the target's name does not stop it, the name is expanded, the builtin works without the at
+line, and an at line naming no builtin is left to make.
 """
 
 import pytest
@@ -11,10 +12,12 @@ import pytest
 from conftest import sh
 
 makefile = "\n".join([
-  "define.lua greet",
+  "@lua.import.target",
+  "define greet",
   "print('hello from ' .. _VERSION)",
   "endef",
-  "define.s7 answer",
+  "@s7.import.target",
+  "define answer",
   "(display (* 6 7))",
   "endef",
   "$(info body=[$(greet)])",
@@ -24,14 +27,21 @@ makefile = "\n".join([
 
 prefixed = "\n".join([
   "kind := lua",
-  "define.lua $(kind)-hello",
+  "@lua.import.target",
+  "define $(kind)-hello",
   "print('hi')",
   "endef",
   "",
 ])
 
+literal = "\n".join([
+  "$(lua.import.target hi,print('hi from a literal'))",
+  "",
+])
+
 unknown = "\n".join([
-  "define.cobol run",
+  "@cobol.import.target",
+  "define run",
   "DISPLAY 'no'.",
   "endef",
   "",
@@ -68,9 +78,18 @@ def test_the_name_is_expanded(amk, tmp_path):
   assert r.stdout.strip() == "hi", r.stdout
 
 
-def test_a_word_that_names_no_engine_is_an_error(amk, tmp_path):
+@pytest.mark.engines("lua")
+def test_the_builtin_works_without_the_at_line(amk, tmp_path):
+  mk = tmp_path / "define.mk"
+  mk.write_text(literal)
+  r = sh(amk, ["-s", "-f", str(mk), "hi"], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "hi from a literal", r.stdout
+
+
+def test_an_at_line_naming_no_builtin_is_left_to_make(amk, tmp_path):
   mk = tmp_path / "define.mk"
   mk.write_text(unknown)
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode != 0
-  assert "'define.cobol' names no engine" in r.stderr, r.stderr
+  assert "missing separator" in r.stderr, r.stderr

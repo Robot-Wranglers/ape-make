@@ -1,0 +1,13 @@
+Recursion by name: a recipe line that references amk, the prelude's way to run the entry
+makefile again, or make, compose.mk's, is a recursive make exactly as a reference to the
+make command variable is, so it shares the jobserver and still runs under -n.
+
+--- a/src/commands.c
++++ b/src/commands.c
+@@ -424,3 +424,5 @@
+       if (! ANY_SET (flags, COMMANDS_RECURSE)
+-          && (strstr (p, "$(MAKE)") != 0 || strstr (p, "${MAKE}") != 0))
++          && (strstr (p, "$(MAKE)") != 0 || strstr (p, "${MAKE}") != 0
++              || strstr (p, "$(amk)") != 0 || strstr (p, "${amk}") != 0
++              || strstr (p, "$(make)") != 0 || strstr (p, "${make}") != 0))
+         flags |= COMMANDS_RECURSE;
