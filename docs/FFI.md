@@ -4,38 +4,84 @@
 
 ### Directions of the bridge
 
-### Terms
+### Features and Version Info
 
-## Engines and rows
+`.FEATURES` is a standard builtin var for `make` which `amk` honors and extends.  You can consult to find out what's available in the current runtime, for use with `ifeq..endefs` guards and so on.  Default values with the default `amk` build would include default engine names, e.g. `awk jq lua s7 micropy js`, plus e.g. `wasm` if/when it is built in.
 
-### The engine row
+`.ENGINES` is similar, but `amk` specific, thus the *mere presence* can confirm/deny whether the runtime is `amk`.  
 
-### Feature words
+Also available and related.. `.AMK_VERSION` carries amk's own version, while `$(MAKE_VERSION)` stays make's.
 
-### Capabilities by engine
+From the CLI, `--version` details everything like so:
 
-Engines do not all support the same forms. One row per engine, one column per
-capability; a dash means not yet.
+```
+GNU Make 4.4.1
+Built for x86_64 and aarch64 as an actually portable executable (amk 0.1.0: awk jq lua s7 micropy js)
+```
+
+Typical pattern for guards is something like:
+
+```make
+ifneq ($(filter jq,$(.FEATURES)),)
+  version := $(jq.argv -r,.version,$(file < package.json))
+else
+  version := $(shell jq -r .version package.json)
+endif
+```
+
+#### Capabilities by Engine
+
+The goal is a unified interface for all engines, but what can be done easily depends on what the upstream embedded projects actually expose.  Among other things, the variations on this theme includes questions like
+
+* CLI / argv exposed for runtime config, or code only?
+* Exec vs Eval: persistent kernel or one-shot only?
+* Singleton kernel or many possible?
+
+The most interesting question is around whether FFI is *bidirectional* yet, i.e. whether `amk` can simply run the guest or if the guest can actually reach into the `amk` runtime to change it, or possibly to *call other guests*.
+
+This table tracks the current breakdown of per-engine support:
 
 | engine | `$(name ...)` | `.argv` | `define.<name>` | `.persistent` | init | hooks | handle reads | handle writes | `amk.func` | `.export` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | awk | yes | yes | yes | - | - | - | - | - | - | - |
 | jq | yes | yes | yes | - | - | - | - | - | - | - |
 | lua | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
-| s7 | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
+| s7 | yes | - | yes | - | - | - | yes | yes | - | - |
 | micropy | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
-| js | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
+| js | yes | - | yes | - | - | - | yes | yes | - | - |
 | wasm | module | yes | - | - | - | - | - | - | - | - |
 
-Handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and
-`amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a
-row gains them together once it has a persistent entry.
+Roughly: handle reads are `amk.var` and `amk.expand`; handle writes are `amk.var` assignment and `amk.eval`. Init, hooks, `amk.func`, and `.export` all need the persistent state, so a row gains them together once it has a persistent entry.
 
 ## Calling a guest from make
 
-### One-shot calls
+#### Passing programs and input
 
-### Passing programs and input
+make expands `$` and splits on commas before an engine sees its arguments:
+
+```make
+# inline: a literal $ is written $$
+shout := $(awk { print toupper($$0) },hello)
+
+# inline: commas inside ( ) are safe
+head := $(awk BEGIN { print substr("hello", 1, 4) })
+
+# a top-level comma would end the program early, so the program goes in a define
+define awk.pair
+BEGIN { printf "%s-%s", "a", "b" }
+endef
+pair := $(awk $(value awk.pair))
+
+# $(value) passes a define raw, so $2 stays $2
+define awk.second
+{ print $2 }
+endef
+second := $(awk $(value awk.second),alpha beta gamma)
+```
+
+`shout` is `HELLO`, `head` is `hell`, `pair` is `a-b`, and `second` is `beta`. Braces do
+not protect a comma the way parentheses do, and the last argument, the input, may hold
+any commas.
 
 ### Persistent state
 
@@ -51,13 +97,23 @@ each engine's one-shot entry starts its own state and does not see it as persist
 
 ### Init
 
-### Defining a target in an engine
+#### Defining a target in an engine
 
-`define.<engine> name` through `endef` makes the body a program for that engine and the
-name a target that runs it. The program's output is the target's value: it is kept in
-`$(goal.dir)/name`, with `goal.dir` defaulting to `.amk/goals`, through a real rule on
-that file, and the phony target `name` prints it. A makefile that wants another
-directory sets `goal.dir` before its first define.
+A small grammar change to vanilla Makefiles allows `amk` Makefiles to **automatically** declare targets-in-engines.
+
+```make
+# a lua target: reachable with `amk greet`
+define.lua greet
+print("hello from " .. _VERSION)
+endef
+
+# a lisp target: reachable with `amk answer`
+define.s7 answer
+(display (* 6 7))
+endef
+```
+
+This is just a convenience to avoid some plumbing, so you can do iit anywyay *without* opting in to the new grammar.  But it's tidy!
 
 ### Values between goals
 
