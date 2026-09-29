@@ -48,6 +48,8 @@ patch that adds that guest.
 | `0041-recurse-amk.patch` | a recipe line using `amk` or `make` is recursive, like one using the make command variable |
 | `0042-import-fork.patch` | an imported target's job is a fork of make with no exec, so the guest handle reads make state in it |
 | `0043-grammar-goal-ref.patch` | an imported body reaches its engine as written, and `@name@` in it is a goal reference in any case: an edge, and the value's raw text |
+| `0044-import-kept.patch` | an imported target keeps a value only where a body names it, and the value directory is touched only then; any other runs every time on the job's own input and output |
+| `0045-api-version.patch` | `<name>.__version__` for every engine in the build: the version of the tarball it was built from |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

@@ -2,30 +2,30 @@
 
 # via/amk/demos/pipe-1.mk: every engine in one shell pipe, each stage adding its own version to a json object.
 
-stages := s7 awk jq lua micropy js
-$(amk.require $(stages))
+$(amk.require s7 awk jq lua micropy js)
 
 __main__:
-	${amk} s7.seed </dev/null | ${amk} awk.add | ${amk} jq.add | ${amk} lua.add \
+	${amk} s7.seed | ${amk} awk.add | jq_version="$(jq.__version__)" ${amk} jq.add | ${amk} lua.add \
 	  | ${amk} micropy.add | ${amk} js.add | ${amk} jq.check
 
-# Every stage is a target: its engine is the name's prefix, its program the define of the same name, and its input stdin.
-s7.seed awk.add jq.add lua.add micropy.add js.add jq.check:
-	@$(info $(or $(call $(firstword $(subst ., ,$@)),$(amk.dedent $($@)),$(file </dev/stdin)),$(error $@: no output)))
-
+# Every stage is an imported target: its program is the define, its input stdin, and what it prints goes down the pipe.
+@s7.import.target
 define s7.seed
   (format #t "{\"s7\": \"~A\"}" (*s7* 'version))
 endef
 
+@awk.import.target
 define awk.add
   BEGIN { while ((getline line) > 0) s = s line
           print substr(s, 1, length(s) - 1) ", \"awk\": \"" PROCINFO["version"] "\"}" }
 endef
 
+@jq.import.target
 define jq.add
-  . + {jq: "$(jq.argv --version,.)"}
+  input + {jq: env.jq_version}
 endef
 
+@lua.import.target
 define lua.add
   local json = require("dkjson")
   local d = json.decode(io.read("a"))
@@ -33,6 +33,7 @@ define lua.add
   print(json.encode(d))
 endef
 
+@micropy.import.target
 define micropy.add
   import sys, json
   d = json.load(sys.stdin)
@@ -40,6 +41,7 @@ define micropy.add
   print(json.dumps(d))
 endef
 
+@js.import.target
 define js.add
   const d = JSON.parse(std.in.readAsString());
   d.js = "quickjs on " + os.platform;
@@ -47,6 +49,7 @@ define js.add
 endef
 
 # The last stage fails unless every stage left a key.
+@jq.import.target
 define jq.check
-  if (keys | length) == $(words $(stages)) then . else error("expected $(words $(stages)) stages, got \(keys)") end
+  input | if (keys | length) == 6 then . else error("expected 6 stages, got \(keys)") end
 endef

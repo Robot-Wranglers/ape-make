@@ -54,29 +54,30 @@ each engine's one-shot entry starts its own state and does not see it as persist
 ### Defining a target in an engine
 
 `@<engine>.import.target` above `define name` through `endef` makes the body a program
-for that engine and the name a target that runs it. The program's output is the target's
-value: it is kept in `$(goal.dir)/name`, with `goal.dir` defaulting to `.amk/goals`,
-through a real rule on that file, and the phony target `name` prints it. A makefile that
-wants another directory sets `goal.dir` before its first define.
+for that engine and the name a phony target that runs it on the job's own input and
+output, every time. Only a target that some body references as `@name@` keeps its value,
+in `$(goal.dir)/name`, `.amk/goals` by default, and its name prints that. With no
+reference in any body, `goal.dir` is never read and no directory is made.
 
 ### Values between goals
 
-`$(goal name)` answers the value of a goal: it brings `$(goal.dir)/name` up to date, in
-a fork of the parsed image the way the spawn api runs a goal list, then reads the file,
-trimmed of one trailing newline like every builtin. An imported target's value is what
-its program printed. A plain file target has a value too, the file itself, copied into
-the value directory by a pattern rule the first define enters.
+`$(goal name)` answers the value of a goal: it brings the goal up to date, in a fork of
+the parsed image the way the spawn api runs a goal list, then reads its value, trimmed
+of one trailing newline like every builtin. An imported target's value is what its
+program printed, kept or not. A plain file target has a value too, the file itself,
+read where it is and never copied.
 
 An imported body reaches its engine as written, so `$` is the guest's. Its one form is
 `@x@`, the value of goal x spliced in raw: a name of letters, digits and `_ . - /`, in
-any case, that must match exactly one target. Each is a prerequisite on x's value file,
-so a target reruns only when a value it reads is newer, and independent targets run at
-once under `-j`. Names resolve after the makefiles are read, so a reference may come
-first. `$(goal ...)` belongs in recipes, and a plain rule names the goal as a prerequisite.
+any case, that must match exactly one target a makefile names; a file needs a rule,
+even an empty one. Each is a prerequisite on x's value file, so a kept value reruns only
+when a value it reads is newer, and independent targets run at once under `-j`. Names
+resolve after the makefiles are read, so a reference may come first. `$(goal ...)`
+belongs in recipes, and a plain rule names the goal as a prerequisite.
 
 An imported target's job is a fork of make with no exec, so the guest handle reads make
 state there; its writes end with the job. The fork splices the values into the program
-and runs the engine on it with standard output on the value file. No file carries the
+and runs the engine on it, a kept value's output on its file. No file carries the
 program and no argument limit bounds its size. A failed target keeps what it wrote, as
 any recipe does, unless the makefile names `.DELETE_ON_ERROR:`.
 

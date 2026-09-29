@@ -121,10 +121,10 @@ quickjs.feature := js
 gawk.alias := awk
 jq.alias   := jq
 wasm3.alias := wasm3
-engines.defs     = $(foreach e,$(engines),-D$($(e).define))
+engines.defs     = $(foreach e,$(engines),-D$($(e).define)=$($(e).version))
 version.defs     = -DAMK_VERSION=$(amk.version) $(if $(flavor),-DAMK_FLAVOR=$(flavor))
 engines.features = $(foreach e,$(engines),$($(e).feature))
-engines.aliases  = $(foreach e,$(engines),$($(e).alias))
+engines.aliases  = $(foreach e,$(engines),$(if $(filter-out undefined,$(origin $(e).alias)),$($(e).alias)))
 
 tools.files := $(foreach t,$(tools),$($(t).file))
 libs.tarballs := $(foreach l,$(libs),$($(l).tarball))

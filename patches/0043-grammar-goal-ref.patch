@@ -3,15 +3,15 @@ expansion, so every dollar sign is the guest's, and the one form amk reads in it
 name between two at signs, of letters, digits, underscore, dot, dash and slash. The
 references are recorded at import and resolved once the makefiles are read, before any
 job starts, so a reference may precede the define it names. A name matches in any case
-and must match exactly one target, in the database or else on disk under the value
-directory or in place: none is fatal, and so are two that differ only in case. Each
+and must match exactly one target a makefile names, bare or under the value directory,
+whatever files are on disk: none is fatal, and so are two that differ only in case. Each
 reference is a prerequisite on the goal's value file, and in the job's fork it becomes
 the value's text, raw, less one trailing newline. The goal function stays for ordinary
 rules and recipes, where the text is make's.
 
 --- a/src/filedef.h
 +++ b/src/filedef.h
-@@ -113,12 +113,26 @@
+@@ -113,12 +113,25 @@
                                      --shuffle passes through the graph.  */
      unsigned int snapped:1;     /* True if the deps of this file have been
                                     secondary expanded.  */
@@ -33,7 +33,6 @@ rules and recipes, where the text is make's.
 +struct amk_goal_ref *amk_goal_refs (const char *body);
 +void amk_goal_refs_settle (void);
 +char *amk_goal_splice (const struct file *file, const char *body);
-+const char *amk_dir_fold (const char *dir, const char *base, const char **other);
 +
 +
  extern struct file *default_file;
@@ -150,38 +149,9 @@ rules and recipes, where the text is make's.
    if (freopen (file->name, "w", stdout) == NULL)
      {
        fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
---- a/src/dir.c
-+++ b/src/dir.c
-@@ -1374,4 +1374,26 @@
-   hash_init (&directory_contents, DIRECTORY_BUCKETS,
-              directory_contents_hash_1, directory_contents_hash_2,
-              directory_contents_hash_cmp);
-+}
-+
-+/* The entries of a directory that spell a name in any case: the first is answered, a second with another spelling lands in other, and both are cached strings.  */
-+const char *
-+amk_dir_fold (const char *dir, const char *base, const char **other)
-+{
-+  const char *found = NULL;
-+  DIR *d = opendir (dir);
-+  struct dirent *e;
-+
-+  if (d == NULL)
-+    return NULL;
-+  while ((e = readdir (d)) != NULL)
-+    if (strcasecmp (e->d_name, base) == 0)
-+      {
-+        if (found == NULL)
-+          found = strcache_add (e->d_name);
-+        else if (*other == NULL)
-+          *other = strcache_add (e->d_name);
-+      }
-+  closedir (d);
-+  return found;
- }
 --- a/src/file.c
 +++ b/src/file.c
-@@ -1272,6 +1272,224 @@
+@@ -1272,6 +1272,197 @@
  init_hash_files (void)
  {
    hash_init (&files, 1000, file_hash_1, file_hash_2, file_hash_cmp);
@@ -240,7 +210,7 @@ rules and recipes, where the text is make's.
 +    *second = name;
 +}
 +
-+/* The target a reference names, in any case: a target in the database, bare or under the value directory, else a file on disk there or in place.  */
++/* The target a reference names, in any case: a target a makefile names, bare or under the value directory, and never a file that is only on disk.  */
 +static const char *
 +amk_goal_named (const char *dir, const char *word, const char **second)
 +{
@@ -258,33 +228,6 @@ rules and recipes, where the text is make's.
 +        if (strcasecmp (n, word) == 0)
 +          amk_goal_candidate (strcache_add (n), &first, second);
 +      }
-+
-+  if (first == NULL)
-+    {
-+      const char *slash = strrchr (word, '/');
-+      const char *base = slash ? slash + 1 : word;
-+      size_t wlen = slash ? (size_t) (slash - word) : 0;
-+      char *in = xmalloc (dlen + wlen + 4);
-+      int pass;
-+
-+      for (pass = 0; pass < 2; ++pass)
-+        {
-+          const char *other = NULL, *entry;
-+          if (pass == 0)
-+            sprintf (in, "%s%s%.*s", dir, wlen ? "/" : "", (int) wlen, word);
-+          else
-+            sprintf (in, "%.*s", (int) (wlen ? wlen : 1), wlen ? word : ".");
-+          entry = amk_dir_fold (in, base, &other);
-+          for (; entry != NULL; entry = other, other = NULL)
-+            {
-+              char *full = xmalloc (wlen + strlen (entry) + 2);
-+              sprintf (full, "%.*s%s%s", (int) wlen, word, wlen ? "/" : "", entry);
-+              amk_goal_candidate (strcache_add (full), &first, second);
-+              free (full);
-+            }
-+        }
-+      free (in);
-+    }
 +  return first;
 +}
 +
@@ -319,7 +262,7 @@ rules and recipes, where the text is make's.
 +          char *path;
 +
 +          if (name == NULL)
-+            OSS (fatal, flocp, _("@%s@ in imported target '%s' names no target; an operator between two names needs spaces around it"), r->word, f->amk_program);
++            OSS (fatal, flocp, _("@%s@ in imported target '%s' names no target, and a file needs a rule to be one; an operator between two names needs spaces around it"), r->word, f->amk_program);
 +          if (second != NULL)
 +            fatal (flocp, strlen (r->word) + strlen (f->amk_program) + strlen (name) + strlen (second),
 +                   _("@%s@ in imported target '%s' names both '%s' and '%s'"), r->word, f->amk_program, name, second);

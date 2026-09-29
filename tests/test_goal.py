@@ -1,10 +1,10 @@
 """Pins the value channel.
 
-`$(goal name)` brings a goal up to date and answers its value. An imported target keeps
-its program's output in a file under the goal directory and reruns only when a value it
-references is newer. Its body reaches the engine as written but for `@x@`, a reference
-to the goal x in any case: an edge, so -j orders the targets, and the value's raw text.
-A plain file target has a value too, its contents.
+`$(goal name)` brings a goal up to date and answers its value. An imported target that
+something references keeps its output in a file under the goal directory and reruns when
+a value it reads is newer; any other runs when asked and keeps no file. A body reaches
+the engine as written but for `@x@`, a reference to the goal x in any case: an edge, so
+-j orders the targets, and the value's raw text. A plain file target has a value too.
 """
 
 import time
@@ -42,7 +42,8 @@ def test_values_flow_between_imported_targets_in_different_languages(amk, tmp_pa
   r = sh(amk, ["-s", "-f", str(mk), "both"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert r.stdout.strip() == "15/30", r.stdout + r.stderr
-  assert (tmp_path / ".amk/goals/both").read_text() == "15/30\n"
+  assert (tmp_path / ".amk/goals/doubled").read_text() == "30\n"
+  assert not (tmp_path / ".amk/goals/both").exists(), "nothing references both, so it keeps no value"
 
 
 @pytest.mark.engines("lua", "micropy", "js")
@@ -98,6 +99,7 @@ diamond = "\n".join([
   ran("aside"),
   "print('aside: @other.txt@')",
   "endef",
+  "numbers.txt other.txt: ;",
   "",
 ])
 
@@ -124,15 +126,17 @@ def test_a_changed_input_reruns_its_downstreams_and_nothing_else(amk, tmp_path):
   assert runs.index("report") > max(runs.index("total"), runs.index("count")), runs
   assert (values / "sorted").read_text() == "1 2 3\n"
 
+  ends = ["aside", "report"]
   out, runs = build()
   assert out == ["6 over 3", "aside: first"], out
-  assert runs == [], "nothing changed, and these ran again: %s" % runs
+  assert sorted(runs) == ends, "nothing changed, so only the unreferenced ends run: %s" % runs
 
   time.sleep(1.1)
   (tmp_path / "numbers.txt").write_text("40 10 20 30\n")
   out, runs = build()
   assert out == ["100 over 4", "aside: first"], out
-  assert runs == ["sorted", "total", "count", "report"] or runs == ["sorted", "count", "total", "report"], runs
+  kept = [n for n in runs if n != "aside"]
+  assert kept == ["sorted", "total", "count", "report"] or kept == ["sorted", "count", "total", "report"], runs
   assert (values / "sorted").read_text() == "10 20 30 40\n"
   assert (values / "total").read_text() == "100\n"
   assert (values / "count").read_text() == "4\n"
@@ -141,13 +145,14 @@ def test_a_changed_input_reruns_its_downstreams_and_nothing_else(amk, tmp_path):
   (tmp_path / "other.txt").write_text("second\n")
   out, runs = build()
   assert out == ["100 over 4", "aside: second"], out
-  assert runs == ["aside"], runs
+  assert sorted(runs) == ends, runs
 
   time.sleep(1.1)
   (values / "total").write_text("7\n")
   out, runs = build()
   assert out == ["7 over 4", "aside: second"], out
-  assert runs == ["report"], "a value changed in the middle reruns only what reads it: %s" % runs
+  assert sorted(runs) == ends, "a value changed in the middle reruns no kept value: %s" % runs
+  assert not (values / "report").exists() and not (values / "aside").exists()
 
 
 @pytest.mark.engines("lua")
@@ -184,12 +189,64 @@ def test_a_failed_target_keeps_failing_under_delete_on_error(amk, tmp_path):
 
   (tmp_path / "fixed").unlink()
   value.unlink()
-  (tmp_path / ".amk/goals/down").unlink()
   mk = tmp_path / "loose.mk"
   mk.write_text(body)
   r = sh(amk, ["-s", "-f", str(mk), "down"], cwd=tmp_path, timeout=120)
   assert r.returncode == 2, r.stdout + r.stderr
   assert value.read_text() == "partial\n", "without the special target make keeps what a failed recipe wrote"
+
+
+probe = [
+  "@lua.import.target",
+  "define probe",
+  "print('{0}', os.getenv('who'), io.read('a'))",
+  "endef",
+  "",
+]
+
+
+@pytest.mark.engines("lua")
+def test_an_unreferenced_target_runs_every_time_and_keeps_no_file(amk, tmp_path):
+  mk = tmp_path / "probe.mk"
+
+  def run(body, who, stdin):
+    mk.write_text("\n".join(probe).format(body))
+    flags = ["-s", "--warn-undefined-variables", "-f", str(mk), "probe"]
+    r = sh(amk, flags, cwd=tmp_path, timeout=120, env={"who": who}, stdin=stdin)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stderr == "", "a makefile with no reference read the value directory: " + r.stderr
+    return r.stdout.split()
+
+  assert run("one", "x", "first") == ["one", "x", "first"]
+  assert run("one", "y", "first") == ["one", "y", "first"], "the environment changed"
+  assert run("one", "y", "second") == ["one", "y", "second"], "standard input changed"
+  assert run("two", "y", "second") == ["two", "y", "second"], "the body changed"
+  assert not (tmp_path / ".amk").exists(), "no reference, so no value directory"
+  r = sh(amk, ["-p", "-n", "-f", str(mk), "probe"], cwd=tmp_path, timeout=120, stdin="")
+  assert ".amk/goals" not in r.stdout, "no reference, so no rule names the value directory"
+
+
+@pytest.mark.engines("lua")
+def test_a_value_is_kept_only_for_a_body_that_names_it(amk, tmp_path):
+  mk = tmp_path / "kept.mk"
+  mk.write_text("\n".join([
+    "@lua.import.target",
+    "define named",
+    ran("named"),
+    "print('n')",
+    "endef",
+    "@lua.import.target",
+    "define reader",
+    ran("reader"),
+    "print('read @named@')",
+    "endef",
+    "",
+  ]))
+  for _ in range(2):
+    r = sh(amk, ["-s", "-f", str(mk), "reader", "named"], cwd=tmp_path, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout == "read n\nn\n", r.stdout + r.stderr
+  assert (tmp_path / "runs.log").read_text().split() == ["named", "reader", "reader"]
 
 
 @pytest.mark.engines("lua")
@@ -210,6 +267,7 @@ def test_a_file_target_is_a_value_too(amk, tmp_path):
   (tmp_path / "words.txt").write_text("changed\n")
   r = sh(amk, ["-s", "-f", str(mk), "shout"], cwd=tmp_path, timeout=120)
   assert r.stdout.strip() == "CHANGED", r.stdout + r.stderr
+  assert not (tmp_path / ".amk/goals/words.txt").exists(), "a plain file is read where it is"
 
 
 @pytest.mark.engines("lua")
@@ -405,6 +463,27 @@ def test_a_reference_folds_case_and_may_come_first(amk, tmp_path):
   r = sh(amk, ["-s", "-j2", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert r.stdout.strip() == "[] []", r.stdout + r.stderr
+
+
+@pytest.mark.engines("lua")
+def test_a_file_on_disk_is_no_target_without_a_rule(amk, tmp_path):
+  body = ["@lua.import.target", "define shown", "print('@Input.txt@')", "endef", ""]
+  mk = tmp_path / "disk.mk"
+  mk.write_text("\n".join(body))
+  (tmp_path / ".amk/goals").mkdir(parents=True)
+  clean = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
+  (tmp_path / "input.txt").write_text("here\n")
+  (tmp_path / ".amk/goals/input.txt").write_text("here\n")
+  dirty = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
+  for r in (clean, dirty):
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "@Input.txt@ in imported target 'shown' names no target" in r.stderr, r.stderr
+  assert clean.stderr == dirty.stderr, "what is on disk changed how the makefile reads"
+
+  mk.write_text("\n".join(body + ["input.txt: ;", ""]))
+  r = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "here", r.stdout + r.stderr
 
 
 @pytest.mark.engines("lua")
