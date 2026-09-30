@@ -193,8 +193,8 @@ def test_a_request_naming_another_makefile_is_refused(amk, tmp_path, zygote):
   assert "parsed Makefile" not in r.stdout
 
 
-def test_a_request_adding_a_makefile_is_refused(amk, tmp_path, zygote):
-  """A makefile beyond the zygote's own is refused too, and the cold command reads both."""
+def test_a_request_adding_a_makefile_is_served(amk, tmp_path, zygote):
+  """A makefile after the zygote's own is read by the child, and the zygote's is not read again."""
   (tmp_path / "Makefile").write_text(loud_leaf)
   (tmp_path / "Extra.mk").write_text(loud_extra)
   sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
@@ -202,7 +202,80 @@ def test_a_request_adding_a_makefile_is_refused(amk, tmp_path, zygote):
          cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stderr[-2000:]
   assert "extra ran" in r.stdout
-  assert "parsed Makefile" in r.stdout and "parsed Extra.mk" in r.stdout, r.stdout
+  assert "parsed Extra.mk" in r.stdout, r.stdout
+  assert "parsed Makefile" not in r.stdout, "a served request read the zygote's makefile"
+
+
+def test_an_added_makefile_in_the_joined_form_is_served(amk, tmp_path, zygote):
+  """A recursive call site writes the option and its file as one word, and that is served too."""
+  (tmp_path / "Makefile").write_text(loud_leaf)
+  (tmp_path / "Extra.mk").write_text(loud_extra)
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  r = sh(amk, _cold_after(amk, sock, "-fMakefile", "-fExtra.mk", "extra"),
+         cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stderr[-2000:]
+  assert "extra ran" in r.stdout
+  assert "parsed Makefile" not in r.stdout, r.stdout
+
+
+def test_a_request_adding_two_makefiles_reads_them_in_order(amk, tmp_path, zygote):
+  """Every added makefile is read, in the order the request names them."""
+  (tmp_path / "Makefile").write_text(loud_leaf)
+  (tmp_path / "Extra.mk").write_text(loud_extra)
+  (tmp_path / "More.mk").write_text("$(info parsed More.mk)\nmore: extra\n\t@printf 'more ran\\n'\n")
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  r = sh(amk, _cold_after(amk, sock, "-f", "Makefile", "-f", "Extra.mk", "-f", "More.mk", "more"),
+         cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stderr[-2000:]
+  assert r.stdout.splitlines() == ["parsed Extra.mk", "parsed More.mk", "extra ran", "more ran"], r.stdout
+
+
+def test_an_added_rule_may_depend_on_a_target_the_zygote_holds(amk, tmp_path, zygote):
+  """A prerequisite named in an added makefile resolves to the zygote's own target."""
+  (tmp_path / "Makefile").write_text(loud_leaf)
+  (tmp_path / "Extra.mk").write_text("both: leaf\n\t@printf 'both ran\\n'\n")
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  r = sh(amk, _cold_after(amk, sock, "-f", "Makefile", "-f", "Extra.mk", "both"),
+         cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stderr[-2000:]
+  assert r.stdout.splitlines() == ["leaf ran", "both ran"], r.stdout
+
+
+def test_a_makefile_named_before_the_zygotes_own_is_refused(amk, tmp_path, zygote):
+  """Only a makefile after the zygote's own is added; one ahead of it is a different make."""
+  (tmp_path / "Makefile").write_text(loud_leaf)
+  (tmp_path / "Extra.mk").write_text(loud_extra)
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  r = sh(amk, _cold_after(amk, sock, "-f", "Extra.mk", "-f", "Makefile", "extra"),
+         cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stderr[-2000:]
+  assert r.stdout.splitlines() == ["parsed Extra.mk", "parsed Makefile", "extra ran"], r.stdout
+
+
+def test_an_added_makefile_that_is_missing_fails_as_a_cold_make_does(amk, tmp_path, zygote):
+  """A served request for a makefile that is not there leaves with make's own status."""
+  (tmp_path / "Makefile").write_text(loud_leaf)
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  cold = sh(amk, ["-f", "Makefile", "-f", "Absent.mk", "leaf"], cwd=tmp_path, timeout=120)
+  served = sh(amk, ["--client", str(sock), "-f", "Makefile", "-f", "Absent.mk", "leaf"],
+              cwd=tmp_path, timeout=120)
+  for r in (cold, served):
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "Absent.mk" in r.stderr, r.stderr
+    assert "leaf ran" not in r.stdout
+
+
+def test_a_served_child_lists_an_added_makefile_as_a_cold_make_does(amk, tmp_path, zygote):
+  """The makefile list holds the zygote's makefile and then the added one, word for word."""
+  listing = "list:\n\t@printf 'list=[%s]\\n' '$(MAKEFILE_LIST)'\n"
+  (tmp_path / "Makefile").write_text(leaf_program)
+  (tmp_path / "Extra.mk").write_text(listing)
+  sock = zygote(["-f", "Makefile", "leaf"], tmp_path)
+  cold = sh(amk, ["-f", "Makefile", "-f", "Extra.mk", "list"], cwd=tmp_path, timeout=120)
+  served = sh(amk, ["--client", str(sock), "-f", "Makefile", "-f", "Extra.mk", "list"],
+              cwd=tmp_path, timeout=120)
+  assert cold.returncode == 0 and served.returncode == 0, cold.stderr + served.stderr
+  assert _named(served, "list") == _named(cold, "list")
 
 
 def test_a_refusal_with_no_cold_command_fails(amk, tmp_path, zygote):

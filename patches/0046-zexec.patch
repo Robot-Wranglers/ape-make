@@ -1,0 +1,221 @@
+Zexec: a request may add makefiles after the zygote's own, and its child reads them
+before it walks a goal. Make resolves what it read into the form it walks once, in the
+steps from snap_deps to build_vpath_lists, and refuses a rule defined after that. The
+zygote now parks before those steps, so a child reads what the request added and then
+runs them once over the whole set. A probe forked at the park point runs them and the
+remake of makefiles; when it remade one the zygote starts over with its serve words and
+the restart count, else it serves. A request is served when it restates every makefile
+the zygote holds and then names more, in the joined or the separated form; any other
+option the zygote lacks is refused as before. A recipe still cannot define a rule.
+An added makefile that cannot be read fails the request with make's own status, since
+the child skips the remake that would have reported it.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -360,6 +360,14 @@
+
+ /* A dispatch child's connection back to its client, answered from die().  */
+ static int amk_conn = -1;
++
++/* Nonzero in the child a zygote forks to learn whether a makefile is remade.  */
++static int amk_probe;
++
++/* The status a probe leaves with when a makefile was remade.  */
++#define AMK_RESTART 76
++
++static void amk_park (struct goaldep *deps, unsigned int restarts);
+
+ /* Count the number of commands we've invoked, that might change something in
+    the filesystem.  Start with 1 so calloc'd memory never matches.  */
+@@ -3217,6 +3225,12 @@
+   /* Set up MAKEFLAGS and MFLAGS again, so they will be right.  */
+
+   define_makeflags (0);
++
++#ifndef WINDOWS32
++  /* A zygote parks before the freeze, so a request may add makefiles.  */
++  if (amk_serve_path != 0)
++    amk_park (read_files, restarts);
++#endif
+
+   /* Make each 'struct goaldep' point at the 'struct file' for the file
+      depended on.  Also do magic for special targets.  */
+@@ -3527,6 +3541,12 @@
+         re_exec:
+           /* Updated successfully.  Re-exec ourselves.  */
+
++#ifndef WINDOWS32
++          /* A probe leaves the restart to the zygote that forked it.  */
++          if (amk_probe)
++            _exit (AMK_RESTART);
++#endif
++
+           remove_intermediates (0);
+
+           if (print_data_base_flag)
+@@ -3869,9 +3889,9 @@
+     }
+
+ #ifndef WINDOWS32
+-  /* Resident mode parks here and serves goals instead of running one.  */
+-  if (amk_serve_path != 0)
+-    amk_serve (amk_serve_path, read_files);
++  /* A probe that got this far found no makefile to remake.  */
++  if (amk_probe)
++    _exit (MAKE_SUCCESS);
+ #endif
+
+   /* Shuffle prerequisites to catch makefiles with incomplete depends. */
+@@ -5267,8 +5287,37 @@
+              tok, amk_zshort, amk_nzopts > 0 ? amk_zopts[0] : "");
+ }
+
++/* Makefiles a request adds after the zygote's own, which the child reads before the freeze.  */
++#define AMK_MAXADDED 64
++static const char *amk_added[AMK_MAXADDED];
++static int amk_nadded;
++
+ static int
++amk_zopts_makefiles (void) {
++  int i, n = 0;
++
++  for (i = 0; i < amk_nzopts; ++i)
++    if (amk_zopts[i][0] == '-' && amk_zopts[i][1] == 'f') ++n;
++  return n;
++}
++
++/* A makefile option in its joined form: one the zygote holds is counted, and one
++   past the zygote's own whole list is added.  Returns 0 for any other.  */
++static int
++amk_makefile_opt (const char *joined, const char *name, int *held) {
++  if (amk_zopts_has (joined)) {
++    if (amk_nadded == 0) ++*held;
++    return 1;
++  }
++  if (*held == 0 || *held != amk_zopts_makefiles () || amk_nadded == AMK_MAXADDED)
++    return 0;
++  amk_added[amk_nadded++] = name;
++  return 1;
++}
++
++static int
+ amk_negotiate (const char *p, size_t argc) {
++  int held = 0;
+   size_t i;
+
+   for (i = 0; i < argc; ++i) {
+@@ -5279,16 +5328,23 @@
+
+     if (amk_opt_takes_arg (tok) && i + 1 < argc) {
+       char *joined = xmalloc (strlen (tok) + strlen (p) + 1);
++      const char *arg = p;
+       int known;
+
+       sprintf (joined, "%s%s", tok, p);
+       p += strlen (p) + 1;
+       ++i;
+-      known = amk_zopts_has (joined);
++      known = tok[1] == 'f' ? amk_makefile_opt (joined, arg, &held) : amk_zopts_has (joined);
+       if (!known) amk_refused (joined);
+       free (joined);
+       if (!known) return 0;
+     }
++    else if (tok[1] == 'f' && tok[2] != '\0') {
++      if (!amk_makefile_opt (tok, tok + 2, &held)) {
++        amk_refused (tok);
++        return 0;
++      }
++    }
+     else if (!amk_zopts_has (tok)) {
+       amk_refused (tok);
+       return 0;
+@@ -5346,6 +5402,78 @@
+   return MAKE_FAILURE;
+ }
+
++/* What make does once between reading the makefiles and walking a goal.  */
++static void
++amk_freeze (void) {
++  snap_deps ();
++  install_default_suffix_rules ();
++  convert_to_pattern ();
++  install_default_implicit_rules ();
++  snap_implicit_rules ();
++  build_vpath_lists ();
++}
++
++/* Read the makefiles the request added, as an include would.  A missing one
++   fails here, since the child skips the remake that would report it.  */
++static void
++amk_read_added (void) {
++  int i;
++
++  for (i = 0; i < amk_nadded; ++i) {
++    char *text = xmalloc (strlen (amk_added[i]) + 9);
++
++    if (access (amk_added[i], R_OK) != 0) {
++      perror_with_name ("", amk_added[i]);
++      OS (fatal, NILF, _("No rule to make target '%s'"), amk_added[i]);
++    }
++    sprintf (text, "include %s", amk_added[i]);
++    eval_buffer (text, NILF);
++    free (text);
++  }
++}
++
++/* Park before the freeze.  A probe runs the freeze and the remake in a fork;
++   when it remade a makefile the zygote starts over, else it serves.  */
++static void
++amk_park (struct goaldep *deps, unsigned int restarts) {
++  extern char **environ;
++  int status = 0;
++  pid_t probe;
++
++  fflush (NULL);
++  probe = fork ();
++  if (probe < 0)
++    pfatal_with_name ("fork");
++  if (probe == 0) {
++    amk_probe = 1;
++    return;
++  }
++
++  while (waitpid (probe, &status, 0) < 0 && errno == EINTR)
++    ;
++
++  if (WIFEXITED (status) && WEXITSTATUS (status) == MAKE_SUCCESS)
++    amk_serve (amk_serve_path, deps);
++
++  if (WIFEXITED (status) && WEXITSTATUS (status) == AMK_RESTART) {
++    char **nargv = xmalloc (((size_t) amk_serve_argc + 3) * sizeof *nargv);
++    char count[32];
++    int i, n = 0;
++
++    sprintf (count, "%u", restarts + 1);
++    setenv ("MAKE_RESTARTS", count, 1);
++    nargv[n++] = amk_serve_argv[0];
++    nargv[n++] = (char *) "--serve";
++    nargv[n++] = (char *) amk_serve_path;
++    for (i = 1; i < amk_serve_argc; ++i)
++      nargv[n++] = amk_serve_argv[i];
++    nargv[n] = 0;
++    exec_command (nargv, environ);
++  }
++
++  _exit (WIFEXITED (status) ? WEXITSTATUS (status) : MAKE_FAILURE);
++}
++
+ /* Adopt the request and run it in this process.  Never returns.  */
+
+ static void amk_dispatch (int conn) NORETURN;
+@@ -5425,6 +5553,10 @@
+     free (aspid);
+   }
+
++  /* The zygote parked before the freeze, so the child reads and then freezes.  */
++  amk_read_added ();
++  amk_freeze ();
++
+   p = argp;
+   for (i = 0; i < argc; ++i) {
+     /* Options were matched against the zygote's own, so they are no-ops here.  */
