@@ -49,6 +49,7 @@ patch that adds that guest.
 | `0042-spawn-rearm-pid.patch` | a spawned job rearms the names `AMK_REARM_PID` lists to its own pid as a served child does, in the global set, so a makefile that recorded its process at parse answers for the job |
 | `0043-guest-input-pipe.patch` | a builtin call's input reaches the guest through a pipe the parent feeds between reads of its output, with `SIGPIPE` ignored for the feed, instead of a temp file under `TMPDIR` per call |
 | `0044-client-waits-for-the-parse.patch` | a client whose zygote is alive but has yet to bind waits for as long as the zygote lives, not ten seconds, so a long cold parse is not joined by a second cold parser |
+| `0045-child-goals.patch` | a served request and a spawned job take their goals through the same three steps, where each had its own copy: drop the inherited goals, rebuild `MAKEFLAGS`, run; no behavior changes |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

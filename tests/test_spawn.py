@@ -121,3 +121,46 @@ def test_a_spawned_job_sees_its_own_goals(amk, tmp_path):
   assert r.returncode == 0, r.stdout + r.stderr
   assert "one sees [ one two]" in r.stdout, r.stdout + r.stderr
   assert "two sees [ one two]" in r.stdout, r.stdout + r.stderr
+
+
+parity = "\n".join([
+  "seed := $(lua.persistent)",
+  "spawner:",
+  "\t@: $(lua.persistent amk.wait(amk.spawn({'show'})))",
+  "failer:",
+  "\t@echo spawned=$(lua.persistent local r = amk.wait(amk.spawn({'fail'})) print(r.status .. ' ' .. r.code))",
+  "show:",
+  "\t@printf 'goals=[%s]\\n' '$(MAKECMDGOALS)'",
+  "\t@printf 'flags=[%s]\\n' '$(MAKEFLAGS)'",
+  "\t@printf 'level=[%s]\\n' '$(MAKELEVEL)'",
+  "fail:",
+  "\t@exit 3",
+  "",
+])
+
+
+def _shown(r):
+  return [ln for ln in r.stdout.splitlines() if re.match(r"^(goals|flags|level)=\[", ln)]
+
+
+@pytest.mark.engines("lua")
+def test_a_spawned_job_and_a_served_child_see_the_same_make(amk, tmp_path, zygote):
+  """Both are children of the parsed image, so one goal reports the same goals, flags and level from either."""
+  (tmp_path / "parity.mk").write_text(parity)
+  sock = zygote(["-s", "-f", "parity.mk", "show"], tmp_path)
+  served = sh(amk, ["--client", str(sock), "show"], cwd=tmp_path, timeout=120)
+  spawned = sh(amk, ["-s", "-f", "parity.mk", "spawner"], cwd=tmp_path, timeout=120)
+  assert served.returncode == 0 and spawned.returncode == 0, served.stderr + spawned.stderr
+  assert len(_shown(served)) == 3, served.stdout + served.stderr
+  assert _shown(served) == _shown(spawned)
+
+
+@pytest.mark.engines("lua")
+def test_a_spawned_job_and_a_served_child_fail_with_the_same_code(amk, tmp_path, zygote):
+  """A failed goal is make's exit 2 from a served child and status failed with code 2 from a spawned job."""
+  (tmp_path / "parity.mk").write_text(parity)
+  sock = zygote(["-s", "-f", "parity.mk", "show"], tmp_path)
+  served = sh(amk, ["--client", str(sock), "fail"], cwd=tmp_path, timeout=120)
+  spawned = sh(amk, ["-s", "-f", "parity.mk", "failer"], cwd=tmp_path, timeout=120)
+  assert served.returncode == 2, served.stdout + served.stderr
+  assert "spawned=failed 2" in spawned.stdout, spawned.stdout + spawned.stderr
