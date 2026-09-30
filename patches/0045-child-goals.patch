@@ -1,0 +1,119 @@
+One place for a child's goals: a served request and a spawned job each dropped
+the goals it inherited, rebuilt MAKEFLAGS and ran its own, in two copies that
+had already drifted once. Both now call the same three steps, so what a child
+of the parsed image must do before it runs a goal is written once. No behavior
+changes.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -5317,13 +5317,41 @@
+   }
+ }
+
++/* A child of the parsed image, served or spawned, takes its goals in three
++   steps that are the same for both: it drops the goals it inherited, it is
++   made ready once its own are recorded, and it runs them.  */
++static void
++amk_child_goals_reset (void) {
++  goals = 0;
++  lastgoal = 0;
++  define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
++}
++
++/* MAKEFLAGS was built before the fork, so it is rebuilt for sub-makes.  */
++static void
++amk_child_ready (void) {
++  define_makeflags (0);
++}
++
++static int
++amk_child_run (void) {
++  if (goals == 0)
++    return MAKE_SUCCESS;
++  switch (update_goal_chain (goals)) {
++  case us_none:
++  case us_success:  return MAKE_SUCCESS;
++  case us_question: return MAKE_TROUBLE;
++  case us_failed:   break;
++  }
++  return MAKE_FAILURE;
++}
++
+ /* Adopt the request and run it in this process.  Never returns.  */
+
+ static void amk_dispatch (int conn) NORETURN;
+
+ static void
+ amk_dispatch (int conn) {
+-  int status = MAKE_SUCCESS;
+   int fds[AMK_NFD];
+   const char *p, *argp;
+   char *buf;
+@@ -5352,9 +5380,7 @@
+
+   amk_child = 1;
+   amk_conn = conn;
+-  goals = 0;
+-  lastgoal = 0;
+-  define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
++  amk_child_goals_reset ();
+
+   /* Walk past argv to reach the environment, which is imported first so that
+      an argv override still outranks it.  */
+@@ -5426,8 +5452,7 @@
+   /* The request's recipes call this process, not whatever the client's environment named.  */
+   amk_call_dispatch ();
+
+-  /* MAKEFLAGS was built before the hook point, so rebuild it for sub-makes.  */
+-  define_makeflags (0);
++  amk_child_ready ();
+
+   /* A makefile may record its own command line by reading the parent process,
+      which under dispatch is the zygote rather than the caller.  Rebuild it from
+@@ -5447,15 +5472,7 @@
+     free (cli);
+   }
+
+-  if (goals != 0)
+-    switch (update_goal_chain (goals)) {
+-    case us_none:
+-    case us_success:                      break;
+-    case us_question: status = MAKE_TROUBLE; break;
+-    case us_failed:   status = MAKE_FAILURE; break;
+-    }
+-
+-  die (status);
++  die (amk_child_run ());
+ }
+
+ /* Spawned goal lists: the pids still out, and the ones make's own reaping collected before they were asked for.  */
+@@ -6061,9 +6078,7 @@
+ static int
+ amk_run_goals (int n, char **words) {
+   int i;
+-  goals = 0;
+-  lastgoal = 0;
+-  define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
++  amk_child_goals_reset ();
+   for (i = 0; i < n; ++i)
+     handle_non_switch_argument (words[i], o_command);
+   /* A job spawned while a recipe expands collected its goals in that target's
+@@ -6072,16 +6087,8 @@
+     struct variable *gv = lookup_variable (STRING_SIZE_TUPLE ("MAKECMDGOALS"));
+     define_variable_global ("MAKECMDGOALS", 12, gv != 0 ? gv->value : "", o_default, 0, NILF);
+   }
+-  define_makeflags (0);
+-  if (goals == 0)
+-    return MAKE_SUCCESS;
+-  switch (update_goal_chain (goals)) {
+-  case us_none:
+-  case us_success:  return MAKE_SUCCESS;
+-  case us_question: return MAKE_TROUBLE;
+-  case us_failed:   break;
+-  }
+-  return MAKE_FAILURE;
++  amk_child_ready ();
++  return amk_child_run ();
+ }
+
+ /* Every spawned job is a process group, and one of them may hold the terminal.  */
