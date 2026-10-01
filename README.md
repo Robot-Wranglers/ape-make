@@ -125,7 +125,12 @@ There's a laundry-list of other curated stuff, but just a few examples to give a
 
 <a id="special-guests"></a>
 
-<h2><table align=right><tr><td><sub><a href="#engine-api">Engine API</a> | <a href="#tool-mode">Tool</a> | <a href="#eval-mode">Eval</a> | <a href="#interpreter-mode">Interpreter</a> | <a href="#bridge-mode">Bridge</a> | <a href="#misc-examples">Examples</a></sub></td></tr></table>Special Guests</h2>
+<table width="100%">
+  <tr>
+    <td><h3>Special Guests</h3></td>
+    <td align=right><a href="#engine-api">Engine API</a> | <a href="#tool-mode">Tool</a> | <a href="#eval-mode">Eval</a> | <a href="#interpreter-mode">Interpreter</a> | <a href="#bridge-mode">Bridge</a> | <a href="#misc-examples">Examples</a></td>
+  </tr>
+</table>
 
 Special guests have a "tool mode" in common with standard guests, but are also *embedded engines*, i.e. linked into `amk` directly.  
 
@@ -151,7 +156,12 @@ This section is an overview of each mode with examples, but it's a quick guide, 
 
 <a id="engine-api"></a>
 
-<h3><table align=right><tr><td><sub><a href="#engine-literals">Literals</a> | <a href="#engine-reference">Reference</a> | <a href="#extended-grammar">Grammar</a></sub></td></tr></table>Engine API</h3>
+<table width="100%">
+  <tr>
+    <td><h3>Engine API</h3></td>
+    <td align=right><a href="#engine-literals">Literals</a> | <a href="#engine-reference">Reference</a> | <a href="#extended-grammar">Grammar</a></td>
+  </tr>
+</table>
 
 Each guest backend has a more or less unified interface.  Not every language gets a demo for every mode, but you can switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `js`, `lua`, `jq`).  That said.. `wasm` in particular must work differently, and the exact details for the FFI support may differ somewhat by engine.
 
@@ -265,7 +275,12 @@ count := $(lua* lua.count, words)
 
 <a id="interpreter-mode"></a>
 
-<h3><table align=right><tr><td><sub><a href="#lua">lua</a> | <a href="docs/FFI.md#persistent-state">Persistent state</a> | <a href="docs/FFI.md#init">Init</a></sub></td></tr></table>Interpreter Mode</h3>
+<table width="100%">
+  <tr>
+    <td><h3>Interpreter Mode</h3></td>
+    <td align=right><a href="#lua">lua</a> | <a href="docs/FFI.md#persistent-state">Persistent state</a> | <a href="docs/FFI.md#init">Init</a></td>
+  </tr>
+</table>
 
 Interpreter-mode gives you a persistent stateful engine on the backend instead of a one-shot eval.  Here's the API:
 
@@ -303,7 +318,12 @@ Again, see the main [FFI docs](docs/FFI.md) for details, but included below you 
 
 <a id="bridge-mode"></a>
 
-<h3><table align=right><tr><td><sub><a href="docs/FFI.md#the-guest-handle">Guest handle</a> | <a href="docs/FFI.md#registering-make-functions">Functions</a> | <a href="docs/FFI.md#hooks">Hooks</a></sub></td></tr></table>Bridge Mode</h3>
+<table width="100%">
+  <tr>
+    <td><h3>Bridge Mode</h3></td>
+    <td align=right><a href="docs/FFI.md#the-guest-handle">Guest handle</a> | <a href="docs/FFI.md#registering-make-functions">Functions</a> | <a href="docs/FFI.md#hooks">Hooks</a></td>
+  </tr>
+</table>
 
 Since `amk` is an extension of `make` and Makefile (or the [extended grammar](#extended-grammar)) is the obvious choice for the coordination language, host-to-guest is the obvious choice for the primary direction of *control-flow and orchestration*.
 
@@ -312,7 +332,12 @@ But! This actually isn't required.  In most cases, the bridge is *bidirectional,
 
 <a id="misc-examples"></a>
 
-<h3><table align=right><tr><td><sub><a href="#awk-jq">awk and jq</a> | <a href="#s7">s7</a> | <a href="#micropy">micropy</a> | <a href="#js">js</a> | <a href="#wasm">wasm</a></sub></td></tr></table>Misc Examples</h3>
+<table width="100%">
+  <tr>
+    <td><h3>Misc Examples</h3></td>
+    <td align=right><a href="#awk-jq">awk and jq</a> | <a href="#s7">s7</a> | <a href="#micropy">micropy</a> | <a href="#js">js</a> | <a href="#wasm">wasm</a></td>
+  </tr>
+</table>
 
 <a id="awk-jq"></a>
 
