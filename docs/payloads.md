@@ -70,8 +70,8 @@ involved and a start costs nothing extra. It sets the defaults every makefile un
 would otherwise repeat, each one overridable by a later assignment or an environment
 knob: `SHELL` from `AMK_SHELL` else bash, `.SHELLFLAGS` from `AMK_SHELLFLAGS` else
 `-euo pipefail -c`, `MAKEFLAGS` as silent, stop on error and warn on undefined variables,
-`.DEFAULT_GOAL` from `AMK_GOAL` when set, and an exported `__file__` naming the entry
-makefile. With patch 0035, a `__main__` target is the default goal whenever the makefile
+`.DEFAULT_GOAL` from `AMK_GOAL` when set, a `__file__` naming the entry
+makefile, and `amk` to run it again. With patch 0035, a `__main__` target is the default goal whenever the makefile
 names none itself, wherever it sits in the file. A host with no bash on `PATH` gets `/bin/sh` with `-eu -c` instead. Once read,
 the prelude leaves `MAKEFILE_LIST` again, so the first word of that list still names the
 entry makefile and a bundle or a distribution that spells it that way sees no change.

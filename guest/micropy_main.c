@@ -348,7 +348,7 @@ amk_sorted_entries (mp_map_t *map, mp_map_elem_t **out, const char *owner)
       if (!mp_map_slot_is_filled (map, i))
         continue;
       if (!mp_obj_is_str (map->table[i].key))
-        mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk export: %s has a key that is not a str"), owner);
+        mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk import: %s has a key that is not a str"), owner);
       out[n++] = &map->table[i];
     }
   qsort (out, n, sizeof *out, amk_elem_cmp);
@@ -372,7 +372,7 @@ amk_export_value (const char *name, mp_obj_t value, vstr_t *names)
           const char *key = mp_obj_str_get_str (fields[i]->key);
           vstr_t child = { 0 };
           if (!amk_name_ok (key))
-            mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk export: %s has a key make cannot spell: %s"), name, key);
+            mp_raise_msg_varg (&mp_type_ValueError, MP_ERROR_TEXT ("amk import: %s has a key make cannot spell: %s"), name, key);
           vstr_init (&child, strlen (name) + strlen (key) + 2);
           vstr_printf (&child, "%s.%s", name, key);
           amk_export_value (vstr_null_terminated_str (&child), fields[i]->value, names);
@@ -471,6 +471,7 @@ micropy_state_open (void)
     while (MP_STATE_VM (vfs_cur)->next != NULL)
       MP_STATE_VM (vfs_cur) = MP_STATE_VM (vfs_cur)->next;
   }
+  mp_obj_list_append (mp_sys_path, mp_obj_new_str_from_cstr ("/zip/lib"));
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_INPUT] = MP_OBJ_NEW_QSTR (MP_QSTR_);
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_ON] = mp_obj_new_dict (0);
   MP_STATE_VM (amk_mutable)[AMK_MUTABLE_FUNCS] = mp_obj_new_dict (0);
@@ -542,7 +543,7 @@ micropy_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   struct amk_capture capture;
   const char *input = argc > 2 && argv[2] != NULL ? argv[2] : "";
-  int export = amk_entry_is (argv[0], "export");
+  int export = amk_entry_is (argv[0], "import");
   mp_obj_t before;
   nlr_buf_t nlr;
   int rc;
@@ -584,7 +585,7 @@ micropy_persist_main (struct amk_sink *out, int argc, char **argv)
       nlr_pop ();
       return 0;
     }
-  fprintf (stderr, "micropy.export: ");
+  fprintf (stderr, "micropy.import: ");
   mp_obj_print_exception (&mp_stderr_print, MP_OBJ_FROM_PTR (nlr.ret_val));
   return 1;
 }

@@ -3,8 +3,8 @@ as the spawn api runs goals, and answers the goal's value file, trimmed like eve
 builtin's result. A define for an engine now enters a real rule on that value file,
 under $(goal.dir) or .amk/goals, whose recipe writes what the program printed, and the
 phony target of the define's name prints it; every $(goal x) in the body is a
-prerequisite on x's value file, so referencing a value declares the edge and the cell
-reruns only when a value it reads is newer. A plain file target's value is the file
+prerequisite on x's value file, so referencing a value declares the edge and the imported
+target reruns only when a value it reads is newer. A plain file target's value is the file
 itself, copied into the value directory by a pattern rule the first define enters.
 
 --- a/src/amk.h

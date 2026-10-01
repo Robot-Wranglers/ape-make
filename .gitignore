@@ -18,3 +18,5 @@ __pycache__
 .tkt.fossil .tkt.fossil.pid
 .tkt.*
 .amk/*
+amk
+/json.bash-*

@@ -1,31 +1,36 @@
-# amk
+<table width="100%">
+  <tr>
+    <td id="title"><strong>amk</strong></td>
+    <td id="mini-toc" align=right><a href="#overview">Overview</a> | <a href="#install">Install</a> | <a href="#bundling">Bundling</a> | <a href="#guests">Guests</a> | <a href="#special-guests">Special Guests</a> | <a href="#zygote">Zygote</a> | <a href="#payloads">Payloads</a> | <a href="#dev">Dev</a></td>
+  </tr>
+  <tr>
+    <td id="logo" width=15%><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/icon-dark.svg"><img src="docs/img/icon.svg" width="120" alt="amk"></picture></td>
+    <td id="blurb" align=center>
+    <strong>amk</strong> is ape-make, an actually portable cosmopolitan <code>make</code>.  It's a drop in replacement forked from make-4.4.1, but with enough brand new superpowers that it's a distinct dialect.
+    </td>
+  </tr>
+</table>
 
-`amk` is ape-make, an actually portable cosmopolitan `make`.  It's a drop in replacement forked from make-4.4.1, but also with enough brand new superpowers that it's a distinct dialect.
-
-Why?  Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, multi-language scripting environment without any need for docker.  It can also handle modules, package tools, and output the bundle as a portable artifact.
+Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, multi-language scripting environment without any need for docker. Besides embedding support for **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),**, and providing other support for bidirectional FFI, it can handle modules, package tools, and output a bundle as a portable artifact.
 
 One consequence of this is that Makefile *(and a small, optional extension of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh?  Ok.. Think of it as something like a notebook where downstream cells can update when their prerequisites change.
 
-To avoid burying the lead: `amk` already supports micropython, lua, javascript, lisp, and wasm.  See the [special guests](#special-guests) section.
-
 Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.
 
-**Overview:** [Install](#install) | [Bundling & Distribution](#bundling--distribution) | [Standard Guests](#standard-guests) | [Special Guests](#special-guests) | [Zygote / Resident Mode](#resident-dispatch)
-
-**Details:** [Payloads](#payloads) | [The load directive](#the-load-directive) | [Command line](#command-line) | [Running an ape](#running-an-ape) | [Developers](#developers)
-
+<a id="overview"></a>
 ## Overview 
 
 The main use-cases:
 
-1. **[Bundling & Distribution](#bundling--distribution):** Besides solving for *runs anywhere* `amk` solves for *bundles anything*.  Did you know that all APEs are at once bins and zip files?  Besides being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  But code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work or several can be involved.  Shipping monoliths composed of modules is easy.
+1. **[Bundling & Distribution](#bundling):** Besides solving for *runs anywhere* `amk` solves for *bundles anything*.  Did you know that all APEs are at once bins and zip files?  Besides being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  Code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work or several can be involved.  Shipping monoliths composed of modules is easy.
 
-1. **[Standard Guests](#standard-guests)** are the other part of (1), meaning that the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolchain so that we do not think of which `make` is available **or** which `awk` is available, or if either is available.  Portable shell-scripting environment, no containers.
+1. **[Standard Guests](#guests)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit. No worries if `make` is available **or** which `awk` is available, or if either is available.  Portable shell-scripting environment, no containers.
 
-1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!**  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  Now you've got graal, without JDK.
+1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!**  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  A tiny Graal, but without JDK.
 
-1. **[Zygote / Resident Mode](#resident-dispatch):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Keep most of the "incremental computing" model, get improved recursion and FP, workflows, dataflows.
+1. **[Zygote / Resident Mode](#zygote):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Keep most of the "incremental computing" model, get improved recursion, FP, workflows, dataflows.
 
+<a id="install"></a>
 ## Install
 
 Just grab a release.
@@ -38,7 +43,7 @@ mkdir -p ~/.local/bin && mv amk ~/.local/bin/
 amk --version
 ```
 
-For Apple silicon the first run may need a C compiler.. run `xcode-select --install` if `cc` is missing.  (Annoying, but it's an upstream thing about code-signing, see [cosmo docs](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas))
+Apple silicon's first run may need a C compiler.. run `xcode-select --install` if `cc` is missing.  (Annoying, but it's an upstream thing about code-signing, see [cosmo docs](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas))
 
 Each release carries a checksum beside the binary:
 
@@ -56,10 +61,13 @@ shasum -a 256 -c amk.sha256
 ### Docker
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/robot-wranglers/amk:latest <target>
+docker run --rm -v "$PWD:/work" \
+  ghcr.io/robot-wranglers/amk:latest <target>
 ```
 
 The image runs `amk` in `/work`. Use the `wasm3` tag for the build with the [wasm](#wasm) engine.
+
+<a id="bundling"></a>
 
 ## Bundling & Distribution
 
@@ -75,28 +83,24 @@ amk --bundle my.Makefile my.lib/ --out my.tool
 ./my.tool
 ```
 
-Makefile-as-script was historically a bad idea, the kind of (ab)use that encourages a lot of *"It's a build tool, not a scripting language!"* objections.  
+Makefile-as-script was historically a bad idea, the kind of (ab)use that inviting a lot of *"It's a build tool, not a scripting language!"* objections.  Why not both?  Worth revisiting, for a few reasons.  Vanilla Makefile was already a superset of bash that encourages more structured programming.  After *runs-anywhere* and *bundle-anything* is solved, monolithic scripts can become libraries, and problems with working directory disappear.
 
-Why not both?  Worth revisiting now!  Vanilla Makefile was already a superset of bash that encourages more structured programming.  After *runs-anywhere* and *bundle-anything* is solved, monolithic scripts can become libraries, and problems with working directory disappear.
-
-The only problem is that certain platforms (looking at you, MacOS) might default to having *other* utilities besides `make` (like *bash / awk / sed / jq*) which may be missing by default, non-GNU, or incredibly ancient.  Hmm, but that's another problem solvable with some combination of APEs and bundling..
-
-So, `amk` ships with exactly those tools.  They are not only bundled, but where applicable are also *linked*.  Thus e.g. jq is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have grown sophisticated datastructures, and a query-language, with no speed penalty.  See the [standard guests](#standard-guests) section for more details.
-
+<a id="guests"></a>
 ## Standard Guests
 
-Standard guests are the default riders which are mostly **bundled tools**.  There's also a few libraries that are useful enough to get a place.
+Standard guests are the default riders which are mostly **bundled tools**, but there's also a few libraries that are useful enough to get a place.
 
-All tools are themselves portable APEs, and they usual suspects; the goal is no more ambiguity about whether things like `sed` and `awk` are GNU, no more worrying if `bash` is modern.
+The previously show-stopping problem was certain platforms (looking at you, MacOS, but also minimal containers) may default to having *other* utilities missing by default, or non-GNU, or incredibly ancient versions.  Besides `make`, that'd be.. *bash / awk / sed / jq*.  Hmm, but that's another problem solvable with some combination of APEs and bundling.. So, `amk` ships with exactly those tools, and a few more.  
 
 | tool | version | from | run as |
 | --- | --- | --- | --- |
+| [sed](#tools) | GNU sed 4.9 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `sed` on `PATH` |
+| awk | gawk 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | `amk --awk`, or amk under the name `awk` |
+| [bash](#tools) | 5.2.0 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `bash` on `PATH` |
+| jq | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | `amk --jq`, or amk under the name `jq` |
+| [jb](#tools) | json.bash 0.3.0 | [github.com/h4l](https://github.com/h4l/json.bash/tree/v0.3.0) | `jb`, `jb-array` on `PATH`, `source json.bash` |
 | gmsl | 1.2.4 | [github.com/jgrahamc](https://github.com/jgrahamc/gmsl/tree/v1.2.4) | `include /zip/lib/gmsl` |
 | dkjson | 2.8 | [dkolf.de](http://dkolf.de/dkjson-lua/) | `require("dkjson")` inside `$(lua)` |
-| awk | gawk 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | `amk --awk`, or amk under the name `awk` |
-| jq | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | `amk --jq`, or amk under the name `jq` |
-| [sed](#tools) | GNU sed 4.9 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `sed` on `PATH` |
-| [bash](#tools) | 5.2.0 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) | `bash` on `PATH` |
 
 Bundled tools are available by default on PATH for any recipe, for any host, before the system path.  Reference by name just works, getting a modern bash on MacOS, working bash even in a container where it doesn't ship.
 
@@ -106,48 +110,124 @@ check:
 	echo "$${BASH_VERSINFO[0]}"
 ```
 
-Since `awk` and `jq` are standard *and* [special](#special-guests), they are also available as part of `amk` itself.
+In several cases the standard guests are also *special guests*.  Thus not just bundled, but where applicable also *linked* so that e.g. jq is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have suddenly grown sophisticated datastructures, and a query-language, with no speed penalty.  See the next section for more details.
 
-```bash
-# Flag first, then the rest goes to the tool
-./amk --awk 'BEGIN { print "hello" }'
-
-# Same for jq
-printf '{"n":41}' | ./amk --jq .n+1
-```
-
-Since `amk` knows the name it's called by, a symlink named for the tool works the same.
-
-```bash
-ln -s amk awk && ./awk 'BEGIN { print "hello" }'
-```
 ### Builtin Libraries
 
 GMSL, the GNU Make Standard Library, adds datastructures and other primitives.  Any bundle can write `include lib/gmsl` and use it from anywhere to enjoy *sets, associative arrays, stacks, and integer and strings* written efficiently in make.
 
+There's a laundry-list of other curated stuff, but just a few examples to give a feel for the type of out-of-the-box thing we're looking to support.  
+
+* [Embedded lua](#lua) needs [dkjson](#) to work with JSON
+* [micropython](#micropy) needs MIP to be able to handle packages.
+
+<a id="special-guests"></a>
+
 ## Special Guests
 
-Special guests are embedded engines, linked into `amk` directly and callable as make functions, but *also* available in tool mode.
+Special guests have a "tool mode" in common with standard guests, but are also *embedded engines*, i.e. linked into `amk` directly.  
 
 | engine | version | from | gives | adds | default |
 | --- | --- | --- | --- | --- | --- |
-| [gawk](#awk-and-jq) | 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | `$(awk)`, `$(awk.argv)` | 1.3 MB | on |
-| [jq](#awk-and-jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | `$(jq)`, `$(jq.argv)` | 1.9 MB | on |
+| [gawk](#awk-jq) | 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | `$(awk)`, `$(awk.argv)` | 1.3 MB | on |
+| [jq](#awk-jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | `$(jq)`, `$(jq.argv)` | 1.9 MB | on |
 | [lua](#lua) | 5.4.8 | [lua.org](https://www.lua.org/ftp/) | `$(lua)` | 0.5 MB | on |
 | [s7](#s7) | 11.9 | [ccrma.stanford.edu](https://ccrma.stanford.edu/software/s7/) | `$(s7)` | 4.1 MB | on |
 | [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | `$(micropy)` | 0.8 MB | on |
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | `$(js)` | 2.0 MB | on |
 | [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | `$(wasm)`, `$(wasm.argv)`, `amk --wasm` | 0.4 MB | off |
 
-From a Makefile, calling an engine looks the way you'd expect, and works the way you'd expect, usable at runtime as well as parse-time.
+Individual guests and guest-access modes aren't mutually exclusive, but it helps to have something to organize the documentation and the API around.
+
+1. [Tool Mode](#): A CLI tool you can script against
+1. [Eval Mode](#): A make-function, for callable one-shots
+1. [Interpreter Mode](#):  Engine with persistent state
+1. [Import Mode](#): Import guest *namespaces* into make (functions + variables)
+1. [Bridge Mode](#): Guest-to-host action or read; Guest-to-guest calls
+
+This section is an overview of each mode with examples, but it's also just quick guide and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
+
+### API Overview 
+
+Each guest backend has a more or less unified interface.  Not every language gets a demo for every mode, but you can switch out the engine name for whatever you're interested in.  That said.. `wasm` in particular must work differently, and some details *do* depend on the backend implementation.  
+
+The goal is to a  unified interface, but the exact details for the FFI support differ somewhat by engine.  But in many cases, the bridge is *bidirectional,* allowing guests to call into `amk` as well as the other way around, for example to directly define targets, read variables, or call other guests.  See the main [FFI docs](docs/FFI.md) for info.
+
+Replace "eng" with lua/python/s7/jq etc
 
 ```Makefile
-$(engine program, [input])
-$(engine.argv argv, program, [input])
-$(engine.persistent program, [input])
+# Eval-mode
+$(eng program, [input])
+$(eng.argv argv, program, [input])
+$(eng* program_var, [input_var])
+
+# Interpreter-mode
+$(eng.persistent program, [input])
+$(eng.persistent* program_var, [input_var])
 ```
 
-The goal is to a  unified interface, but the exact details for the FFI support differ somewhat by engine.  But in many cases, the bridge is *bidirectional,* allowing guests to call into `amk` as well as the other way around, for example to directly define targets, read variables, or call other guests.  See the main [FFI docs](#) for info.
+### Tool Mode
+
+Least interesting but quickest and simplest mode.. engines are available directly via the `amk` CLI.
+
+```bash
+# Flag first, then the rest goes to the tool
+./amk --awk 'BEGIN { print "hello" }'
+
+# Same for jq, lua, python, etc
+printf '{"n":41}' | ./amk --jq .n+1
+
+# Names matter!
+# So a symlink named for the tool works the way you'd expect.
+ln -s amk awk && ./awk 'BEGIN { print "hello" }'
+```
+
+### Eval Mode
+
+Eval-mode is a way to "lift" computed values from guests into the host.  
+
+The typical use-case is working around the impoverished Makefile primitives, getting real numbers, regex, or string operations done easily.  For example:
+
+```Makefile
+answer.lua := $(lua print(6 * 7))
+```
+
+That approach works fine with simple stuff, and not so simple.  Besides values, you could also code-gen targets, avoiding the eval/foreach type of pure-Makefile loops.  
+
+Despite the "eval" name.. nothing prevents importing modules in the guest, etc.  But since line-feeds and escaping gets annoying quickly, using multiline data and multiline programs is common.
+
+```Makefile
+define words
+the quick brown fox
+jumps over the lazy dog
+endef
+
+define lua.count
+  local n = 0
+  for line in io.lines() do
+    for _ in line:gmatch("%S+") do n = n + 1 end
+  end
+  print(n)
+endef
+
+count := $(lua ${lua.count}, $(words))
+
+# or, using star-mode 
+count := $(lua* lua.count, words)
+```
+
+### Interpreter Mode
+
+Interpreter-mode gives you a persistent stateful engine on the backend instead of a one-shot eval.  Here's the API:
+
+A quick example:
+
+```Makefile
+placeholder
+```
+
+Past simple usage, the naive approach above can into problems with multiline inputs, commas, and dollar-signs that Makefile doesn't want to parse correctly.  There's two ways to solve this:
+
 
 Since guests are linked anyway, why not make them available directly too?  So, you can reach them from the `amk` CLI like so:
 
@@ -162,34 +242,14 @@ Since guests are linked anyway, why not make them available directly too?  So, y
 ./amk --js 'print(6 * 7)'
 ```
 
-Again, see the main [FFI docs](#) for details, but included below you can see small examples per engine.
+Again, see the main [FFI docs](docs/FFI.md) for details, but included below you can see small examples per engine.
 
+<a id="lua"></a>
 #### lua
 
-Simple inline, actual numbers and not strings.
 
-```Makefile
-answer.lua := $(lua print(6 * 7))
-```
 
-Using multiline data and multiline programs
-```Makefile
-define words
-the quick brown fox
-jumps over the lazy dog
-endef
-
-define lua.count
-local n = 0
-for line in io.lines() do
-  for _ in line:gmatch("%S+") do n = n + 1 end
-end
-print(n)
-endef
-
-count := $(lua ${lua.count},$(words))
-```
-
+<a id="awk-jq"></a>
 #### awk and jq
 
 Another simple inline, enjoy floats
@@ -209,6 +269,7 @@ Complex datastructures, fast and no tools required.  Make helpers and you're wel
 ```Makefile
 pkg := {"name": "cmk", "version": "1.2.3"}
 pkg.version := $(jq.argv -r,.version,$(pkg))
+```
 
 Quoting or commas in calls may need a variable in the middle.
 
@@ -217,200 +278,21 @@ opts = -n -r --arg alts 'k/a k/b' --arg none ""
 frame := $(jq.argv ${opts},$$alts + "|" + $$none)
 ```
 
-#### jq store
+#### Beyond one-shot calls
 
-`$(jq.persistent op name prog)` holds named JSON values for the life of the make process
-and runs jq programs over them in that process, with no fork. The store is a map from name
-to value; a missing name is `null`, and a name is any word, so a caller scopes names to a
-run the way it would name files. Every call names the entry it works on:
+Each call above forks a fresh engine. The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 
-| call | runs | stores | returns |
-| --- | --- | --- | --- |
-| `get NAME PROG` | the program over the value | nothing | every output |
-| `update NAME PROG` | the program over the value | the first output | the rest |
-| `take NAME PROG` | a program yielding `[new, out...]` | `new` | `out...` |
-| `load NAME PATH` | | the one JSON text in the file | nothing |
-| `load NAME,TEXT` | | the one JSON text given as the input | nothing |
-| `dump NAME` | | nothing | the value as compact JSON |
-| `filter [OPTS] PROG,TEXT` | the program over every JSON text in the input | nothing | every output |
+| topic | what it gives |
+| --- | --- |
+| [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
+| [The jq store](docs/FFI.md#the-jq-store) | named JSON values, updated in the make process with no fork |
+| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | the jq store from a running recipe's shell |
+| [Init](docs/FFI.md#init) | a chunk run in each persistent state before the parse |
+| [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
+| [The guest handle](docs/FFI.md#the-guest-handle) | variable reads and writes, expansion, and eval from a guest |
+| [Registering make functions](docs/FFI.md#registering-make-functions) | guest functions and values as make functions and variables |
 
-Words before the program bind variables as the jq tool does, `--arg k v` for a string,
-`--argjson k v` for a value, `--slurpfile k path` for every JSON text in a file as an
-array and `--rawfile k path` for a file's text, and `-r` prints a string output bare. A
-value with a space or a quote inside it travels quoted as a shell would write it, and
-inside double quotes `\n` reads as a newline. A program compiles once
-per text and set of bound names, so a loop that binds a new value each turn never
-recompiles. A program error is a nonzero `.SHELLSTATUS` with jq's message on stderr, never
-a make error, and the value stays as it was.
-
-```Makefile
-# a stack in the store: push, then pop the top and keep the rest
-seed  := $(jq.persistent update stack [1] + [2])
-push  := $(jq.persistent update stack --argjson v 3 . + [$$v])
-pop.prog := [.[:-1], .[-1]]
-pop   := $(jq.persistent take stack $(pop.prog))
-depth := $(jq.persistent get stack length)
-# a string output printed bare
-name := $(jq.persistent update who {"name": "a b"})
-who  := $(jq.persistent get who -r .name)
-```
-
-`pop` is `3`, `depth` is `2` and `who` is `a b`. A comma at the top level of a program ends
-the argument, as for every builtin, so a program with one goes in a variable and the call
-names the variable, as `pop.prog` does. Under a zygote each request starts from the store
-the parse left.
-
-#### Calls from a recipe
-
-A builtin expands before a recipe runs, so a value that changes while the recipe runs, a stack popped in a loop, needs a call at recipe time. Every make process names two descriptors to its recipes, `AMK_CALL` and `AMK_REPLY`, a request pipe and a reply pipe, and answers on them from the jq store while the recipe's shell runs. Everything is line framed and carries JSON as it is: a request is one line, the store call; a reply is a `STATUS N` line, then N lines, one output each. Shell builtins do the whole exchange, so a call costs a write and a read and never a fork:
-
-```Makefile
-define ask
-printf '%s\n' "$(1)" >&$$AMK_CALL && read -r st n <&$$AMK_REPLY && { [ "$$n" = 0 ] || IFS= read -r $(2) <&$$AMK_REPLY; }
-endef
-
-drain:
-	$(call ask,update S [3$(,) 1$(,) 2],x)
-	while :; do $(call ask,take S [.[:-1]$(,) .[-1]],top); \
-	  $(call ask,get S length,n); echo "popped $$top"; [ "$$n" != 0 ] || break; done
-, := ,
-```
-
-The status is the store's, `0` when the program ran clean. A sub-make and a spawned job
-hold no store of their own: each inherits a live pair and sends every request up it, its own
-`$(jq.persistent)` expansions included, so every process of a run reads and writes the same
-entries. A request served by a zygote starts as an owner, from the store the parse left.
-
-**Tags.** Recipe shells of one process share its pair, so two callers running at once, two
-stages of one pipeline or two lines under `-j`, would read each other's replies. A request
-that opens with `@TAG` is answered instead into a private FIFO, `$AMK_REPLY_DIR/TAG`, which
-the answering process makes and removes; one empty line on `AMK_REPLY` says the FIFO is
-there before the caller opens it. `$BASHPID` is a tag no other caller holds. Hops forked
-from one parse share the directory, and the one that answers after a sibling took it down
-makes it again.
-
-**The shell side, once.** `amk.sh` sits on `PATH` beside the payload tools, so a recipe
-runs `source amk.sh` and has two functions. `amk.call REQUEST [LINE...]` sends a tagged
-request, with input lines after it, prints the reply lines and returns the status.
-`jq.pipe [OPTS] PROG` reads stdin and runs the program over it in the make process, so a
-pipeline converts by replacing the command word:
-
-```Makefile
-names:
-	source amk.sh; printf '{"n":"a"}\n{"n":"b"}\n' | jq.pipe -r .n | sort -r
-	source amk.sh; amk.call 'get S length'
-```
-
-`jq.pipe` sends `filter N [OPTS] PROG` and then N input lines; the outputs come back as
-jq would print them. OPTS is exactly `-r -c -e -n -s --arg --argjson --slurpfile
---rawfile`, and any other option is status 2 with nothing run, so a site that needs more
-fails when it converts rather than later. `amk.words ARG...` writes its arguments as
-words for a request line, so a caller building `get` or `update` by hand quotes its
-option values with it and passes the program raw. jq's messages go to make's stderr.
-
-#### Init
-
-Every engine with persistent state runs one chunk in that state before make reads any
-makefile, in every make process, so what the chunk defines is present for the parse and a
-hook it registers hears the first `goals` event. The chunk comes from `AMK_<NAME>_INIT`,
-as text or as `@path`, or from `__init__.<name>` at the root of a bundled payload. Under a
-zygote the chunk runs once and every request inherits the result, which is how a
-distribution loads its guest code without paying for it per request. The lookup is per
-engine, so `__init__.lua` and `__init__.micropy` would each go to their own state.
-
-#### Hooks
-
-make announces three moments: `goals`, once the goal list is known, and `recipe_start`
-and `recipe_end` around each target's recipe. Every engine that supplies a hook entry
-hears them, with the event name, the target (or the space-joined goals), the recipe's
-status word and exit code, and the pid. How a guest subscribes is its own spelling: in
-Lua, a function at `amk.on.<event>` in the persistent state, called with a table whose
-fields are `event`, `target`, `status`, `code`, `signal`, and `pid`; in micropy, a
-callable at `amk.on["<event>"]`, called with a dict of the same keys. Hooks observe; they cannot
-veto or replace a recipe. Anything a hook prints goes to stderr, and an error in a hook is
-reported there and does not stop make.
-
-#### The Guest Handle
-
-Lua, micropy, s7, and js each carry a handle into make: the same four calls, spelled the
-way each language expects. A read of a variable answers it expanded as a reference
-would be, and answers the language's own nothing for a name make has never seen, which
-expansion alone cannot say. Expand runs any text through make, functions included. A
-write defines a simple variable holding the literal text, at file origin, so a
-command-line override still wins. Eval reads text as makefile syntax, rules included.
-
-| | lua | micropy | s7 | js |
-| --- | --- | --- | --- | --- |
-| read | `amk.var.CC`, `amk.var["a.b"]` | `amk.var.CC`, `amk.var["a.b"]` | `(amk-var 'CC)`, `(amk-var "a.b")` | `amk.var.CC`, `amk.var["a.b"]` |
-| write | `amk.var.CC = "cc"` | `amk.var.CC = "cc"` | `(set! (amk-var 'CC) "cc")` | `amk.var.CC = "cc"` |
-| expand | `amk.expand(text)` | `amk.expand(text)` | `(amk-expand text)` | `amk.expand(text)` |
-| eval | `amk.eval(text)` | `amk.eval(text)` | `(amk-eval text)` | `amk.eval(text)` |
-| undefined | `nil` | `None` | `#f` | `undefined` |
-
-`amk` is bound in every state, so micropy needs no import, though `import amk` still
-works. A dotted or hyphenated name goes through the item form, since attribute syntax
-cannot spell it.
-
-```Makefile
-CC := clang
-flags = -O2 $(EXTRA)
-
-# reads and expansion, from a one-shot call: clang, -O2, and 3
-seen := $(lua print(amk.var.CC, amk.expand("$$(strip $$(flags))"), amk.expand("$$(words a b c)")))
-
-# a write from a one-shot call lands once the call returns, so the next line sees it
-$(micropy import amk; amk.var.EXTRA = "-g"; amk.eval("debug: ; @echo $$(flags)"))
-now := $(flags)
-```
-
-`now` is `-O2 -g` and `debug` is a target. A one-shot call runs in a forked child, so
-its writes are queued and applied, in order, when the call completes; the chunk that
-made them cannot read them back, so it keeps its own copy of anything it needs again. A
-[persistent](#persistent-state) call runs in the make process and its writes apply at
-once, visible to the same chunk's expand. Under an engine flag, `amk --lua ...`, there
-is no makefile and every call of the handle raises.
-
-The reverse direction is `amk.func(name, fn)`, in lua and micropy, from the persistent
-state only, since a one-shot call's state ends with the call. make gains `$(name ...)`:
-its arguments, expanded, reach `fn` as strings, and what `fn` returns is the result. A
-nil or None result is empty, an error reports on stderr and answers empty, and a second
-`amk.func` of the same name replaces the function. A name make already has, builtin or
-otherwise, is refused. As with any make function, a call needs at least a space after
-the name, since `$(name)` alone is a variable reference.
-
-```Makefile
-$(lua.persistent amk.func("shout", function(s) return s:upper() end))
-$(micropy.persistent amk.func("glue", lambda *a: "+".join(a)))
-
-# make functions now: HELLO, and A+B
-loud := $(shout hello)
-joined := $(shout $(glue a,b))
-```
-
-`$(<name>.export chunk)` does the same without the registration calls. It runs the
-chunk in the persistent state and exports every global the chunk defined or rebound: a
-function or callable becomes a make function of its own name, and any other value
-becomes a simple variable, at file origin like an `amk.var` write. A string or number is
-its text, a boolean is `true` or empty, a list or sequence is its items as words, and a
-table or dict becomes one variable per key as `name.key`, recursing. A name with a
-leading underscore is private and stays put, as do `nil`, `None`, modules, and classes.
-The result is the exported names in name order, and whatever the chunk prints goes to
-stderr.
-
-```Makefile
-define micropy.build
-cc = "clang"
-flags = ["-O2", "-Wall"]
-debug = True
-targets = {"lib": "core c", "app": "core c ui"}
-def shorten(s): return s[:3]
-endef
-built := $(micropy.export $(value micropy.build))
-
-# cc debug flags shorten targets.app targets.lib, and clang -O2 -Wall true lib: core c
-summary := $(cc) $(flags) $(debug) $(shorten library): $(targets.lib)
-```
-
+<a id="s7"></a>
 #### s7
 
 The input is the current input port, for `read-line` or `read`. An error reports on
@@ -428,6 +310,7 @@ endef
 big := $(s7 ${s7.fact})
 ```
 
+<a id="micropy"></a>
 #### micropy
 
 MicroPython: Python 3 with `sys`, `os`, `io`, `json`, `re`, `time`, `math`, `random`,
@@ -448,6 +331,7 @@ scores := {"ada": 3, "bob": 7, "cy": 5}
 top := $(micropy ${py.top},$(scores))
 ```
 
+<a id="js"></a>
 #### js
 
 QuickJS: ES2023 JavaScript with `JSON`, `RegExp`, `BigInt`, `Promise` and the rest of
@@ -469,6 +353,7 @@ pkgs := [{"name": "make", "year": 1976}, {"name": "cmk", "year": 2024}]
 newest := $(js ${js.newest},$(pkgs))
 ```
 
+<a id="wasm"></a>
 #### wasm
 
 Off by default; build `with=wasm3`. The first argument is a module path and its
@@ -509,6 +394,7 @@ endef
 fibs := $(subst Result: ,,$(wasm.argv --repl,,$(session)))
 ```
 
+<a id="zygote"></a>
 ## Resident Dispatch
 
 A server, the zygote, reads the makefiles once and waits on a unix socket. Each client
@@ -543,6 +429,7 @@ that:
 - `AMK_REARM` lists variables to recompute per request, for values a makefile sets at
   parse time that a shared parse would otherwise freeze.
 
+<a id="payloads"></a>
 ## Payloads
 
 An ape is also a zip file. amk reads three things from its payload: a boot script, files
@@ -578,9 +465,10 @@ bash runs a plain make.
 include $(shell cmk --ape-unpack=compose.mk)
 ```
 
+<a id="tools"></a>
 ### Tools
 
-GNU sed and bash 5.2 are unpacked to a cache under `${XDG_CACHE_HOME:-$HOME/.cache}/amk/`,
+GNU sed, bash 5.2, and json.bash are unpacked to a cache under `${XDG_CACHE_HOME:-$HOME/.cache}/amk/`,
 keyed by the binary, and put first on `PATH` before any makefile is read:
 
 ```bash
@@ -593,15 +481,25 @@ all:
 	sed --version | head -1
 	# prints 5.2.0(1)-release
 	echo $$BASH_VERSION
+	# prints {"msg":"hi","n":41}
+	jb msg=hi n:number=41
+	# prints ["a",1]
+	jb-array a :number=1
 EOF
 
 # keep the host's PATH instead
 AMK_NO_PATH=1 ./amk
 ```
 
-A tool is an ape, so the [execve rule](#running-an-ape) applies: Python `subprocess`
+A tool is an ape, so the [execve rule](#ape) applies: Python `subprocess`
 starting `sed` without a shell fails on macOS.
 
+jb is [json.bash](https://github.com/h4l/json.bash), a bash script that runs under the
+payload bash. It lands as `jb`, `jb-array`, and `json.bash`, so a recipe can also
+`source json.bash` and call its `json` function without a fork. Build `without=jb` to
+leave it out.
+
+<a id="bundles"></a>
 ### Bundles
 
 ```bash
@@ -635,7 +533,8 @@ deploy:
 - Bundling needs only amk: no compiler, no `zip`, and no shell at run time. A payload that
   also holds `__main__.sh` [boots](#payloads) first.
 
-## The load directive
+<a id="load"></a>
+## The Load Directive
 
 [`load`](https://www.gnu.org/software/make/manual/html_node/load-Directive.html) is the
 one place `amk` departs from stock make. An ape cannot `dlopen`, so nothing is ever
@@ -645,7 +544,8 @@ stock make treats as a request to
 instead answers that the object will never be rebuilt, so a makefile that guards a
 loadable with `-load` continues without it rather than looping.
 
-## Command line
+<a id="cli"></a>
+## Command Line
 
 Every flag amk adds to make's own, each read ahead of option decoding. The sections above
 describe them; this is the one list, and `--help` ends with the same one. The smoke test
@@ -655,14 +555,15 @@ holds the two together: a flag in this table that `--help` does not name fails t
 | --- | --- | --- |
 | `--<engine>` | the engine's arguments | runs that engine with the rest of the line: `--awk`, `--jq`, `--lua`, `--s7`, `--micropy`, `--js`, `--wasm` |
 | `--list-engines` | | prints one engine per line, the builtin name and then its multi-call names, if any |
-| `--serve SOCK` | a socket path, then make's arguments | parses once and answers requests on the socket as the [zygote](#resident-dispatch) |
+| `--serve SOCK` | a socket path, then make's arguments | parses once and answers requests on the socket as the [zygote](#zygote) |
 | `--client SOCK` | a socket path, then the request, optionally `-- <cold command>` | runs the request against a zygote, or the cold command when refused |
 | `--resident` | make's arguments | one command served by a zygote it starts and reaps itself |
 | `--ape-unpack NAME`, `-x NAME`, `--ape-unpack=NAME [DEST]` | a payload member, an optional destination | copies the member out and prints its [path](#payloads) |
 | `--force` | | with `--ape-unpack`, overwrites a destination that exists |
 | `--bundle FILES... --out DEST` | makefiles and directories, the output path | writes a copy of amk whose default entry is that [program](#bundles) |
 
-## Running an ape
+<a id="ape"></a>
+## Running an APE
 
 A shell runs an ape where a bare `execve` cannot: the file's header is a shell script
 that installs a small loader in `$TMPDIR` on first run. `sh`, `make`, and any shell-based
@@ -673,6 +574,7 @@ The file must keep its exec bit even when run as `sh ./amk`: the header finds it
 with `gzip: (stdin): unexpected end of file`. Anything that copies it without its mode, such as
 a CI artifact, needs a `chmod +x` first.
 
+<a id="dev"></a>
 ## Developers
 
 ### Building
@@ -738,9 +640,7 @@ on their own with `make guests` and `make guests.native`.
 ### Testing
 
 `make smoke` runs the builtins cold, the multi-call names, the payload tools, one zygote
-with three clients, and a bundle. It includes `make smoke.readme`, which extracts every
-make block under [Guests](#guests) and runs it against the built binary, with
-`readme.mk` asserting the value each one promises.
+with three clients, and a bundle.
 
 `make test` runs the pytest suite under `tests/` against `out/bin/amk`. It pins what a
 smoke script cannot: the resident role parses once however deep the recursion goes and
@@ -814,13 +714,15 @@ is reported.
 `make clean` drops `./amk` along with `src build out`, which discards those relocatables
 and costs a full rebuild. The downloads and the unpacked toolchain always stay.
 
-### Payload internals
+### Payload Internals
 
 The payload tools are the released cosmos binaries, unchanged, as the payload members
-`bin/sed` and `bin/bash`, unpacked to `${XDG_CACHE_HOME:-$HOME/.cache}/amk/<size>-<mtime>/bin`.
+`bin/sed` and `bin/bash`, plus the json.bash script as `bin/jb`, `bin/jb-array`, and
+`bin/json.bash`, unpacked to `${XDG_CACHE_HOME:-$HOME/.cache}/amk/<size>-<mtime>/bin`.
 A recursive make finds that directory already first on `PATH` and leaves `PATH` alone. A
-tool is added by pinning its cosmos release in the Makefile beside `sed` and naming it in
-`tools`; nothing compiles it.
+tool is added by pinning its release in the Makefile beside `sed` and naming it in
+`tools.all`, with a `.names` list when it lands under more than one name, and in
+`tools.optout` when `without` may drop it; nothing compiles it.
 
 bash is a separate binary rather than a guest linked into amk because a shell forks
 constantly, and a fork inside a large cosmo image can lose part of its text on Apple
@@ -836,7 +738,7 @@ clients match it.
 
 Every input is pinned by version and sha256 in the Makefile. Upstream ships no
 checksum files, so the digests are ours. The guests' versions are in the
-[standard guests](#standard-guests) and [special guests](#special-guests) tables; the
+[standard guests](#guests) and [special guests](#special-guests) tables; the
 rest of the build is make itself and its toolchain:
 
 | input | version | from |
@@ -874,7 +776,7 @@ make build flavor=cmk patch.dirs='patches ../ape/patches'
 Both must be given together. The overlay's patches are written against the tree this series
 leaves, so they say which amk version they apply to and are rebased when it moves.
 
-### The ape loader
+### The APE Loader
 
 An ape's header installs its loader at `$TMPDIR/.ape-1.10` on first run. A caller that
 cannot go through a shell can name that loader explicitly.

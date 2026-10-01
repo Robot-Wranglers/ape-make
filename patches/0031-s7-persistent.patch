@@ -1,5 +1,5 @@
 s7 joins the persistent family: its row gains the persist and hook entries, so
-$(s7.persistent ...), $(s7.export ...), the AMK_S7_INIT chunk, and amk-on hooks all run
+$(s7.persistent ...), $(s7.import ...), the AMK_S7_INIT chunk, and amk-on hooks all run
 against one interpreter kept for the life of the make process, as the other rows' do.
 
 --- a/src/amk.h

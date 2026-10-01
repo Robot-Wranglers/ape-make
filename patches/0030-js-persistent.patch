@@ -1,5 +1,5 @@
 QuickJS joins the persistent family: its row gains the persist and hook entries, so
-$(js.persistent ...), $(js.export ...), the AMK_JS_INIT chunk, and amk.on hooks all run
+$(js.persistent ...), $(js.import ...), the AMK_JS_INIT chunk, and amk.on hooks all run
 against one runtime kept for the life of the make process, as Lua's and MicroPython's do.
 
 --- a/src/amk.h

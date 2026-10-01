@@ -3,8 +3,8 @@ feeds the text to the command on that line through a pipe, written by a detached
 so the text may be any size. The pipe is bound to the recipe line it was expanded in,
 by the target's variable set and the line's index, so lines and targets that interleave
 under -j each get their own. With it, an engine's flag form reads its program from
-standard input when the argument is a lone dash, so a define cell's program reaches its
-engine with no file and no argument limit.
+standard input when the argument is a lone dash, so an imported target's program reaches
+its engine with no file and no argument limit.
 
 --- a/src/amk.h
 +++ b/src/amk.h

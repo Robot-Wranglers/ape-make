@@ -424,7 +424,7 @@ js_export_fields (JSContext *ctx, const char *name, JSValueConst obj, struct js_
       char *child;
       if (!amk_name_ok (keys[i]))
         {
-          r = JS_ThrowTypeError (ctx, "amk export: %s has a key make cannot spell: %s", name, keys[i]);
+          r = JS_ThrowTypeError (ctx, "amk import: %s has a key make cannot spell: %s", name, keys[i]);
           break;
         }
       child = malloc (strlen (name) + strlen (keys[i]) + 2);
@@ -521,7 +521,7 @@ js_export_globals (JSContext *ctx, JSValueConst before, struct amk_sink *out)
           JSValue r = js_export_value (ctx, keys[i], now, &names);
           if (JS_IsException (r))
             {
-              fprintf (stderr, "js.export: ");
+              fprintf (stderr, "js.import: ");
               js_std_dump_error (ctx);
               rc = 1;
             }
@@ -538,13 +538,13 @@ js_export_globals (JSContext *ctx, JSValueConst before, struct amk_sink *out)
   return rc;
 }
 
-/* The persistent entry: one runtime for the life of the process, so a global one chunk sets is there for the next. What the chunk prints goes to the sink, and argv[2], if any, is amk.input; the export form instead exports what the chunk left on the global object. */
+/* The persistent entry: one runtime for the life of the process, so a global one chunk sets is there for the next. What the chunk prints goes to the sink, and argv[2], if any, is amk.input; the import form instead hands make what the chunk left on the global object. */
 __attribute__ ((visibility ("default"))) int
 js_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   struct amk_capture capture;
   const char *input = argc > 2 && argv[2] != NULL ? argv[2] : "";
-  int export = amk_entry_is (argv[0], "export");
+  int export = amk_entry_is (argv[0], "import");
   JSContext *ctx;
   JSValue amk, before;
   int rc;

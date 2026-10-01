@@ -384,7 +384,7 @@ s7_export_fields (s7_scheme *sc, const char *name, s7_pointer alist, struct s7_n
         {
           free (fields);
           return s7_error (sc, s7_make_symbol (sc, "amk-error"),
-                           s7_list (sc, 3, s7_make_string (sc, "amk export: ~A has a key make cannot spell: ~S"),
+                           s7_list (sc, 3, s7_make_string (sc, "amk import: ~A has a key make cannot spell: ~S"),
                                     s7_make_string (sc, name), s7_is_pair (entry) ? s7_car (entry) : entry));
         }
       if (n == cap)
@@ -522,7 +522,7 @@ s7_export_globals (s7_scheme *sc, struct amk_sink *out)
   qsort (bindings, n, sizeof *bindings, s7_binding_cmp);
   for (i = 0; i < n && rc == 0; i++)
     {
-      s7_pointer r = s7_amk_apply (sc, "export", s7_amk_table (sc, "amk-export-one"),
+      s7_pointer r = s7_amk_apply (sc, "import", s7_amk_table (sc, "amk-export-one"),
                                    s7_list (sc, 2, s7_make_string (sc, bindings[i].name), bindings[i].value));
       (void) r;
       if (s7_is_eq (r, s7_make_symbol (sc, "amk-guest-error")))
@@ -553,13 +553,13 @@ s7_amk_export_one (s7_scheme *sc, s7_pointer args)
   return r;
 }
 
-/* The persistent entry: one interpreter for the life of the process, so a definition one chunk makes is there for the next. What the chunk prints goes to the sink, and argv[2], if any, is amk-input; the export form instead exports what the chunk left in the rootlet. */
+/* The persistent entry: one interpreter for the life of the process, so a definition one chunk makes is there for the next. What the chunk prints goes to the sink, and argv[2], if any, is amk-input; the import form instead hands make what the chunk left in the rootlet. */
 __attribute__ ((visibility ("default"))) int
 s7_persist_main (struct amk_sink *out, int argc, char **argv)
 {
   struct amk_capture capture;
   const char *input = argc > 2 && argv[2] != NULL ? argv[2] : "";
-  int export = amk_entry_is (argv[0], "export");
+  int export = amk_entry_is (argv[0], "import");
   s7_scheme *sc;
   int rc;
 

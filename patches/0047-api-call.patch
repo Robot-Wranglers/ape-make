@@ -42,22 +42,23 @@ inherited descriptor.
  struct amk_engine
 --- a/src/function.c
 +++ b/src/function.c
-@@ -2845,7 +2845,15 @@
-
-   sink.base.write = amk_expand_write;
-   sink.o = o;
--  rc = e->persist (&sink.base, ac, av);
-+  /* A forwarder has no store of its own: the store engine's call goes up the channel, and only the line travels.  */
-+  if (amk_call_forwarding () && streq (e->name, AMK_STORE_ENGINE))
-+    {
-+      if (argv[1] != NULL)
-+        OS (error, NILF, _("$(%s ...): the input does not travel the call channel"), funcname);
-+      rc = amk_call_forward (argv[0], &sink.base);
-+    }
-+  else
-+    rc = e->persist (&sink.base, ac, av);
+@@ -2947,7 +2947,15 @@
+   {
+     const char *outer = amk_binding_engine;
+     amk_binding_engine = e->name;
+-    rc = e->persist (&sink.base, ac, av);
++    /* A forwarder has no store of its own: the store engine's call goes up the channel, and only the line travels.  */
++    if (amk_call_forwarding () && streq (e->name, AMK_STORE_ENGINE))
++      {
++        if (argv[1] != NULL)
++          OS (error, NILF, _("$(%s ...): the input does not travel the call channel"), funcname);
++        rc = amk_call_forward (argv[0], &sink.base);
++      }
++    else
++      rc = e->persist (&sink.base, ac, av);
+     amk_binding_engine = outer;
+   }
    shell_completed (rc, 0);
-   o = sink.o;
 
 --- a/src/job.c
 +++ b/src/job.c
