@@ -1,7 +1,7 @@
 Import target and the at line: $(<name>.import.target target,program) stores the program
 as the variable target and enters the rules behind it, the cached value file and the
-phony target of the name that prints it, as define.<name> did; its star form takes the
-variable's name, dedents its value, and passes both. The one grammar amk adds is the at
+phony target of the name that prints it, as define.<name> did; its star form, given the
+name of a defined variable, dedents its value and passes both. The one grammar amk adds is the at
 line: an at sign and the name of a builtin with a star twin, alone at the start of a
 line with optional arguments after it, applies that twin to the define that follows, as
 if $(<builtin>* name,args) were written after its endef with its result discarded. A
@@ -182,23 +182,24 @@ same routine the builtin uses.
  /* The value directory as a makefile spells it, expanded when a rule is read, so a makefile sets goal.dir before its first define.  */
 --- a/src/function.c
 +++ b/src/function.c
-@@ -2904,12 +2904,40 @@
-   if (bad)
-     fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
--  args[0] = text;
--  args[1] = argv[1];
-+  if (strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
+@@ -2914,13 +2914,41 @@
+   if (input != NULL)
+     data = xstrdup (input->value);
+-  args[0] = text != NULL ? text : argv[0];
+-  args[1] = data != NULL ? data : argv[1];
++  if (prog != NULL && strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
 +    {
-+      args[0] = name;
++      args[0] = prog->name;
 +      args[1] = text;
 +    }
 +  else
 +    {
-+      args[0] = text;
-+      args[1] = argv[1];
++      args[0] = text != NULL ? text : argv[0];
++      args[1] = data != NULL ? data : argv[1];
 +    }
    args[2] = NULL;
    o = f->fptr.func_ptr (o, args, f->name);
+   free (data);
    free (text);
    free (base);
    return o;

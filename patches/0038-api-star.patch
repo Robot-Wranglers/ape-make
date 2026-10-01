@@ -1,10 +1,11 @@
 Star forms: every engine builtin but an argv form gets a twin whose name ends in a star,
-taking the name of a variable where the base takes program text. $(micropy.import* body)
-is $(micropy.import ...) handed body's unexpanded value, dedented; a second argument
-passes through as the input. The star joins the characters a function name may hold,
-so make looks the twin up as a builtin; an undefined name or an inconsistent indent is
-fatal, since the text is always a program. $(amk.dedent* name) is amk.val.dedent under
-the same rule.
+where any argument may name a variable. An argument that names a defined variable is
+replaced by its unexpanded value, and any other is literal text: $(micropy.import* body)
+is $(micropy.import ...) handed body's value, and $(lua* prog,data) hands over both. The
+program's value is dedented and an inconsistent indent is fatal; the input passes as it
+is. With no argument naming a variable the twin is the base builtin. The star joins the
+characters a function name may hold, so make looks the twin up as a builtin.
+$(amk.dedent* name) is amk.val.dedent.
 
 --- a/src/main.c
 +++ b/src/main.c
@@ -16,37 +17,48 @@ the same rule.
    stopchar_map[(int)' '] = MAP_BLANK;
 --- a/src/function.c
 +++ b/src/function.c
-@@ -2880,4 +2880,36 @@
+@@ -2880,4 +2880,47 @@
    return o;
  }
 +
-+/* A star builtin: the builtin named without the star, handed the dedented unexpanded value of the variable the first argument names.  */
++/* The variable an argument names once its surrounding blanks are trimmed, or null when none of that name is defined.  */
++static struct variable *
++star_lookup (const char *arg)
++{
++  const char *end = arg + strlen (arg);
++
++  while (ISSPACE (*arg))
++    arg++;
++  while (end > arg && ISSPACE (end[-1]))
++    end--;
++  return end > arg ? lookup_variable (arg, end - arg) : NULL;
++}
++
++/* A star builtin: the builtin named without the star, each argument that names a defined variable replaced by its unexpanded value, the program's dedented.  */
 +static char *
 +func_star (char *o, char **argv, const char *funcname)
 +{
 +  char *base = xstrndup (funcname, strlen (funcname) - 1);
 +  const struct function_table_entry *f = lookup_function (base);
-+  char *name = argv[0];
-+  char *end = name + strlen (name);
-+  struct variable *v;
-+  char *text, *args[3];
++  struct variable *prog = star_lookup (argv[0]);
++  struct variable *input = argv[1] != NULL ? star_lookup (argv[1]) : NULL;
++  char *text = NULL, *data = NULL, *args[3];
 +  size_t width;
 +  int bad;
 +
-+  while (ISSPACE (*name))
-+    name++;
-+  while (end > name && ISSPACE (end[-1]))
-+    *--end = '\0';
-+  v = lookup_variable (name, strlen (name));
-+  if (v == NULL)
-+    OSS (fatal, reading_file, _("%s: no variable named '%s'"), funcname, name);
-+  text = amk_dedent (v->value, &width, &bad);
-+  if (bad)
-+    fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
-+  args[0] = text;
-+  args[1] = argv[1];
++  if (prog != NULL)
++    {
++      text = amk_dedent (prog->value, &width, &bad);
++      if (bad)
++        fatal (reading_file, strlen (funcname) + strlen (prog->name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, prog->name, (int) width);
++    }
++  if (input != NULL)
++    data = xstrdup (input->value);
++  args[0] = text != NULL ? text : argv[0];
++  args[1] = data != NULL ? data : argv[1];
 +  args[2] = NULL;
 +  o = f->fptr.func_ptr (o, args, f->name);
++  free (data);
 +  free (text);
 +  free (base);
 +  return o;

@@ -137,7 +137,7 @@ as the star did.
    return o;
  }
 
- /* A star builtin: the builtin named without the star, handed the dedented unexpanded value of the variable the first argument names.  */
+ /* The variable an argument names once its surrounding blanks are trimmed, or null when none of that name is defined.  */
 @@ -2987,4 +3062,6 @@
    FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
    FT_ENTRY ("amk.dedent*",   0,  1,  1,  amk_func_val_dedent),

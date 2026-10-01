@@ -42,7 +42,7 @@ patch that adds that guest.
 | `0034-prelude.patch` | the payload's `__init__.mk` read before any makefile, like a `MAKEFILES` entry: silent when missing, never the default goal, out of `MAKEFILE_LIST` once read, skipped by `AMK_NO_PRELUDE`; the member itself holds the defaults every makefile under amk would otherwise repeat |
 | `0036-api-require.patch` | `$(amk.require names...)`: fatal, in red on a terminal, when a name is not in `.FEATURES` |
 | `0037-api-dedent.patch` | `$(amk.dedent text)` and `$(amk.val.dedent name)`, compose.mk's block dedent in C |
-| `0038-api-star.patch` | a `*` twin of each engine builtin that takes a variable's name and dedents its value |
+| `0038-api-star.patch` | a `*` twin of each engine builtin where any argument may name a variable, used when defined; a program's value is dedented |
 | `0039-grammar-at.patch` | `<name>.import.target` and the `@builtin` line above a define; `define.<name>` removed |
 | `0040-api-bindings.patch` | `<name>.__fxns__` and `<name>.__vars__`, read by `amk.fxns?` and `amk.vars?`; `?` in function names |
 | `0041-recurse-amk.patch` | a recipe line using `amk` or `make` is recursive, like one using the make command variable |
