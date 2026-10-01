@@ -279,11 +279,14 @@ show = printf '%-8s %-24s %-6s %s\n' '$(strip $(1))' '$(strip $(2))' \
 .PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.demos test test.native build.docker smoke.docker install install.user install.global release release.preflight release.watch stat st status clean help FORCE
 .DEFAULT_GOAL := amk
 
+# The docs previews and the README header art.
+include $(HERE)docs.mk
+
 help:
 	@# List the targets.
 	$(call log, help, usage: make amk for the deliverable -- make stat says what is built)
 	$(call log, help, engines $(engines.default) are linked in by default and $(engines.optin) on request -- with='$(firstword $(engines.optin))' adds one and without='$(firstword $(engines.all))' leaves one out)
-	grep -E '^[a-z][a-z. ]*:([^=]|$$)' $(lastword $(MAKEFILE_LIST)) | cut -d: -f1 | tr ' ' '\n' | sort | tr '\n' ' '; echo
+	grep -hE '^[a-z][a-z. ]*:([^=]|$$)' $(HERE)Makefile $(HERE)docs.mk | cut -d: -f1 | tr ' ' '\n' | sort | tr '\n' ' '; echo
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 

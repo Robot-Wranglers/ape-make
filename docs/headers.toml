@@ -1,0 +1,51 @@
+# Section headers for the README: each one a title and the links that sit beside it.
+
+[[header]]
+id = "special-guests"
+title = "Special Guests"
+links = [
+  ["Engine API", "#engine-api"],
+  ["Tool", "#tool-mode"],
+  ["Eval", "#eval-mode"],
+  ["Interpreter", "#interpreter-mode"],
+  ["Bridge", "#bridge-mode"],
+  ["Examples", "#misc-examples"],
+]
+
+[[header]]
+id = "engine-api"
+title = "Engine API"
+links = [
+  ["Literals", "#engine-literals"],
+  ["Reference", "#engine-reference"],
+  ["Grammar", "#extended-grammar"],
+]
+
+[[header]]
+id = "interpreter-mode"
+title = "Interpreter Mode"
+links = [
+  ["lua", "#lua"],
+  ["Persistent state", "docs/FFI.md#persistent-state"],
+  ["Init", "docs/FFI.md#init"],
+]
+
+[[header]]
+id = "bridge-mode"
+title = "Bridge Mode"
+links = [
+  ["Guest handle", "docs/FFI.md#the-guest-handle"],
+  ["Functions", "docs/FFI.md#registering-make-functions"],
+  ["Hooks", "docs/FFI.md#hooks"],
+]
+
+[[header]]
+id = "misc-examples"
+title = "Misc Examples"
+links = [
+  ["awk and jq", "#awk-jq"],
+  ["s7", "#s7"],
+  ["micropy", "#micropy"],
+  ["js", "#js"],
+  ["wasm", "#wasm"],
+]
