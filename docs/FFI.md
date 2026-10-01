@@ -89,6 +89,38 @@ second := $(awk $(value awk.second),alpha beta gamma)
 not protect a comma the way parentheses do, and the last argument, the input, may hold
 any commas.
 
+<a id="star-forms"></a>
+#### Star forms
+
+Every engine builtin has a twin whose name ends in `*`. Each argument of the twin that
+names a variable becomes that variable's unexpanded value, dedented; any other argument
+passes as written. A define needs no `$(value)`, and its `$` and commas reach the engine
+as typed:
+
+```make
+define lua.count
+  local n = 0
+  for line in io.lines() do
+    for _ in line:gmatch("%S+") do n = n + 1 end
+  end
+  print(n)
+endef
+words := the quick brown fox
+
+# both arguments name variables: 4
+count := $(lua* lua.count, words)
+
+# the input names no variable, so it is text: 2
+pair := $(lua* lua.count, one two)
+
+# -r names no variable and stays an option; prog and doc are read
+name := $(jq.argv* -r, prog, doc)
+```
+
+A value with a line indented less than the body's base indent is fatal. `$(amk.dedent* x)`
+follows the same rule, and `$(<name>.import.target* var)` with one argument takes the
+target's name and its body from the one variable.
+
 ### Persistent state
 
 `$(<name>.persistent program[,input])` runs in the make process against one state kept
@@ -160,7 +192,8 @@ engine, so `__init__.lua` and `__init__.micropy` would each go to their own stat
 for that engine and the name a phony target that runs it on the job's own input and
 output, every time. Only a target that some body references as `@name@` keeps its value,
 in `$(goal.dir)/name`, `.amk/goals` by default, and its name prints that. With no
-reference in any body, `goal.dir` is never read and no directory is made.
+reference in any body, `goal.dir` is never read and no directory is made. An `@` line
+with no define after it is an error at that line.
 
 ### Values between goals
 
@@ -320,7 +353,9 @@ and a table, dict, or object is one variable per key as `name.key`, recursing. A
 underscore keeps a name private, as do nil, None, null, undefined, modules, and classes.
 In js only `var` and function declarations reach the global object; `let` and `const` do
 not, and a chunk that looks like a module is not exported at all. The result is the
-imported names, and whatever the chunk prints goes to stderr.
+imported names, and whatever the chunk prints goes to stderr. The star form,
+`$(<name>.import* var)`, takes a variable's name instead of the chunk and hands over its
+unexpanded value, dedented, as every [star form](#star-forms) does.
 
 ```Makefile
 define micropy.build
@@ -330,7 +365,7 @@ debug = True
 targets = {"lib": "core c", "app": "core c ui"}
 def shorten(s): return s[:3]
 endef
-built := $(micropy.import $(value micropy.build))
+built := $(micropy.import* micropy.build)
 
 # cc debug flags shorten targets.app targets.lib, and clang -O2 -Wall true lib: core c
 summary := $(cc) $(flags) $(debug) $(shorten library): $(targets.lib)
@@ -414,7 +449,7 @@ and timers run after each chunk, as they do after a one-shot call.
 | --- | --- | --- | --- |
 | `$(<engine_name> program[,input])` | make to guest | all; wasm takes a module | [0002] |
 | `$(<engine_name>.argv args...)` | make to guest | awk, jq, wasm | [0002], [0011] |
-| `$(<engine_name>* var[,input])` | make to guest | every non-argv builtin | [0038] |
+| `$(<builtin>* args...)` | make to guest | every engine builtin | [0038], [0057] |
 | `$(<engine_name>.persistent chunk[,input])` | make to guest | lua, s7, micropy, js | [0018], [0028], [0030], [0031] |
 | `$(jq.persistent op name program)` | make to guest | jq: `get`, `update`, `take`, `load`, `dump`, `filter` | [0046] |
 | `$(<engine_name>.import chunk)` | guest to make | lua, s7, micropy, js | [0029] |
@@ -510,3 +545,4 @@ and timers run after each chunk, as they do after a one-shot call.
 [0046]: ../patches/0046-api-jq-store.patch
 [0047]: ../patches/0047-api-call.patch
 [0050]: ../patches/0050-api-exit-code.patch
+[0057]: ../patches/0057-star-args.patch

@@ -61,6 +61,7 @@ patch that adds that guest.
 | `0054-client-waits-for-the-parse.patch` | a client whose zygote is alive but has yet to bind waits for as long as the zygote lives, not ten seconds, so a long cold parse is not joined by a second cold parser |
 | `0055-child-goals.patch` | a served request and a spawned job take their goals through the same three steps, where each had its own copy: drop the inherited goals, rebuild `MAKEFLAGS`, run; no behavior changes |
 | `0056-zexec.patch` | a request may add makefiles after the zygote's own: the zygote parks before make resolves what it read, a probe it forks runs the remake and tells it whether to start over, and each child reads what was added, resolves, and runs; a recipe still cannot define a rule |
+| `0057-star-args.patch` | every argument of a star twin may name a variable and becomes its dedented value, any other passes as written; the argv forms gain twins and `amk.dedent*` follows the same rule |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

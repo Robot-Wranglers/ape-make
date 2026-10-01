@@ -4,34 +4,36 @@
     <td id="mini-toc" align=right><a href="#overview">Overview</a> | <a href="#install">Install</a> | <a href="#bundling">Bundling</a> | <a href="#guests">Guests</a> | <a href="#special-guests">Special Guests</a> | <a href="#zygote">Zygote</a> | <a href="#payloads">Payloads</a> | <a href="#dev">Dev</a></td>
   </tr>
   <tr>
-    <td id="logo" width=15%><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/icon-dark.svg"><img src="docs/img/icon.svg" width="120" alt="amk"></picture></td>
-    <td id="blurb" align=center>
+    <td id="logo"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/icon-dark.svg"><img src="docs/img/icon.svg" width="200" alt="amk"></picture></td>
+    <td id="blurb">
     <strong>amk</strong> is ape-make, an actually portable cosmopolitan <code>make</code>.  It's a drop in replacement forked from make-4.4.1, but with enough brand new superpowers that it's a distinct dialect.
     </td>
   </tr>
 </table>
 
-Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, multi-language scripting environment without any need for docker. Besides embedding support for **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),**, and providing other support for bidirectional FFI, it can handle modules, package tools, and output a bundle as a portable artifact.
+Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, multi-language scripting environment without any need for docker. Besides embedding support for [python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm)**.. it also provides other support for bidirectional FFI, can handle modules, package external tools, and output a bundle as a portable artifact.
 
 One consequence of this is that Makefile *(and a small, optional extension of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh?  Ok.. Think of it as something like a notebook where downstream cells can update when their prerequisites change.
 
 Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.
 
 <a id="overview"></a>
+
 ## Overview 
 
 The main use-cases:
 
-1. **[Bundling & Distribution](#bundling):** Besides solving for *runs anywhere* `amk` solves for *bundles anything*.  Did you know that all APEs are at once bins and zip files?  Besides being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  Code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work or several can be involved.  Shipping monoliths composed of modules is easy.
+1. **[Bundling & Distribution](#bundling):**  Solves for *bundles anything* as well as *runs anywhere*.  Did you know that all APEs are at once bins and zip files?  Besides being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  Code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work, or, several can be involved.  Shipping monoliths composed of modules is easy.
 
-1. **[Standard Guests](#guests)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit. No worries if `make` is available **or** which `awk` is available, or if either is available.  Portable shell-scripting environment, no containers.
+1. **[Standard Guests](#guests)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit.  No worries if `make` is available **or** which `awk` is available, or if either is available.  Portable shell-scripting environment, no containers.
 
 1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!**  Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  A tiny Graal, but without JDK.
 
 1. **[Zygote / Resident Mode](#zygote):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Keep most of the "incremental computing" model, get improved recursion, FP, workflows, dataflows.
 
 <a id="install"></a>
-## Install
+
+## Quick Start
 
 Just grab a release.
 
@@ -83,14 +85,14 @@ amk --bundle my.Makefile my.lib/ --out my.tool
 ./my.tool
 ```
 
-Makefile-as-script was historically a bad idea, the kind of (ab)use that inviting a lot of *"It's a build tool, not a scripting language!"* objections.  Why not both?  Worth revisiting, for a few reasons.  Vanilla Makefile was already a superset of bash that encourages more structured programming.  After *runs-anywhere* and *bundle-anything* is solved, monolithic scripts can become libraries, and problems with working directory disappear.
+Makefile-as-script was historically a bad idea, the kind of (ab)use that inviting a lot of *"It's a build tool, not a scripting language!"* objections.  Why not both?  Worth revisiting, for a few reasons.  Vanilla Makefile was already a superset of bash that encourages more structured programming.  After *runs-anywhere* and *bundle-anything* is solved, monolithic scripts can become libraries, and problems with working-directory assumptions just kind of disappear.
 
 <a id="guests"></a>
 ## Standard Guests
 
 Standard guests are the default riders which are mostly **bundled tools**, but there's also a few libraries that are useful enough to get a place.
 
-The previously show-stopping problem was certain platforms (looking at you, MacOS, but also minimal containers) may default to having *other* utilities missing by default, or non-GNU, or incredibly ancient versions.  Besides `make`, that'd be.. *bash / awk / sed / jq*.  Hmm, but that's another problem solvable with some combination of APEs and bundling.. So, `amk` ships with exactly those tools, and a few more.  
+The previously show-stopping problem was certain platforms (looking at you MacOS, but also minimal containers) may default to having *other* utilities missing by default, or non-GNU, or pinned to incredibly ancient versions.  Besides `make`, that'd be.. *bash / awk / sed / jq*.  Hmm, but that's another problem solvable with some combination of APEs and bundling.. So, `amk` ships with exactly those tools, and a few more.
 
 | tool | version | from | run as |
 | --- | --- | --- | --- |
@@ -118,12 +120,12 @@ GMSL, the GNU Make Standard Library, adds datastructures and other primitives.  
 
 There's a laundry-list of other curated stuff, but just a few examples to give a feel for the type of out-of-the-box thing we're looking to support.  
 
-* [Embedded lua](#lua) needs [dkjson](#) to work with JSON
+* [Embedded lua](#lua) needs [dkjson](http://dkolf.de/dkjson-lua/) to work with JSON
 * [micropython](#micropy) needs MIP to be able to handle packages.
 
 <a id="special-guests"></a>
 
-## Special Guests
+<h2><table align=right><tr><td><sub><a href="#engine-api">Engine API</a> | <a href="#tool-mode">Tool</a> | <a href="#eval-mode">Eval</a> | <a href="#interpreter-mode">Interpreter</a> | <a href="#bridge-mode">Bridge</a> | <a href="#misc-examples">Examples</a></sub></td></tr></table>Special Guests</h2>
 
 Special guests have a "tool mode" in common with standard guests, but are also *embedded engines*, i.e. linked into `amk` directly.  
 
@@ -137,34 +139,79 @@ Special guests have a "tool mode" in common with standard guests, but are also *
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | `$(js)` | 2.0 MB | on |
 | [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | `$(wasm)`, `$(wasm.argv)`, `amk --wasm` | 0.4 MB | off |
 
-Individual guests and guest-access modes aren't mutually exclusive, but it helps to have something to organize the documentation and the API around.
+Individual guests and guest-access modes aren't mutually exclusive, but a mode-split is helpful to organize the docs around:
 
-1. [Tool Mode](#): A CLI tool you can script against
-1. [Eval Mode](#): A make-function, for callable one-shots
-1. [Interpreter Mode](#):  Engine with persistent state
-1. [Import Mode](#): Import guest *namespaces* into make (functions + variables)
-1. [Bridge Mode](#): Guest-to-host action or read; Guest-to-guest calls
+1. [Tool Mode](#tool-mode): A CLI tool you can script against
+1. [Eval Mode](#eval-mode): A make-function, for callable one-shots
+1. [Interpreter Mode](#interpreter-mode):  Engine with persistent state
+1. [Import Mode](docs/FFI.md#registering-make-functions): Import guest *namespaces* into make (functions + variables)
+1. [Bridge Mode](#bridge-mode): Flip it: Guest-to-host action or read; Guest-to-guest calls
 
-This section is an overview of each mode with examples, but it's also just quick guide and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
+This section is an overview of each mode with examples, but it's a quick guide, and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 
-### API Overview 
+<a id="engine-api"></a>
 
-Each guest backend has a more or less unified interface.  Not every language gets a demo for every mode, but you can switch out the engine name for whatever you're interested in.  That said.. `wasm` in particular must work differently, and some details *do* depend on the backend implementation.  
+<h3><table align=right><tr><td><sub><a href="#engine-literals">Literals</a> | <a href="#engine-reference">Reference</a> | <a href="#extended-grammar">Grammar</a></sub></td></tr></table>Engine API</h3>
 
-The goal is to a  unified interface, but the exact details for the FFI support differ somewhat by engine.  But in many cases, the bridge is *bidirectional,* allowing guests to call into `amk` as well as the other way around, for example to directly define targets, read variables, or call other guests.  See the main [FFI docs](docs/FFI.md) for info.
+Each guest backend has a more or less unified interface.  Not every language gets a demo for every mode, but you can switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `js`, `lua`, `jq`).  That said.. `wasm` in particular must work differently, and the exact details for the FFI support may differ somewhat by engine.
 
-Replace "eng" with lua/python/s7/jq etc
+#### Engine Literals
+
+Passing literals is the most basic thing you can do for each mode.
 
 ```Makefile
 # Eval-mode
 $(eng program, [input])
 $(eng.argv argv, program, [input])
-$(eng* program_var, [input_var])
 
 # Interpreter-mode
 $(eng.persistent program, [input])
-$(eng.persistent* program_var, [input_var])
+
+# Import-mode 
+$(eng.import program)
+$(eng.import.target program)
 ```
+
+See [Misc Examples](#misc-examples) for concrete examples.
+
+#### Engine Reference
+
+Star-mode version of the API.  The trouble with literals is that it breaks down for multi-lines, escaping or quoting hazards etc.  In that case you'll want star-mode calls, where we try to dereference variables to grab values and *fall back* to literal mode only if no variables are available.
+
+```Makefile
+# Eval-mode
+$(eng* program_var, [input_var])
+$(eng.argv* argv, program_var, [input_var])
+
+# Interpreter-mode
+$(eng.persistent* program_var, [input_var])
+
+# Import-mode 
+$(eng.import* program_var)
+$(eng.import.target* program_var)
+```
+
+See [star forms](docs/FFI.md#star-forms) for concrete examples.
+
+#### Extended Grammar
+
+The extensions to Makefile's default grammar are minimal, but useful. 
+
+The typical way to use star-mode is:
+
+1. Put guest code in a `define..endef` block.
+1. Use an API call on the block.
+
+Flipping this with a decorator-style preamble is useful:
+
+```Makefile 
+@my_engine.import
+define my_prog
+  ..guest program, optionally indented..
+endef
+```
+
+See [defining a target in an engine](docs/FFI.md#defining-a-target-in-an-engine) for concrete examples.
 
 ### Tool Mode
 
@@ -216,14 +263,20 @@ count := $(lua ${lua.count}, $(words))
 count := $(lua* lua.count, words)
 ```
 
-### Interpreter Mode
+<a id="interpreter-mode"></a>
+
+<h3><table align=right><tr><td><sub><a href="#lua">lua</a> | <a href="docs/FFI.md#persistent-state">Persistent state</a> | <a href="docs/FFI.md#init">Init</a></sub></td></tr></table>Interpreter Mode</h3>
 
 Interpreter-mode gives you a persistent stateful engine on the backend instead of a one-shot eval.  Here's the API:
 
 A quick example:
 
 ```Makefile
-placeholder
+$(lua.persistent total = 40)
+$(lua.persistent total = total + 2)
+
+# 42
+answer := $(lua.persistent print(total))
 ```
 
 Past simple usage, the naive approach above can into problems with multiline inputs, commas, and dollar-signs that Makefile doesn't want to parse correctly.  There's two ways to solve this:
@@ -248,8 +301,21 @@ Again, see the main [FFI docs](docs/FFI.md) for details, but included below you 
 #### lua
 
 
+<a id="bridge-mode"></a>
+
+<h3><table align=right><tr><td><sub><a href="docs/FFI.md#the-guest-handle">Guest handle</a> | <a href="docs/FFI.md#registering-make-functions">Functions</a> | <a href="docs/FFI.md#hooks">Hooks</a></sub></td></tr></table>Bridge Mode</h3>
+
+Since `amk` is an extension of `make` and Makefile (or the [extended grammar](#extended-grammar)) is the obvious choice for the coordination language, host-to-guest is the obvious choice for the primary direction of *control-flow and orchestration*.
+
+But! This actually isn't required.  In most cases, the bridge is *bidirectional,* allowing guests to call into `amk` as well as the other way around, for example to directly define targets, read variables, or call other guests.
+
+
+<a id="misc-examples"></a>
+
+<h3><table align=right><tr><td><sub><a href="#awk-jq">awk and jq</a> | <a href="#s7">s7</a> | <a href="#micropy">micropy</a> | <a href="#js">js</a> | <a href="#wasm">wasm</a></sub></td></tr></table>Misc Examples</h3>
 
 <a id="awk-jq"></a>
+
 #### awk and jq
 
 Another simple inline, enjoy floats
@@ -395,6 +461,7 @@ fibs := $(subst Result: ,,$(wasm.argv --repl,,$(session)))
 ```
 
 <a id="zygote"></a>
+
 ## Resident Dispatch
 
 A server, the zygote, reads the makefiles once and waits on a unix socket. Each client
@@ -466,29 +533,28 @@ include $(shell cmk --ape-unpack=compose.mk)
 ```
 
 <a id="tools"></a>
+
 ### Tools
 
 GNU sed, bash 5.2, and json.bash are unpacked to a cache under `${XDG_CACHE_HOME:-$HOME/.cache}/amk/`,
 keyed by the binary, and put first on `PATH` before any makefile is read:
 
-```bash
-./amk -f /dev/stdin <<'EOF'
-SHELL := bash
-all:
+```Makefile
+__main__:
 	# prints ~/.cache/amk/<key>/bin/sed
 	command -v sed
-	# prints sed (GNU sed) 4.9
+	
+  # prints sed (GNU sed) 4.9
 	sed --version | head -1
-	# prints 5.2.0(1)-release
+	
+  # prints 5.2.0(1)-release
 	echo $$BASH_VERSION
-	# prints {"msg":"hi","n":41}
+	
+  # prints {"msg":"hi","n":41}
 	jb msg=hi n:number=41
-	# prints ["a",1]
+	
+  # prints ["a",1]
 	jb-array a :number=1
-EOF
-
-# keep the host's PATH instead
-AMK_NO_PATH=1 ./amk
 ```
 
 A tool is an ape, so the [execve rule](#ape) applies: Python `subprocess`
