@@ -5,7 +5,7 @@ guest handle reads make state there; it expands the program for its target, runs
 engine's main over it with standard output on the value file, and leaves with the
 engine's status. Handle writes end with the job, and a build the child starts keeps
 the one slot and no jobserver that a spawned goal list has. The program crosses no
-exec, so an imported target no longer uses job.stdin, which stays for ordinary recipes.
+exec, so an imported target no longer uses amk.stdin, which stays for ordinary recipes.
 The rules are entered by the import routine itself, and the routine that finds the
 goals a body references is named for that.
 
@@ -21,9 +21,9 @@ goals a body references is named for that.
  struct amk_engine;
 +void amk_fork_settle (void);
 +void amk_engine_program (const struct amk_engine *e, const char *program);
- char *amk_func_job_stdin (char *o, char **argv, const char *funcname);
- void amk_job_stdin_pending (struct child *child);
- int amk_job_stdin_fd (const void *child);
+ char *amk_func_stdin (char *o, char **argv, const char *funcname);
+ void amk_stdin_pending (struct child *child);
+ int amk_stdin_fd (const void *child);
 --- a/src/filedef.h
 +++ b/src/filedef.h
 @@ -113,6 +113,9 @@
@@ -82,7 +82,7 @@ goals a body references is named for that.
  {
    static int prepared;
    static const char preamble[] = "$(shell mkdir -p %s)\n%s/%%: %%; @$(file >$@,$(file <$<))\n";
--  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(job.stdin ${%s})$(MAKE) --%s %s >$@\n";
+-  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(amk.stdin ${%s})$(MAKE) --%s %s >$@\n";
 -  const char *program = strcmp (engine, "awk") == 0 ? "-f -" : strcmp (engine, "jq") == 0 ? "-n -f /dev/stdin" : "-";
 -  char *deps = amk_cell_deps (body);
 -  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + strlen (deps) + 24;

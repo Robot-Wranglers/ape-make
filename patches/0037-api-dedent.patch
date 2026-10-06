@@ -26,7 +26,7 @@ for dedenting a variable's unexpanded value, as the value function reads it.
    FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
 +  FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
 +  FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
-   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
    FT_ENTRY ("value",         0,  1,  1,  func_value),
 @@ -3659,4 +3661,70 @@
    free (want);

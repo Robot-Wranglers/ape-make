@@ -1,0 +1,247 @@
+Profile: where a parse spends its time, by name. With AMK_PROFILE naming a file, or a
+dash for stderr, every builtin, every macro reached through call and every recursive
+variable expansion is timed under its name, and when the process dies the table is
+appended: self and total milliseconds and the count per name, by self time descending,
+under a header with the pid and the process wall. Self is the time a name owns once its
+children's frames are taken out, so a macro that only dispatches reads near zero and the
+work shows under what it dispatched to. A sub-make appends its own table to the same
+file. Unset, the one check per expansion is the whole cost.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -56,6 +56,12 @@
+ char *amk_func_cksum (char *o, char **argv, const char *funcname);
+ unsigned long amk_cksum (const unsigned char *data, size_t len);
+ char *amk_func_match (char *o, char **argv, const char *funcname);
++/* The function profiler's frame: one per timed expansion, so a parent's self time excludes its children.  */
++struct amk_prof_frame { double start; double child; struct amk_prof_frame *up; };
++extern int amk_profile_on;
++int amk_profile_enter (struct amk_prof_frame *f);
++void amk_profile_leave (struct amk_prof_frame *f, const char *kind, const char *name);
++void amk_profile_report (void);
+ void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
+ struct child;
+ struct amk_engine;
+--- a/src/function.c
++++ b/src/function.c
+@@ -3720,18 +3720,26 @@
+   if (entry_p->adds_command)
+     ++command_count;
+
+-  if (!entry_p->alloc_fn)
+-    return entry_p->fptr.func_ptr (o, argv, entry_p->name);
+-
+-  /* This function allocates memory and returns it to us.
+-     Write it to the variable buffer, then free it.  */
++  {
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
+
+-  p = entry_p->fptr.alloc_func_ptr (entry_p->name, argc, argv);
+-  if (p)
+-    {
+-      o = variable_buffer_output (o, p, strlen (p));
+-      free (p);
+-    }
++    if (!entry_p->alloc_fn)
++      o = entry_p->fptr.func_ptr (o, argv, entry_p->name);
++    else
++      {
++        /* This function allocates memory and returns it to us.
++           Write it to the variable buffer, then free it.  */
++        p = entry_p->fptr.alloc_func_ptr (entry_p->name, argc, argv);
++        if (p)
++          {
++            o = variable_buffer_output (o, p, strlen (p));
++            free (p);
++          }
++      }
++    if (timed)
++      amk_profile_leave (&pf, "fn", entry_p->name);
++  }
+
+   return o;
+ }
+@@ -3943,7 +3951,13 @@
+
+   saved_args = max_args;
+   max_args = i;
+-  o = variable_expand_string (o, body, flen+3);
++  {
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
++    o = variable_expand_string (o, body, flen+3);
++    if (timed)
++      amk_profile_leave (&pf, "call", fname);
++  }
+   max_args = saved_args;
+
+   v->exp_count = 0;
+@@ -4926,4 +4940,126 @@
+   regfree (&re);
+   free (text);
+   return o;
++}
++
++/* The function profiler: when AMK_PROFILE names a file, or a dash for stderr, every builtin, every call of a macro and every recursive variable expansion is timed under its name, and the table of self and total time per name is appended when the process dies.  Unset, the one check per expansion is the whole cost.  */
++int amk_profile_on = -1;
++
++struct amk_prof_node { const char *key; unsigned long count; double total; double self; };
++static struct hash_table amk_prof_table;
++static struct amk_prof_frame *amk_prof_top = NULL;
++static double amk_prof_start;
++
++static unsigned long
++amk_prof_hash_1 (const void *k)
++{
++  return_STRING_HASH_1 (((const struct amk_prof_node *) k)->key);
++}
++
++static unsigned long
++amk_prof_hash_2 (const void *k)
++{
++  return_STRING_HASH_2 (((const struct amk_prof_node *) k)->key);
++}
++
++static int
++amk_prof_cmp (const void *x, const void *y)
++{
++  return_STRING_COMPARE (((const struct amk_prof_node *) x)->key, ((const struct amk_prof_node *) y)->key);
++}
++
++static double
++amk_prof_now (void)
++{
++  struct timespec ts;
++  clock_gettime (CLOCK_MONOTONIC, &ts);
++  return ts.tv_sec + ts.tv_nsec * 1e-9;
++}
++
++/* Opens a frame and answers whether it is timed; the first call reads the environment and sets up the table.  */
++int
++amk_profile_enter (struct amk_prof_frame *f)
++{
++  if (amk_profile_on < 0)
++    {
++      const char *path = getenv ("AMK_PROFILE");
++      amk_profile_on = path != NULL && *path != '\0';
++      if (amk_profile_on)
++        {
++          hash_init (&amk_prof_table, 1024, amk_prof_hash_1, amk_prof_hash_2, amk_prof_cmp);
++          amk_prof_start = amk_prof_now ();
++        }
++    }
++  if (!amk_profile_on)
++    return 0;
++  f->start = amk_prof_now ();
++  f->child = 0;
++  f->up = amk_prof_top;
++  amk_prof_top = f;
++  return 1;
+ }
++
++/* Closes a frame under kind and name: its whole time goes to the parent's children and to this name's total, the rest to its self.  */
++void
++amk_profile_leave (struct amk_prof_frame *f, const char *kind, const char *name)
++{
++  double dur = amk_prof_now () - f->start;
++  struct amk_prof_node key, *node;
++  void **slot;
++  char *k = xmalloc (strlen (kind) + strlen (name) + 2);
++
++  amk_prof_top = f->up;
++  if (amk_prof_top)
++    amk_prof_top->child += dur;
++  sprintf (k, "%s %s", kind, name);
++  key.key = k;
++  slot = hash_find_slot (&amk_prof_table, &key);
++  node = *slot;
++  if (HASH_VACANT (node))
++    {
++      node = xcalloc (sizeof *node);
++      node->key = k;
++      hash_insert_at (&amk_prof_table, node, slot);
++    }
++  else
++    free (k);
++  node->count++;
++  node->total += dur;
++  node->self += dur - f->child;
++}
++
++static int
++amk_prof_order (const void *a, const void *b)
++{
++  const struct amk_prof_node *x = *(const struct amk_prof_node *const *) a;
++  const struct amk_prof_node *y = *(const struct amk_prof_node *const *) b;
++  return x->self < y->self ? 1 : x->self > y->self ? -1 : 0;
++}
++
++/* Writes the table, every name by self time descending, with the process wall and pid on its header line.  */
++void
++amk_profile_report (void)
++{
++  const char *path;
++  FILE *out;
++  void **v, **p;
++
++  if (amk_profile_on <= 0)
++    return;
++  path = getenv ("AMK_PROFILE");
++  out = strcmp (path, "-") == 0 ? stderr : fopen (path, "a");
++  if (out == NULL)
++    return;
++  v = xmalloc (sizeof (void *) * (amk_prof_table.ht_fill + 1));
++  hash_dump (&amk_prof_table, v, amk_prof_order);
++  fprintf (out, "# amk profile pid=%ld wall=%.3fs names=%lu\n", (long) getpid (), amk_prof_now () - amk_prof_start, amk_prof_table.ht_fill);
++  fprintf (out, "%10s %10s %8s  %s\n", "self_ms", "total_ms", "count", "name");
++  for (p = v; *p != NULL; ++p)
++    {
++      const struct amk_prof_node *n = *p;
++      fprintf (out, "%10.3f %10.3f %8lu  %s\n", n->self * 1e3, n->total * 1e3, n->count, n->key);
++    }
++  if (out != stderr)
++    fclose (out);
++  free (v);
++}
+--- a/src/expand.c
++++ b/src/expand.c
+@@ -24,6 +24,7 @@
+ #include "job.h"
+ #include "variable.h"
+ #include "rule.h"
++#include "amk.h"
+
+ /* Initially, any errors reported when expanding strings will be reported
+    against the file where the error appears.  */
+@@ -158,10 +159,16 @@
+     }
+
+   v->expanding = 1;
+-  if (v->append)
+-    value = allocated_variable_append (v);
+-  else
+-    value = allocated_variable_expand (v->value);
++  {
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
++    if (v->append)
++      value = allocated_variable_append (v);
++    else
++      value = allocated_variable_expand (v->value);
++    if (timed)
++      amk_profile_leave (&pf, "var", v->name);
++  }
+   v->expanding = 0;
+
+   if (set_reading)
+--- a/src/main.c
++++ b/src/main.c
+@@ -7056,6 +7056,7 @@
+       else if (amk_halt)
+         status = AMK_HALT;
+       amk_sweep_spawned ();
++      amk_profile_report ();
+       dying = 1;
+
+       if (print_version_flag)

@@ -20,3 +20,4 @@ __pycache__
 .amk/*
 amk
 /json.bash-*
+.tmp.*

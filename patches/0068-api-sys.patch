@@ -1,0 +1,98 @@
+Sys: $(amk.sys name) answers one process or host identity from the kernel with no
+shell: pid, ppid, uid, uname (the kernel name), arch (the machine), hostname, epoch
+(seconds), or uuid (a fresh version 4 string from /dev/urandom). A makefile spends a
+shell on each of these at boot, for run ids, host tags and the parent pid; here each is
+one call in process. An unknown name is fatal, so a typo is not an empty id. sys joins
+.FEATURES, so a makefile can guard on it and keep the shell for a stock make. The rows
+and the routine sit apart from the other api builtins, after the eval row and after
+amk_func_require, so a series that grows several builtins at once keeps each patch on
+its own context.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -61,6 +61,7 @@
+ void amk_fork_settle (void);
+ void amk_engine_program (const struct amk_engine *e, const char *program);
+ char *amk_func_stdin (char *o, char **argv, const char *funcname);
++char *amk_func_sys (char *o, char **argv, const char *funcname);
+ void amk_stdin_pending (struct child *child);
+ int amk_stdin_fd (const void *child);
+ void amk_stdin_drop (struct child *child);
+--- a/src/function.c
++++ b/src/function.c
+@@ -3679,6 +3679,7 @@
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
++  FT_ENTRY ("amk.sys",       1,  1,  1,  amk_func_sys),
+   FT_ENTRY ("file",          1,  2,  1,  func_file),
+ #ifdef EXPERIMENTAL
+   FT_ENTRY ("eq",            2,  2,  1,  func_eq),
+@@ -4667,7 +4668,57 @@
+   free (missing);
+   return o;
+ }
++
++#include <sys/utsname.h>
++
++/* $(amk.sys name): one process or host identity answered from the kernel, no shell: pid, ppid, uid, uname, arch, hostname, epoch, or uuid; an unknown name is fatal.  */
++char *
++amk_func_sys (char *o, char **argv, const char *funcname)
++{
++  const char *name = argv[0];
++  char buf[256];
+
++  while (*name == ' ' || *name == '\t')
++    ++name;
++  if (strcmp (name, "pid") == 0)
++    sprintf (buf, "%ld", (long) getpid ());
++  else if (strcmp (name, "ppid") == 0)
++    sprintf (buf, "%ld", (long) getppid ());
++  else if (strcmp (name, "uid") == 0)
++    sprintf (buf, "%ld", (long) getuid ());
++  else if (strcmp (name, "epoch") == 0)
++    sprintf (buf, "%ld", (long) time (NULL));
++  else if (strcmp (name, "uname") == 0 || strcmp (name, "arch") == 0)
++    {
++      struct utsname u;
++      if (uname (&u) != 0)
++        OSS (fatal, reading_file, _("%s: uname: %s"), funcname, strerror (errno));
++      snprintf (buf, sizeof buf, "%s", name[0] == 'a' ? u.machine : u.sysname);
++    }
++  else if (strcmp (name, "hostname") == 0)
++    {
++      if (gethostname (buf, sizeof buf) != 0)
++        OSS (fatal, reading_file, _("%s: hostname: %s"), funcname, strerror (errno));
++      buf[sizeof buf - 1] = '\0';
++    }
++  else if (strcmp (name, "uuid") == 0)
++    {
++      unsigned char b[16];
++      FILE *fp = fopen ("/dev/urandom", "rb");
++      size_t i;
++      if (fp == NULL || fread (b, 1, sizeof b, fp) != sizeof b)
++        OSS (fatal, reading_file, _("%s: uuid: %s"), funcname, strerror (errno));
++      fclose (fp);
++      b[6] = (b[6] & 0x0F) | 0x40;
++      b[8] = (b[8] & 0x3F) | 0x80;
++      for (i = 0; i < sizeof b; ++i)
++        sprintf (buf + 2 * i + (i > 3) + (i > 5) + (i > 7) + (i > 9), "%02x%s", b[i], (i == 3 || i == 5 || i == 7 || i == 9) ? "-" : "");
++    }
++  else
++    OSS (fatal, reading_file, _("%s: unknown name `%s'"), funcname, name);
++  return variable_buffer_output (o, buf, strlen (buf));
++}
++
+ /* The text with its block indent removed, allocated; the base's width and the count of inconsistent lines come back through the pointers.  */
+ char *
+ amk_dedent (const char *text, size_t *basep, int *badp)
+--- a/src/main.c
++++ b/src/main.c
+@@ -2399,6 +2399,7 @@
+ #ifdef MAKE_MAINTAINER_MODE
+                            " maintainer"
+ #endif
++                           " sys"
+                            ;
+
+     /* The engine names join the feature list, and the engines variable names that subset alone, both read from the engine table. */

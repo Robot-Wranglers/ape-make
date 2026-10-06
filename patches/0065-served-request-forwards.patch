@@ -1,0 +1,162 @@
+Served requests forward: a request carries the call pair its caller's recipe holds as two
+more descriptors beside the mail pipe, and the served child adopts them as an inherited
+pair, so it holds no store and sends every store call up them as a sub-make does; a run
+has one store however many requests it makes. A client with no pair, a shell of its own,
+serves as an owner from the store the parse left. A client whose pair its make has
+dropped, a backgrounded request whose recipe ended, gets status 2 and an error line on
+every store call, never a store of its own: the upward write runs with SIGPIPE ignored.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -73,7 +73,7 @@
+ #define AMK_STORE_ENGINE "jq"
+ struct amk_chan { int req; int rep; char *buf; size_t len; };
+ void amk_call_init (void);
+-void amk_call_dispatch (void);
++void amk_call_dispatch (int req, int rep);
+ void amk_call_wait (int ms);
+ /* Any other wait that blocks while children run adds the channel descriptors to its set and serves the ready ones after. */
+ int amk_call_fdset (fd_set *rd);
+--- a/src/main.c
++++ b/src/main.c
+@@ -4811,9 +4811,11 @@
+ #define AMK_STALE     75
+ #define AMK_MAXREQ    (4 * 1024 * 1024)
+ #define AMK_MAXCONN   1024
+-/* The three standard descriptors and the caller's mail pipe, so a hop's recursive call answers the loop that spawned it.  */
+-#define AMK_NFD       4
++/* The three standard descriptors, the caller's mail pipe, and the call pair the caller's recipe holds, so a served request answers the loop that spawned it and writes the store that loop owns.  */
++#define AMK_NFD       6
+ #define AMK_MAILFD    3
++#define AMK_CALLFD    4
++#define AMK_REPLYFD   5
+
+ static int amk_fd_is_pipe (const char *spec);
+ static int amk_mail_fd;
+@@ -4976,10 +4978,10 @@
+ static int amk_bsd_cmsg_unpack (const char *b, size_t n, int fds[AMK_NFD]) { (void) b; (void) n; (void) fds; return 0; }
+ #endif
+
+-/* Hand the request over with the standard descriptors and the mail pipe
+-   attached; a caller without a mail pipe sends its stderr in that slot and no
+-   AMK_MAIL in the environment.  A zygote that answered and closed before the
+-   send gives 0, not a signal.  */
++/* Hand the request over with the standard descriptors, the mail pipe and the
++   call pair attached; a caller without one sends its stderr in that slot and
++   no name for it in the environment.  A zygote that answered and closed before
++   the send gives 0, not a signal.  */
+
+ static int
+ amk_send_request (int fd, const char *buf, size_t len) {
+@@ -4996,6 +4998,10 @@
+   fds[AMK_MAILFD] = amk_fd_is_pipe (getenv ("AMK_MAIL"));
+   if (fds[AMK_MAILFD] < 0)
+     fds[AMK_MAILFD] = STDERR_FILENO;
++  fds[AMK_CALLFD] = amk_fd_is_pipe (getenv ("AMK_CALL"));
++  fds[AMK_REPLYFD] = amk_fd_is_pipe (getenv ("AMK_REPLY"));
++  if (fds[AMK_CALLFD] < 0 || fds[AMK_REPLYFD] < 0)
++    fds[AMK_CALLFD] = fds[AMK_REPLYFD] = STDERR_FILENO;
+
+   memset (&msg, '\0', sizeof msg);
+   memset (&cbuf, '\0', sizeof cbuf);
+@@ -5400,7 +5406,9 @@
+
+   for (i = 0; i < AMK_MAILFD; ++i) {
+     dup2 (fds[i], (int) i);
+-    if (fds[i] > STDERR_FILENO && fds[i] != fds[AMK_MAILFD]) close (fds[i]);
++    if (fds[i] > STDERR_FILENO && fds[i] != fds[AMK_MAILFD]
++        && fds[i] != fds[AMK_CALLFD] && fds[i] != fds[AMK_REPLYFD])
++      close (fds[i]);
+   }
+
+   p = buf;
+@@ -5446,6 +5454,17 @@
+       define_variable_global ("AMK_MAIL", 8, mail, o_env, 0, NILF)->export = v_export;
+     } else if (fds[AMK_MAILFD] > STDERR_FILENO)
+       close (fds[AMK_MAILFD]);
++
++    /* The caller's call pair arrived the same way: with it this process forwards every store call up it, without it the slots are closed and it owns a store.  */
++    if (amk_env_value (p, envc, "AMK_CALL") != 0 && amk_env_value (p, envc, "AMK_REPLY") != 0)
++      amk_call_dispatch (fds[AMK_CALLFD], fds[AMK_REPLYFD]);
++    else {
++      if (fds[AMK_CALLFD] > STDERR_FILENO)
++        close (fds[AMK_CALLFD]);
++      if (fds[AMK_REPLYFD] > STDERR_FILENO)
++        close (fds[AMK_REPLYFD]);
++      amk_call_dispatch (-1, -1);
++    }
+
+     /* A name whose value is this process rather than the caller's: only the
+        child knows it, so it is set here rather than promoted from the request.  */
+@@ -5478,9 +5497,6 @@
+       handle_non_switch_argument (dg, o_command);
+     free (dg);
+   }
+-
+-  /* The request's recipes call this process, not whatever the client's environment named.  */
+-  amk_call_dispatch ();
+
+   amk_child_ready ();
+
+@@ -5695,9 +5711,9 @@
+     amk_call_own ();
+ }
+
+-/* A served request starts as an owner: the zygote closed every inherited descriptor, so the pairs and the child pipe are made afresh.  */
++/* A served request forwards up the pair its request carried, named to its recipes at the numbers it arrived on; a request without one starts as an owner, since the zygote closed every inherited descriptor.  */
+ void
+-amk_call_dispatch (void) {
++amk_call_dispatch (int req, int rep) {
+   unsigned int i;
+   amk_up_req = amk_up_rep = -1;
+   for (i = 0; i <= AMK_SPAWNED; ++i) {
+@@ -5708,7 +5724,14 @@
+   amk_chld[0] = amk_chld[1] = -1;
+   amk_chld_open ();
+   bsd_signal (SIGCHLD, amk_chld_handler);
+-  amk_call_own ();
++  if (req >= 0 && rep >= 0) {
++    amk_up_req = req;
++    amk_up_rep = rep;
++    amk_call_fd[0] = req;
++    amk_call_fd[1] = rep;
++    amk_call_export (req, rep);
++  } else
++    amk_call_own ();
+ }
+
+ int
+@@ -5896,11 +5919,15 @@
+   req[n] = '\n';
+   if (m > 0)
+     memcpy (req + n + 1, input, m);
+-  if (amk_write_all (amk_up_req, req, n + 1 + m) < 0) {
++  {
++    /* An owner that went away is an error line and a status, not a signal.  */
++    void (*prev) (int) = signal (SIGPIPE, SIG_IGN);
++    int wrote = amk_write_all (amk_up_req, req, n + 1 + m);
++    signal (SIGPIPE, prev);
+     free (req);
+-    return NULL;
++    if (wrote < 0)
++      return NULL;
+   }
+-  free (req);
+   reply = amk_read_line_shared (amk_up_rep);
+   if (reply == NULL)
+     return NULL;
+@@ -6935,9 +6960,13 @@
+   amk_catch (SIGHUP);
+   amk_catch (SIGQUIT);
+
+-  /* A mail name with no pipe behind it would name a closed descriptor in the request.  */
++  /* A mail or call name with no pipe behind it would name a closed descriptor in the request.  */
+   if (amk_fd_is_pipe (getenv ("AMK_MAIL")) < 0)
+     unsetenv ("AMK_MAIL");
++  if (amk_fd_is_pipe (getenv ("AMK_CALL")) < 0 || amk_fd_is_pipe (getenv ("AMK_REPLY")) < 0) {
++    unsetenv ("AMK_CALL");
++    unsetenv ("AMK_REPLY");
++  }
+
+   buf = amk_build_request (argc, argv, &len);
+   if (!amk_send_request (fd, buf, len))

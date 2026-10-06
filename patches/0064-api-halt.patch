@@ -1,0 +1,97 @@
+Halt: `halt` on the call channel stops the make that reads it, never the store's owner.
+It runs no more of that recipe or its goals and leaves with 112 once the recipe is
+collected, however that recipe's shell ends, by a signal to itself included; a parent
+whose recursive child leaves with 112 halts the same way, silently. The status is how a
+halt climbs: the asker's own make answers it before any forwarding, so it never travels
+the pair a sub-make or a served request shares with its caller.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -86,6 +86,10 @@
+ pid_t amk_wait_any (int *status);
+ int amk_call_forwarding (void);
+
++/* A recipe asked its make to halt: the recipe's remaining lines and the process's remaining goals are dropped, and it leaves with AMK_HALT, which a make whose recursive recipe child leaves with it takes as the same request.  */
++#define AMK_HALT 112
++extern unsigned int amk_halt;
++
+ /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
+ struct amk_sink
+   {
+--- a/src/main.c
++++ b/src/main.c
+@@ -350,6 +350,9 @@
+
+ /* A status a guest asked this process to leave with, in place of make's own.  */
+ int amk_exit_status = -1;
++
++/* Nonzero once a recipe asked this process to halt.  */
++unsigned int amk_halt;
+
+ /* Socket named by --serve, parked on once the makefiles are read.  */
+ static const char *amk_serve_path;
+@@ -5917,7 +5920,13 @@
+
+ static char *
+ amk_call_handle (const char *line, const char *input) {
+-  char *reply = amk_up_req >= 0 ? amk_call_up (line, input) : amk_call_answer (line, input);
++  char *reply;
++  /* Halt names this process, not the store's owner, so it is answered before any forwarding.  */
++  if (strcmp (line, "halt") == 0) {
++    amk_halt = 1;
++    return xstrdup ("0 0\n");
++  }
++  reply = amk_up_req >= 0 ? amk_call_up (line, input) : amk_call_answer (line, input);
+   if (reply == NULL) {
+     fprintf (stderr, "amk: call: no reply from the store's owner\n");
+     reply = xstrdup ("2 0\n");
+@@ -7010,6 +7019,8 @@
+
+       if (amk_exit_status >= 0)
+         status = amk_exit_status;
++      else if (amk_halt)
++        status = AMK_HALT;
+       amk_sweep_spawned ();
+       dying = 1;
+
+--- a/src/job.c
++++ b/src/job.c
+@@ -965,7 +965,15 @@
+
+       /* Determine the failure status: 0 for success, 1 for updating target in
+          question mode, 2 for anything else.  */
+-      if (exit_sig == 0 && exit_code == 0)
++      if (exit_sig == 0 && exit_code == AMK_HALT && c->recursive)
++        {
++          /* A recursive make halted, so this one halts with it, as a success.  */
++          amk_halt = 1;
++          child_failed = MAKE_SUCCESS;
++        }
++      else if (amk_halt && exit_sig != 0)
++        child_failed = MAKE_SUCCESS;
++      else if (exit_sig == 0 && exit_code == 0)
+         child_failed = MAKE_SUCCESS;
+       else if (exit_sig == 0 && exit_code == 1 && question_flag && c->recursive)
+         child_failed = MAKE_TROUBLE;
+@@ -1023,8 +1031,8 @@
+               child_failed = 0;
+             }
+
+-          /* If there are more commands to run, try to start them.  */
+-          if (job_next_command (c))
++          /* If there are more commands to run, try to start them; a halted process runs none.  */
++          if (!amk_halt && job_next_command (c))
+             {
+               if (handling_fatal_signal)
+                 {
+@@ -1118,6 +1126,10 @@
+       free_child (c);
+
+       unblock_sigs ();
++
++      /* A halted process leaves once the recipe that asked is collected.  */
++      if (amk_halt && !handling_fatal_signal)
++        die (AMK_HALT);
+
+       /* If the job failed, and the -k flag was not given, die,
+          unless we are already in the process of dying.  */

@@ -104,7 +104,7 @@ import target star still takes its name and body from the one variable.
 +  FT_ENTRY ("amk.dedent*",   1,  1,  1,  func_star),
    FT_ENTRY ("amk.fxns?",     0,  1,  1,  func_bindings),
    FT_ENTRY ("amk.vars?",     0,  1,  1,  func_bindings),
-   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
 @@ -3510,22 +3537,21 @@
          hash_insert (&function_table, f++);
        }

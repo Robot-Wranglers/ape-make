@@ -57,7 +57,7 @@ the same rule.
    FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
    FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
 +  FT_ENTRY ("amk.dedent*",   0,  1,  1,  amk_func_val_dedent),
-   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
    FT_ENTRY ("value",         0,  1,  1,  func_value),
 @@ -3242,3 +3275,3 @@
  /* The engine builtins join the table from the engine rows, so a row is the whole registration.  */

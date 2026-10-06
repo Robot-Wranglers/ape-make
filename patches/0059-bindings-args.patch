@@ -60,6 +60,6 @@ separate names.
 -  FT_ENTRY ("amk.vars?",     0,  1,  1,  func_bindings),
 +  FT_ENTRY ("amk.fxns?",     0,  0,  1,  func_bindings),
 +  FT_ENTRY ("amk.vars?",     0,  0,  1,  func_bindings),
-   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
    FT_ENTRY ("value",         0,  1,  1,  func_value),
    FT_ENTRY ("eval",          0,  1,  1,  func_eval),

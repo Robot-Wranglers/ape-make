@@ -1,0 +1,322 @@
+Store backing: a namespace may declare, once, how it meets the disk, a mode word then a
+path, at create or on the call channel. run keeps the value in the store alone; owned loads
+the file at first use and writes every update and load through, by a temp file beside it
+and a rename; shared does the same and reloads before a call whenever the file's time or
+size moved since the last load. A forwarder declares to the owner up the channel, so a
+sub-make that parses the same makefile joins the owner's backing; a repeat must match
+the first declaration, and a different mode or path is refused.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -121,6 +121,8 @@
+ /* The call channel's way into the store: one operation on a namespace, made on first use, and the stateless filter.  */
+ int amk_store_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
+ int amk_store_filter (struct amk_sink *out, const char *prog, const char *input);
++/* The store's backing declaration for a namespace: a mode word, then a path past run; a repeat must match. */
++int amk_store_backing (const char *ns, const char *spec);
+
+ /* A guest's make function: fn answers make's call with the state it was defined in; a name make has already is refused with -1, a name this state defined before is rebound with 1, and a new one answers 0. */
+ int amk_func_add (const char *name, void *state, char *(*fn) (void *state, const char *name, unsigned int argc, char **argv));
+--- a/src/function.c
++++ b/src/function.c
+@@ -2940,6 +2940,11 @@
+     const struct amk_engine *engine;
+     void *state;
+     unsigned int handles:1;
++    unsigned int mode:2;
++    unsigned int loaded:1;
++    char *path;
++    time_t mtime;
++    off_t size;
+   };
+ static struct amk_ns *amk_nss;
+ static unsigned int amk_nss_len;
+@@ -2971,6 +2976,11 @@
+   amk_nss[amk_nss_len].engine = e;
+   amk_nss[amk_nss_len].state = NULL;
+   amk_nss[amk_nss_len].handles = 0;
++  amk_nss[amk_nss_len].mode = 0;
++  amk_nss[amk_nss_len].loaded = 0;
++  amk_nss[amk_nss_len].path = NULL;
++  amk_nss[amk_nss_len].mtime = 0;
++  amk_nss[amk_nss_len].size = 0;
+   return &amk_nss[amk_nss_len++];
+ }
+
+@@ -3037,6 +3047,9 @@
+   return s;
+ }
+
++static int amk_ns_sync_in (const struct amk_engine *e, struct amk_ns *row);
++static int amk_ns_sync_out (const struct amk_engine *e, struct amk_ns *row);
++
+ /* One operation in one namespace, in this process with no fork, so what one call leaves in the namespace the next call finds.  */
+ static char *
+ amk_ns_run (char *o, const struct amk_engine *e, const char *ns, const char *op, const char *prog, const char *funcname)
+@@ -3061,9 +3074,14 @@
+   else
+     {
+       void *state = amk_ns_state (e, ns, 1);
++      struct amk_ns *row = amk_ns_find (e, ns);
+       if (state == NULL)
+         OSS (fatal, reading_file, _("%s: cannot open a %s state"), funcname, e->name);
+-      rc = amk_state_run (e, state, &sink.base, op, prog);
++      rc = amk_ns_sync_in (e, row);
++      if (rc == 0)
++        rc = amk_state_run (e, state, &sink.base, op, prog);
++      if (rc == 0 && (streq (op, "update") || streq (op, "load")))
++        rc = amk_ns_sync_out (e, row);
+     }
+   shell_completed (rc, 0);
+   o = sink.o;
+@@ -3128,6 +3146,188 @@
+   f->maximum_args = 1;
+   f->expand_args = 1;
+   hash_insert (&function_table, f);
++}
++
++/* A backing is a mode and, past run, a path: run keeps the value in the store alone, owned loads the file once at first use and writes every update through, shared also reloads when the file changed since the last load.  */
++#define AMK_BACK_NONE 0
++#define AMK_BACK_RUN 1
++#define AMK_BACK_OWNED 2
++#define AMK_BACK_SHARED 3
++static const char *const amk_back_names[] = { "none", "run", "owned", "shared" };
++
++#include <sys/stat.h>
++
++struct amk_text_sink { struct amk_sink base; char *buf; size_t len; };
++
++static void
++amk_text_write (struct amk_sink *s, const char *p, size_t n)
++{
++  struct amk_text_sink *t = (struct amk_text_sink *) s;
++  t->buf = xrealloc (t->buf, t->len + n + 1);
++  memcpy (t->buf + t->len, p, n);
++  t->len += n;
++  t->buf[t->len] = '\0';
++}
++
++/* The whole of a backing file as text, or null when it cannot be read.  */
++static char *
++amk_ns_slurp (const char *path)
++{
++  FILE *f = fopen (path, "r");
++  char *text;
++  size_t len = 0, cap = 4096;
++  if (f == NULL)
++    return NULL;
++  text = xmalloc (cap + 1);
++  for (;;)
++    {
++      len += fread (text + len, 1, cap - len, f);
++      if (len < cap)
++        break;
++      cap *= 2;
++      text = xrealloc (text, cap + 1);
++    }
++  text[len] = '\0';
++  fclose (f);
++  return text;
++}
++
++/* The file into the state when the mode says so: owned at first use, shared whenever the file's time or size moved since the last load; a missing or empty file loads nothing.  */
++static int
++amk_ns_sync_in (const struct amk_engine *e, struct amk_ns *row)
++{
++  struct amk_text_sink sink = { { amk_text_write }, NULL, 0 };
++  struct stat st;
++  char *text;
++  int rc, moved;
++
++  if (row->mode < AMK_BACK_OWNED)
++    return 0;
++  if (stat (row->path, &st) < 0 || st.st_size == 0)
++    {
++      row->loaded = 1;
++      return 0;
++    }
++  moved = st.st_mtime != row->mtime || st.st_size != row->size;
++  if (row->loaded && (row->mode == AMK_BACK_OWNED || !moved))
++    return 0;
++  text = amk_ns_slurp (row->path);
++  if (text == NULL)
++    {
++      fprintf (stderr, "amk: store: %s: cannot read %s\n", row->name, row->path);
++      return 2;
++    }
++  if (getenv ("AMK_DEBUG") != 0)
++    fprintf (stderr, "amk: store: %s loaded from %s\n", row->name, row->path);
++  rc = amk_state_run (e, row->state, &sink.base, "load", text);
++  free (text);
++  free (sink.buf);
++  if (rc != 0)
++    return 2;
++  row->loaded = 1;
++  row->mtime = st.st_mtime;
++  row->size = st.st_size;
++  return 0;
++}
++
++/* The state into the file after a write, through a temp file beside it and a rename, with the file's new time and size kept so the next call does not read its own write back.  */
++static int
++amk_ns_sync_out (const struct amk_engine *e, struct amk_ns *row)
++{
++  struct amk_text_sink sink = { { amk_text_write }, NULL, 0 };
++  struct stat st;
++  char *tmp;
++  FILE *f;
++  int rc;
++
++  if (row->mode < AMK_BACK_OWNED)
++    return 0;
++  rc = amk_state_run (e, row->state, &sink.base, "get", ".");
++  if (rc != 0)
++    {
++      free (sink.buf);
++      return 2;
++    }
++  tmp = xmalloc (strlen (row->path) + 32);
++  sprintf (tmp, "%s.tmp.%ld", row->path, (long) getpid ());
++  f = fopen (tmp, "w");
++  if (f == NULL || (sink.len > 0 && fwrite (sink.buf, 1, sink.len, f) != sink.len) || fclose (f) != 0
++      || rename (tmp, row->path) < 0)
++    {
++      fprintf (stderr, "amk: store: %s: cannot write %s\n", row->name, row->path);
++      unlink (tmp);
++      free (tmp);
++      free (sink.buf);
++      return 2;
++    }
++  free (tmp);
++  free (sink.buf);
++  if (stat (row->path, &st) == 0)
++    {
++      row->mtime = st.st_mtime;
++      row->size = st.st_size;
++    }
++  row->loaded = 1;
++  return 0;
++}
++
++/* The store's backing declaration, a mode word then a path, on a row made on first use; a second declaration must repeat the first.  */
++int
++amk_store_backing (const char *ns, const char *spec)
++{
++  const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
++  const struct amk_engine *owner;
++  struct amk_ns *row;
++  char *copy, *word, *path;
++  int mode;
++
++  if (e == NULL || e->run == NULL)
++    {
++      fprintf (stderr, "amk: store: this build has no %s store\n", AMK_STORE_ENGINE);
++      return 2;
++    }
++  if (!amk_ns_valid (ns))
++    {
++      fprintf (stderr, "amk: store: namespace \"%s\" is not a name\n", ns);
++      return 2;
++    }
++  owner = amk_ns_owner (ns);
++  if (owner != NULL && owner != e)
++    {
++      fprintf (stderr, "amk: store: namespace %s belongs to %s\n", ns, owner->name);
++      return 2;
++    }
++  copy = xstrdup (spec);
++  word = strtok (copy, " \t");
++  path = word != NULL ? strtok (NULL, " \t") : NULL;
++  for (mode = AMK_BACK_RUN; mode <= AMK_BACK_SHARED; ++mode)
++    if (word != NULL && streq (word, amk_back_names[mode]))
++      break;
++  if (word == NULL || mode > AMK_BACK_SHARED || (mode >= AMK_BACK_OWNED && path == NULL)
++      || (path != NULL && strtok (NULL, " \t") != NULL))
++    {
++      fprintf (stderr, "amk: store: %s: expected a backing, one of run, owned PATH, shared PATH; got: %s\n", ns, spec);
++      free (copy);
++      return 2;
++    }
++  row = amk_ns_find (e, ns);
++  if (row == NULL)
++    row = amk_ns_add (e, ns);
++  if (row->mode != AMK_BACK_NONE)
++    {
++      int same = row->mode == mode && ((row->path == NULL && path == NULL)
++                                       || (row->path != NULL && path != NULL && streq (row->path, path)));
++      free (copy);
++      if (same)
++        return 0;
++      fprintf (stderr, "amk: store: %s is backed as %s%s%s already\n", ns, amk_back_names[row->mode],
++               row->path != NULL ? " " : "", row->path != NULL ? row->path : "");
++      return 2;
++    }
++  row->mode = mode;
++  row->path = path != NULL ? xstrdup (path) : NULL;
++  free (copy);
++  return 0;
+ }
+
+ /* create: the namespace held by the engine with a state of its own, and a handle with its star twin for each of the engine's operations; a second create by the same engine changes nothing. Main opens first, so an engine with one state keeps it there and refuses the second.  */
+@@ -3178,6 +3378,7 @@
+   const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
+   const struct amk_engine *owner;
+   struct amk_ns *row;
++  int rc;
+
+   if (e == NULL || e->run == NULL)
+     {
+@@ -3210,7 +3411,12 @@
+       fprintf (stderr, "amk: call: cannot open a %s state\n", e->name);
+       return 2;
+     }
+-  return amk_state_run (e, row->state, out, op, prog);
++  rc = amk_ns_sync_in (e, row);
++  if (rc == 0)
++    rc = amk_state_run (e, row->state, out, op, prog);
++  if (rc == 0 && (streq (op, "update") || streq (op, "load")))
++    rc = amk_ns_sync_out (e, row);
++  return rc;
+ }
+
+ /* The call channel's filter: the store's stateless run over the input text.  */
+@@ -3289,9 +3495,27 @@
+     OSS (fatal, reading_file, _("%s: namespace \"%s\" is not a name"), funcname, ns);
+   if (streq (op, "create"))
+     {
+-      if (argv[2] != NULL)
++      if (argv[2] != NULL && !streq (e->name, AMK_STORE_ENGINE))
+         OS (fatal, reading_file, _("%s: create takes no program"), funcname);
+       amk_ns_create (e, ns, funcname);
++      /* The store's create may name a backing, which a forwarder declares to the owner up the channel.  */
++      if (argv[2] != NULL)
++        {
++          char *spec = amk_trim (argv[2]);
++          if (amk_call_forwarding ())
++            {
++              struct amk_expand_sink sink;
++              char *line = xmalloc (strlen (ns) + strlen (spec) + 9);
++              sink.base.write = amk_expand_write;
++              sink.o = o;
++              sprintf (line, "create %s %s", ns, spec);
++              if (amk_call_forward (line, &sink.base) != 0)
++                OSS (fatal, reading_file, _("%s: namespace %s: the owner refused the backing"), funcname, ns);
++              free (line);
++            }
++          else if (amk_store_backing (ns, spec) != 0)
++            OSS (fatal, reading_file, _("%s: namespace %s: the backing was refused"), funcname, ns);
++        }
+       return o;
+     }
+   if (!amk_engine_has_op (e, op))
+--- a/src/main.c
++++ b/src/main.c
+@@ -5865,6 +5865,8 @@
+   }
+   while (*p == ' ' || *p == '\t')
+     ++p;
++  if (strcmp (op, "create") == 0)
++    return amk_store_backing (name, p);
+   if (strcmp (op, "dump") == 0)
+     return amk_store_call (out, "get", name, ".");
+   if (strcmp (op, "load") == 0) {

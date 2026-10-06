@@ -1,0 +1,185 @@
+A job's standard input from make text: $(amk.stdin text), expanded in a recipe line,
+feeds the text to the command on that line through a pipe, written by a detached helper
+so the text may be any size. The pipe is bound to the recipe line it was expanded in,
+by the target's variable set and the line's index, so lines and targets that interleave
+under -j each get their own. With it, an engine's flag form reads its program from
+standard input when the argument is a lone dash, so an imported target's program reaches
+its engine with no file and no argument limit.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -43,4 +43,11 @@
+ char *amk_func_goal (char *o, char **argv, const char *funcname);
+ char *amk_cell_text (const char *name, const char *engine, const char *body);
++struct child;
++struct amk_engine;
++char *amk_func_stdin (char *o, char **argv, const char *funcname);
++void amk_stdin_pending (struct child *child);
++int amk_stdin_fd (const void *child);
++void amk_stdin_drop (struct child *child);
++void amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv);
+ void amk_forget_children (void);
+ void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2907,4 +2907,5 @@
+   FT_ENTRY ("and",           1,  0,  0,  func_and),
+   FT_ENTRY ("goal",          1,  1,  1,  amk_func_goal),
++  FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
+@@ -3477,3 +3478,131 @@
+     }
+   return o;
+ }
++
++/* The pipes waiting for their recipe lines, each keyed by the target's variable set and the line's index; one is pending for the child about to start.  */
++struct amk_stdin
++{
++  const struct variable_set_list *set;
++  unsigned long line;
++  int fd;
++};
++static struct amk_stdin amk_stdins[64];
++static const void *amk_stdin_child;
++static int amk_stdin_ready = -1;
++
++/* $(amk.stdin text): a pipe that carries the text, filled by a helper detached twice so no one waits on it, and kept for the recipe line being expanded.  */
++char *
++amk_func_stdin (char *o, char **argv, const char *funcname)
++{
++  int p[2];
++  pid_t pid;
++  unsigned int i;
++
++  if (reading_file == NULL)
++    OS (fatal, NILF, _("$(%s ...): only in a recipe"), funcname);
++  for (i = 0; i < 64 && amk_stdins[i].fd > 0; ++i)
++    ;
++  if (i == 64 || pipe (p) < 0)
++    OS (fatal, NILF, _("$(%s ...): cannot open a pipe"), funcname);
++  fflush (NULL);
++  pid = fork ();
++  if (pid < 0)
++    OS (fatal, NILF, _("$(%s ...): cannot fork"), funcname);
++  if (pid == 0)
++    {
++      const char *s = argv[0];
++      size_t n = strlen (s);
++      if (fork () != 0)
++        _exit (0);
++      close (p[0]);
++      signal (SIGPIPE, SIG_DFL);
++      while (n > 0)
++        {
++          ssize_t w = write (p[1], s, n);
++          if (w < 0 && errno == EINTR)
++            continue;
++          if (w <= 0)
++            break;
++          s += w;
++          n -= w;
++        }
++      _exit (0);
++    }
++  waitpid (pid, NULL, 0);
++  close (p[1]);
++  amk_stdins[i].set = current_variable_set_list;
++  amk_stdins[i].line = reading_file->offset;
++  amk_stdins[i].fd = p[0];
++  return o;
++}
++
++/* The child about to run a line: its pipe for that line, if one waits, becomes the ready descriptor.  */
++void
++amk_stdin_pending (struct child *child)
++{
++  unsigned int i;
++  amk_stdin_child = child;
++  amk_stdin_ready = -1;
++  for (i = 0; i < 64; ++i)
++    if (amk_stdins[i].fd > 0 && amk_stdins[i].set == child->file->variables
++        && amk_stdins[i].line == child->command_line - 1)
++      {
++        amk_stdin_ready = amk_stdins[i].fd;
++        amk_stdins[i].fd = 0;
++        return;
++      }
++}
++
++/* The ready pipe when this is the child it waits for, else -1 and make chooses as usual.  */
++int
++amk_stdin_fd (const void *child)
++{
++  if (child == amk_stdin_child && amk_stdin_ready >= 0)
++    return amk_stdin_ready;
++  return -1;
++}
++
++/* A finished child: the parent's end of the pipe its line read, and any pipe its lines never ran, go.  */
++void
++amk_stdin_drop (struct child *child)
++{
++  unsigned int i;
++  if (child == amk_stdin_child)
++    {
++      if (amk_stdin_ready >= 0)
++        close (amk_stdin_ready);
++      amk_stdin_ready = -1;
++      amk_stdin_child = NULL;
++    }
++  for (i = 0; i < 64; ++i)
++    if (amk_stdins[i].fd > 0 && amk_stdins[i].set == child->file->variables)
++      {
++        close (amk_stdins[i].fd);
++        amk_stdins[i].fd = 0;
++      }
++}
++
++/* An engine flag followed by a lone dash: the program is standard input, read whole.  */
++void
++amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
++{
++  char *buf;
++  size_t len = 0, cap = 4096;
++  if (e->argv || argc < 2 || strcmp (argv[1], "-") != 0)
++    return;
++  buf = xmalloc (cap + 1);
++  while (1)
++    {
++      ssize_t r;
++      if (len == cap)
++        buf = xrealloc (buf, (cap *= 2) + 1);
++      r = read (STDIN_FILENO, buf + len, cap - len);
++      if (r < 0 && errno == EINTR)
++        continue;
++      if (r <= 0)
++        break;
++      len += r;
++    }
++  buf[len] = '\0';
++  argv[1] = buf;
++}
+--- a/src/job.c
++++ b/src/job.c
+@@ -1180,2 +1180,3 @@
+       free (child->command_lines);
++      amk_stdin_drop (child);
+     }
+@@ -2022,2 +2023,3 @@
+   child->file->cmds->fileinfo.offset = child->command_line - 1;
++  amk_stdin_pending (child);
+   return 1;
+@@ -2341,5 +2343,5 @@
+ child_execute_job (struct childbase *child, int good_stdin, char **argv)
+ {
+-  const int fdin = good_stdin ? FD_STDIN : get_bad_stdin ();
++  const int fdin = amk_stdin_fd (child) >= 0 ? amk_stdin_fd (child) : good_stdin ? FD_STDIN : get_bad_stdin ();
+   int fdout = FD_STDOUT;
+   int fderr = FD_STDERR;
+--- a/src/main.c
++++ b/src/main.c
+@@ -2023,2 +2023,3 @@
+             argv[1] = (char *) e->name;
++            amk_program_from_stdin (e, argc - 1, argv + 1);
+             exit (e->main (argc - 1, argv + 1));

@@ -17,7 +17,7 @@ NO_COLOR nor NOCOLOR is set.
 @@ -2924,2 +2924,3 @@
    FT_ENTRY ("goal",          1,  1,  1,  amk_func_goal),
 +  FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
-   FT_ENTRY ("job.stdin",     1,  1,  1,  amk_func_job_stdin),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
 @@ -3621,4 +3622,41 @@
      }
    buf[len] = '\0';

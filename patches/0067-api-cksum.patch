@@ -1,0 +1,129 @@
+Cksum: the checksum the cksum utility prints, as a builtin with no fork. $(cksum text)
+answers the checksum and the byte length joined by a dash, $(cksum.hex text) seven hex
+digits of the checksum modulo 2^28, and the .file forms hash a path's bytes whole, so
+$(cksum.file path) equals a shell's cksum over the same file. The text forms hash the
+bytes make hands them, a define's value with its newlines, and the star forms read a
+variable's dedented value under the usual rule. A file that cannot be read answers
+empty with one warning. The one routine, amk_cksum, is the cksum algorithm as POSIX
+gives it, not zlib's crc32, so a key spelled by the pipe cksum | awk comes out the same
+from the builtin and no cache entry moves. cksum joins .FEATURES, so a makefile can
+guard on it and keep the pipe for a stock make.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -53,6 +53,8 @@
+ char *amk_func_dedent (char *o, char **argv, const char *funcname);
+ char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
+ char *amk_dedent (const char *text, size_t *basep, int *badp);
++char *amk_func_cksum (char *o, char **argv, const char *funcname);
++unsigned long amk_cksum (const unsigned char *data, size_t len);
+ void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
+ struct child;
+ struct amk_engine;
+--- a/src/function.c
++++ b/src/function.c
+@@ -3670,6 +3670,12 @@
+   FT_ENTRY ("amk.dedent*",   1,  1,  1,  func_star),
+   FT_ENTRY ("amk.fxns?",     0,  0,  1,  func_bindings),
+   FT_ENTRY ("amk.vars?",     0,  0,  1,  func_bindings),
++  FT_ENTRY ("cksum",         0,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.hex",     0,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.file",    1,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.file.hex", 1, 1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum*",        1,  1,  1,  func_star),
++  FT_ENTRY ("cksum.hex*",    1,  1,  1,  func_star),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
+@@ -4727,3 +4733,80 @@
+
+   return amk_func_dedent (o, args, funcname);
+ }
++
++/* The cksum of a byte run, the checksum the cksum utility prints: the cyclic redundancy check of the data and then of its length a byte at a time, low byte first, complemented.  */
++unsigned long
++amk_cksum (const unsigned char *data, size_t len)
++{
++  static unsigned long table[256];
++  unsigned long crc = 0;
++  size_t i, rest = len;
++
++  if (table[1] == 0)
++    for (i = 0; i < 256; ++i)
++      {
++        unsigned long c = i << 24;
++        int j;
++        for (j = 0; j < 8; ++j)
++          c = (c & 0x80000000UL) ? ((c << 1) ^ 0x04C11DB7UL) : (c << 1);
++        table[i] = c & 0xFFFFFFFFUL;
++      }
++  for (i = 0; i < len; ++i)
++    crc = ((crc << 8) ^ table[((crc >> 24) ^ data[i]) & 0xFF]) & 0xFFFFFFFFUL;
++  for (; rest != 0; rest >>= 8)
++    crc = ((crc << 8) ^ table[((crc >> 24) ^ (rest & 0xFF)) & 0xFF]) & 0xFFFFFFFFUL;
++  return ~crc & 0xFFFFFFFFUL;
++}
++
++/* $(cksum text), $(cksum.hex text), $(cksum.file path) and $(cksum.file.hex path): the checksum and length as the cksum utility would print them joined by a dash, or seven hex digits of the checksum modulo 2^28; a file is read whole, and one that cannot be read answers empty with a warning.  */
++char *
++amk_func_cksum (char *o, char **argv, const char *funcname)
++{
++  const char *name = funcname + 5;
++  int file = strncmp (name, ".file", 5) == 0;
++  int hex = strcmp (name + (file ? 5 : 0), ".hex") == 0;
++  unsigned char *data = (unsigned char *) argv[0];
++  size_t len;
++  unsigned long crc;
++  char buf[64];
++
++  if (file)
++    {
++      FILE *fp = fopen (argv[0], "rb");
++      size_t cap = 65536;
++      if (fp == NULL)
++        {
++          error (reading_file, strlen (funcname) + strlen (argv[0]) + 64, _("%s: %s: %s"), funcname, argv[0], strerror (errno));
++          return o;
++        }
++      data = xmalloc (cap);
++      len = 0;
++      for (;;)
++        {
++          size_t got = fread (data + len, 1, cap - len, fp);
++          len += got;
++          if (len < cap)
++            break;
++          cap *= 2;
++          data = xrealloc (data, cap);
++        }
++      if (ferror (fp))
++        {
++          error (reading_file, strlen (funcname) + strlen (argv[0]) + 64, _("%s: %s: %s"), funcname, argv[0], strerror (errno));
++          fclose (fp);
++          free (data);
++          return o;
++        }
++      fclose (fp);
++    }
++  else
++    len = strlen (argv[0]);
++  crc = amk_cksum (data, len);
++  if (hex)
++    sprintf (buf, "%07lx", crc % 268435456UL);
++  else
++    sprintf (buf, "%lu-%lu", crc, (unsigned long) len);
++  if (file)
++    free (data);
++  return variable_buffer_output (o, buf, strlen (buf));
++}
+--- a/src/main.c
++++ b/src/main.c
+@@ -2371,7 +2371,7 @@
+     const char *features = "target-specific order-only second-expansion"
+                            " else-if shortest-stem undefine oneshell nocomment"
+                            " grouped-target extra-prereqs notintermediate"
+-                           " shell-export"
++                           " shell-export cksum"
+ #ifndef NO_ARCHIVES
+                            " archives"
+ #endif

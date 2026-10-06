@@ -143,7 +143,7 @@ itself, copied into the value directory by a pattern rule the first define enter
 +{
 +  static int prepared;
 +  static const char preamble[] = "$(shell mkdir -p %s)\n%s/%%: %%; @$(file >$@,$(file <$<))\n";
-+  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(job.stdin ${%s})$(MAKE) --%s %s >$@\n";
++  static const char shape[] = ".PHONY: %s\n%s: %s/%s; @$(info $(file <$<))\n%s/%s:%s; @$(amk.stdin ${%s})$(MAKE) --%s %s >$@\n";
 +  const char *program = strcmp (engine, "awk") == 0 ? "-f -" : strcmp (engine, "jq") == 0 ? "-n -f /dev/stdin" : "-";
 +  char *deps = amk_cell_deps (body);
 +  size_t len = sizeof preamble + sizeof shape + 4 * sizeof amk_goal_dir + 5 * strlen (name) + strlen (engine) + strlen (deps) + 24;

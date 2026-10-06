@@ -1,0 +1,120 @@
+Payload list: --ape-list prints every payload member, one per line, sorted, in the
+spelling --ape-unpack takes, so a reader learns what a binary carries without unpacking
+anything. It takes no argument and has no short form. It is settled ahead of the boot
+like unpack, so no distribution ever sees the flag; a build without a payload says so
+and fails.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -959,6 +959,7 @@
+     N_("  --serve SOCK ARGS...        Parse once and answer requests on SOCK as the zygote.\n"),
+     N_("  --client SOCK REQUEST...    Run REQUEST against a zygote; after --, a cold command for when it refuses.\n"),
+     N_("  --resident ARGS...          One command served by a zygote it starts and reaps itself.\n"),
++    N_("  --ape-list                  Print every payload member, one per line, as --ape-unpack names them.\n"),
+     N_("  --ape-unpack NAME [DEST]    Copy payload member NAME out and print its path; also -x NAME.\n"),
+     N_("  --force                     With --ape-unpack, overwrite a destination that exists.\n"),
+     N_("  --bundle FILES... --out DEST\n"),
+@@ -1431,8 +1432,78 @@
+     {
+       amk_unpack_fail ("rename", dest);
+       unlink (tmp);
++      return MAKE_FAILURE;
++    }
++  return MAKE_SUCCESS;
++}
++
++#include <dirent.h>
++
++static int
++amk_ape_list_cmp (const void *a, const void *b)
++{
++  return strcmp (*(const char *const *) a, *(const char *const *) b);
++}
++
++/* Every regular member under the directory, named relative to the payload root, appended to the list.  */
++static void
++amk_ape_list_walk (const char *dir, char ***names, size_t *n, size_t *cap)
++{
++  DIR *d = opendir (dir);
++  struct dirent *e;
++  struct stat st;
++  char *path;
++
++  if (!d)
++    return;
++  while ((e = readdir (d)) != NULL)
++    {
++      if (strcmp (e->d_name, ".") == 0 || strcmp (e->d_name, "..") == 0)
++        continue;
++      path = xmalloc (strlen (dir) + strlen (e->d_name) + 2);
++      sprintf (path, "%s/%s", dir, e->d_name);
++      if (stat (path, &st) < 0)
++        {
++          free (path);
++          continue;
++        }
++      if (S_ISDIR (st.st_mode))
++        {
++          amk_ape_list_walk (path, names, n, cap);
++          free (path);
++          continue;
++        }
++      if (*n == *cap)
++        {
++          *cap = *cap ? *cap * 2 : 64;
++          *names = xrealloc (*names, *cap * sizeof **names);
++        }
++      (*names)[(*n)++] = path;
++    }
++  closedir (d);
++}
++
++/* The payload's members, one per line, sorted, as --ape-unpack names them.  */
++static int
++amk_ape_list (void)
++{
++  char **names = NULL;
++  size_t i, n = 0, cap = 0;
++  struct stat st;
++
++  if (stat ("/zip", &st) < 0)
++    {
++      fprintf (stderr, "amk: --ape-list: this build carries no payload\n");
+       return MAKE_FAILURE;
+     }
++  amk_ape_list_walk ("/zip", &names, &n, &cap);
++  qsort (names, n, sizeof *names, amk_ape_list_cmp);
++  for (i = 0; i < n; ++i)
++    {
++      puts (names[i] + 5);
++      free (names[i]);
++    }
++  free (names);
+   return MAKE_SUCCESS;
+ }
+ #else
+@@ -1443,6 +1514,13 @@
+   fprintf (stderr, "amk: --ape-unpack: this build carries no payload\n");
+   return MAKE_FAILURE;
+ }
++
++static int
++amk_ape_list (void)
++{
++  fprintf (stderr, "amk: --ape-list: this build carries no payload\n");
++  return MAKE_FAILURE;
++}
+ #endif
+
+ /* Payload tools: every member under the payload's bin directory is unpacked
+@@ -2053,6 +2131,10 @@
+     (void) base;
+   }
+
++  /* The listing is settled ahead of the boot like unpack, and takes no argument.  */
++  if (argc >= 2 && strcmp (argv[1], "--ape-list") == 0)
++    exit (amk_ape_list ());
++
+   /* Unpack is settled ahead of the boot, so no distribution ever sees the flag.  */
+   if (argc >= 2)
+     {
