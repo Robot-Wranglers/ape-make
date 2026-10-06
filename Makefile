@@ -12,11 +12,13 @@ amk.version  ?= $(or $(patsubst v%,%,$(filter v%,$(amk.describe))),0.0.0-$(or $(
 make.version := 4.4.1
 make.tarball := make-$(make.version).tar.gz
 make.url     := https://ftp.gnu.org/gnu/make/$(make.tarball)
+make.mirror  := https://mirrors.kernel.org/gnu/make/$(make.tarball)
 make.sha256  := dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
 
 gawk.version := 5.3.1
 gawk.tarball := gawk-$(gawk.version).tar.xz
 gawk.url     := https://ftp.gnu.org/gnu/gawk/$(gawk.tarball)
+gawk.mirror  := https://mirrors.kernel.org/gnu/gawk/$(gawk.tarball)
 gawk.sha256  := 694db764812a6236423d4ff40ceb7b6c4c441301b72ad502bb5c27e00cd56f78
 
 jq.version := 1.7.1
@@ -315,8 +317,8 @@ install.user install.global: install.%:
 deps: $(deps.files) verify
 	@# Fetch every pinned input that is not already here, then verify all of them.
 
-$(make.tarball): url := $(make.url)
-$(gawk.tarball): url := $(gawk.url)
+$(make.tarball): url := $(make.url) $(make.mirror)
+$(gawk.tarball): url := $(gawk.url) $(gawk.mirror)
 $(jq.tarball): url := $(jq.url)
 $(lua.tarball): url := $(lua.url)
 $(s7.tarball): url := $(s7.url)
@@ -330,9 +332,11 @@ $(gmsl.tarball): url := $(gmsl.url)
 $(dkjson.tarball): url := $(dkjson.url)
 $(cosmocc.zip): url := $(cosmocc.url)
 $(deps.files):
-	$(call log, deps, fetching $@ from $(url))
-	curl -fsSL "$(url)" -o "$@.part" \
-	  || $(call die, deps, could not fetch $(url) -- partial file left at $@.part)
+	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
+	$(call log, deps, fetching $@ from $(firstword $(url)))
+	for u in $(url); do curl -fsSL --connect-timeout 30 --retry 3 --retry-all-errors "$$u" -o "$@.part" && break; \
+	  $(call log, deps, $$u did not answer); false; done \
+	  || $(call die, deps, could not fetch $@ from $(words $(url)) url(s) -- partial file left at $@.part)
 	mv "$@.part" "$@"
 
 verify:
