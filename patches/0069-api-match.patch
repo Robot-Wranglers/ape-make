@@ -1,0 +1,112 @@
+Match: a regular expression over lines, as a builtin with no fork. $(amk.match re,text)
+answers the lines of the text that an extended regular expression matches, in order and
+joined by newlines, and $(amk.match.file re,path) does the same over a file read whole,
+so a parse-time grep over a makefile, a staged module or a plugin directory becomes a
+call in this process. The pattern is the first argument, so a comma in it goes in a
+define, the way an engine program does; the star twin reads either argument from a
+variable. A line is what ends in a newline or the end of the input, and the newline that
+ends a file is not a line of its own. A pattern that does not compile is fatal, naming the
+function, the pattern and the compiler's reason; a file that cannot be read answers empty
+with one warning. match joins .FEATURES.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -55,6 +55,7 @@
+ char *amk_dedent (const char *text, size_t *basep, int *badp);
+ char *amk_func_cksum (char *o, char **argv, const char *funcname);
+ unsigned long amk_cksum (const unsigned char *data, size_t len);
++char *amk_func_match (char *o, char **argv, const char *funcname);
+ void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
+ struct child;
+ struct amk_engine;
+--- a/src/function.c
++++ b/src/function.c
+@@ -3676,6 +3676,9 @@
+   FT_ENTRY ("cksum.file.hex", 1, 1,  1,  amk_func_cksum),
+   FT_ENTRY ("cksum*",        1,  1,  1,  func_star),
+   FT_ENTRY ("cksum.hex*",    1,  1,  1,  func_star),
++  FT_ENTRY ("amk.match",     2,  2,  1,  amk_func_match),
++  FT_ENTRY ("amk.match.file", 2, 2,  1,  amk_func_match),
++  FT_ENTRY ("amk.match*",    2,  2,  1,  func_star),
+   FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
+@@ -4809,4 +4812,67 @@
+   if (file)
+     free (data);
+   return variable_buffer_output (o, buf, strlen (buf));
++}
++
++#include <regex.h>
++
++/* $(amk.match re,text) and $(amk.match.file re,path): the lines of the text or of the file that an extended regular expression matches, in order and joined by newlines; a pattern that does not compile is fatal, and a file that cannot be read answers empty with a warning.  */
++char *
++amk_func_match (char *o, char **argv, const char *funcname)
++{
++  int file = strcmp (funcname + 9, ".file") == 0;
++  regex_t re;
++  char *text, *line;
++  int rc = regcomp (&re, argv[0], REG_EXTENDED | REG_NOSUB);
++  int first = 1;
++
++  if (rc != 0)
++    {
++      char why[128];
++      regerror (rc, &re, why, sizeof why);
++      OSSS (fatal, reading_file, _("%s: %s: %s"), funcname, argv[0], why);
++    }
++  if (file)
++    {
++      FILE *fp = fopen (argv[1], "rb");
++      size_t cap = 65536, len = 0;
++      if (fp == NULL)
++        {
++          error (reading_file, strlen (funcname) + strlen (argv[1]) + 64, _("%s: %s: %s"), funcname, argv[1], strerror (errno));
++          regfree (&re);
++          return o;
++        }
++      text = xmalloc (cap);
++      for (;;)
++        {
++          len += fread (text + len, 1, cap - len - 1, fp);
++          if (len < cap - 1)
++            break;
++          cap *= 2;
++          text = xrealloc (text, cap);
++        }
++      fclose (fp);
++      text[len] = '\0';
++    }
++  else
++    text = xstrdup (argv[1]);
++  for (line = text; *line != '\0'; )
++    {
++      char *nl = strchr (line, '\n');
++      size_t len = nl != NULL ? (size_t) (nl - line) : strlen (line);
++      line[len] = '\0';
++      if (regexec (&re, line, 0, NULL, 0) == 0)
++        {
++          if (!first)
++            o = variable_buffer_output (o, "\n", 1);
++          o = variable_buffer_output (o, line, len);
++          first = 0;
++        }
++      if (nl == NULL)
++        break;
++      line = nl + 1;
++    }
++  regfree (&re);
++  free (text);
++  return o;
+ }
+--- a/src/main.c
++++ b/src/main.c
+@@ -2371,7 +2371,7 @@
+     const char *features = "target-specific order-only second-expansion"
+                            " else-if shortest-stem undefine oneshell nocomment"
+                            " grouped-target extra-prereqs notintermediate"
+-                           " shell-export cksum"
++                           " shell-export cksum match"
+ #ifndef NO_ARCHIVES
+                            " archives"
+ #endif

@@ -39,6 +39,20 @@ def _age(path, binary, seconds):
   os.utime(path, (at, at))
 
 
+def test_ape_list_names_every_member(amk, work):
+  """The listing is every payload member, one per line, sorted, in the spelling unpack takes, and nothing else."""
+  r = sh(amk, ["--ape-list"], timeout=60)
+  assert r.returncode == 0, r.stderr
+  names = r.stdout.splitlines()
+  assert names and names == sorted(names) and len(set(names)) == len(names), r.stdout[:500]
+  assert "lib/gmsl" in names and "lib/__gmsl" in names, names[:20]
+  assert not any(n.startswith("/") or "//" in n or n.endswith("/") for n in names), names[:20]
+  assert r.stderr == "", r.stderr
+  # a listed name is one unpack accepts, and its bytes are the payload's
+  r = sh(amk, ["--ape-unpack", "lib/gmsl", str(work / "gmsl")], timeout=60)
+  assert r.returncode == 0 and (work / "gmsl").read_bytes() == packed(amk, "lib/gmsl").encode(), r.stderr
+
+
 def test_first_write_prints_the_path(amk, work):
   """An include takes whatever the command prints, so the path is the whole of stdout."""
   r = sh(amk, ["--ape-unpack", "lib/gmsl"], cwd=work)

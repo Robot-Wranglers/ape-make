@@ -421,7 +421,7 @@ index e0005a1..5ea5812 100644
 +++ b/src/job.c
 @@ -1223,6 +1223,7 @@ free_child (struct child *child)
        free (child->command_lines);
-       amk_job_stdin_drop (child);
+       amk_stdin_drop (child);
      }
 +  amk_call_child_drop (child);
  

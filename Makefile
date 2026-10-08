@@ -278,7 +278,7 @@ die  = { printf '$(tty.red)via/amk $(strip $(1)) failed$(tty.off) %s\n' "$(strip
 show = printf '%-8s %-24s %-6s %s\n' '$(strip $(1))' '$(strip $(2))' \
          "$$(du -sh '$(strip $(2))' 2>/dev/null | cut -f1 || echo -)" '$(strip $(3))'
 
-.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.demos test test.native test.integration test.upstream build.docker smoke.docker install install.user install.global release release.preflight release.watch stat st status clean help FORCE
+.PHONY: amk deps verify toolchain patch build build.native guests guests.native smoke smoke.native smoke.demos test test.native test.integration test.upstream build.docker smoke.docker install install.user install.global release release.preflight release.watch stat st status vscode clean help FORCE
 .DEFAULT_GOAL := amk
 
 # The docs previews and the README header art.
@@ -761,6 +761,20 @@ stat:
 	$(call show, input, $(guests.host), the same from the host compiler)
 	$(call show, input, src, unpacked sources -- make patched and the guests pristine)
 	$(call show, input, cosmocc, the unpacked toolchain)
+
+#░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+vscode.stage = out/vscode
+vscode.vsix  = out/amk.vsix
+
+vscode:
+	@# Generate the editor grammars, pack them as $(vscode.vsix), and install that with code.
+	for t in node zip code; do command -v $$t >/dev/null || $(call die, vscode, $$t is not on PATH); done
+	rm -rf $(vscode.stage) $(vscode.vsix)
+	node $(HERE)vscode/build.js $(vscode.stage)
+	cd $(vscode.stage) && zip -qrX $(abspath $(vscode.vsix)) '[Content_Types].xml' extension.vsixmanifest extension
+	code --install-extension $(vscode.vsix) --force
+	$(call log, vscode, installed $(vscode.vsix) -- reload the window to pick it up)
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 

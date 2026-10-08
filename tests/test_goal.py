@@ -324,7 +324,7 @@ def test_awk_and_jq_imported_targets_take_their_program_their_own_way(amk, tmp_p
   assert r.stdout.strip() == "3", r.stdout + r.stderr
 
 
-def test_job_stdin_feeds_the_line_it_appears_in(amk, tmp_path):
+def test_amk_stdin_feeds_the_line_it_appears_in(amk, tmp_path):
   mk = tmp_path / "stdin.mk"
   mk.write_text("\n".join([
     "define text",
@@ -332,8 +332,8 @@ def test_job_stdin_feeds_the_line_it_appears_in(amk, tmp_path):
     "second line",
     "endef",
     "show:",
-    "\t@$(job.stdin $(text))cat",
-    "\t@$(job.stdin only one)tr a-z A-Z",
+    "\t@$(amk.stdin $(text))cat",
+    "\t@$(amk.stdin only one)tr a-z A-Z",
     "\t@echo plain",
     "",
   ]))
@@ -342,18 +342,18 @@ def test_job_stdin_feeds_the_line_it_appears_in(amk, tmp_path):
   assert r.stdout == "first line\nsecond lineONLY ONEplain\n", repr(r.stdout)
 
 
-def test_job_stdin_is_per_target_under_j(amk, tmp_path):
+def test_amk_stdin_is_per_target_under_j(amk, tmp_path):
   mk = tmp_path / "stdin-j.mk"
   mk.write_text("\n".join([
     "all: a b c",
     "a:",
-    "\t@$(job.stdin from a)sleep 0.2; cat",
+    "\t@$(amk.stdin from a)sleep 0.2; cat",
     "\t@echo",
     "b:",
-    "\t@$(job.stdin from b)cat",
+    "\t@$(amk.stdin from b)cat",
     "\t@echo",
     "c:",
-    "\t@sleep 0.1; $(job.stdin from c)cat",
+    "\t@sleep 0.1; $(amk.stdin from c)cat",
     "\t@echo",
     "",
   ]))

@@ -1,0 +1,45 @@
+{
+  "name": "amk",
+  "displayName": "amk",
+  "description": "Highlights the engine programs in amk makefiles: a define under an @lua, @micropy, @js, @s7, @jq, or @awk line takes that language's grammar.",
+  "version": "0.0.1",
+  "publisher": "robot-wranglers",
+  "license": "MIT",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "keywords": ["amk", "makefile", "make", "polyglot"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Robot-Wranglers/ape-make"
+  },
+  "scripts": {
+    "build": "node build.js ../out/vscode",
+    "test": "node test/grammar.test.js"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.0.0"
+  },
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "source.makefile.amk-engines",
+        "path": "./syntaxes/amk-engines.injection.json",
+        "injectTo": ["source.makefile"],
+        "embeddedLanguages": {
+          "meta.embedded.block.lua": "lua",
+          "meta.embedded.block.python": "python",
+          "meta.embedded.block.javascript": "javascript",
+          "meta.embedded.block.scheme": "scheme",
+          "meta.embedded.block.jq": "jq",
+          "meta.embedded.block.awk": "awk"
+        }
+      },
+      {
+        "scopeName": "source.makefile.amk-expansions",
+        "path": "./syntaxes/amk-expansions.injection.json",
+        "injectTo": ["source.makefile"]
+      }
+    ]
+  }
+}

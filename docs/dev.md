@@ -90,6 +90,53 @@ Docker Desktop's Rosetta layer segfaults every ape, so `--platform linux/amd64`
 containers on an arm64 Mac are not a test of the x86_64 half; `arch -x86_64` on the
 host is.
 
+## Profiling
+
+The profiler shows where a makefile spends its time while make expands it, broken down
+by name. It times three kinds of expansion:
+
+- `fn`: every builtin function, such as `shell`, `wildcard`, or an engine's `$(lua)`
+- `call`: every macro reached through `call`
+- `var`: every recursive variable as it expands
+
+Turn it on with the flag or the environment variable. Both take a file, or send the
+table to stderr without one:
+
+```bash
+# the table on stderr
+amk --profile -f Makefile
+
+# the table appended to prof.txt
+amk --profile=prof.txt -f Makefile
+AMK_PROFILE=prof.txt amk -f Makefile
+```
+
+The flag works anywhere on the command line and is removed before make, an engine, or a
+zygote sees it. When the process exits, amk appends one table: a header with the pid,
+the wall time, and the number of names, then one row per name, sorted by self time with
+the largest first.
+
+```text
+# amk profile pid=83032 wall=0.035s names=17
+   self_ms   total_ms    count  name
+    28.558     28.559        4  fn shell
+     0.066      0.066        1  fn wildcard
+     0.011     57.163        6  fn call
+     0.006     28.569        4  call once
+     0.004     28.563        4  var once
+     0.003     28.582        2  var twice
+```
+
+Self time is what a name spends on its own, with its children's time taken out. Total
+time includes them. A macro that only dispatches shows a self time near zero, so its work
+appears under the names it calls. In the table above, `twice` and `once` cost nothing
+themselves, and the whole run is the four `shell` calls at the bottom. Read self time to
+find the cost, and total time to find which caller leads to it.
+
+A sub-make inherits the setting and appends its own table to the same file, so a
+recursive build leaves one table per process. With profiling off, the cost is one check
+per expansion. The profiler is patch `0070`, and the flag is patch `0071`.
+
 ## Dependencies
 
 Every input is pinned by version and sha256 in the Makefile. Upstream ships no

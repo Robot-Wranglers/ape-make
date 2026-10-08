@@ -1,0 +1,37 @@
+Profile flag: --profile and --profile=FILE spell the profiler's environment switch as an
+option. Anywhere on the line, the flag sets AMK_PROFILE, to a dash for stderr or to FILE,
+and is taken out of argv before the multi-call names, a served request or make's option
+decoding see it, so a makefile, an engine or a zygote never meets the word. The flag joins
+the usage list; the profiler itself is patch 0070.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -963,6 +963,7 @@
+     N_("  --force                     With --ape-unpack, overwrite a destination that exists.\n"),
+     N_("  --bundle FILES... --out DEST\n"),
+     N_("                              Write a copy of this program whose default entry is that makefile program.\n"),
++    N_("  --profile[=FILE]            Time every function, call macro and recursive variable by name; the table goes to FILE, or to stderr.\n"),
+     NULL
+   };
+
+@@ -2012,6 +2013,20 @@
+   /* Useful for attaching debuggers, etc.  */
+   SPIN ("main-entry");
+
++  /* The profile flag anywhere on the line is the environment switch spelled as an option: it sets AMK_PROFILE and leaves argv, so no engine, request or option decoding sees it.  */
++  {
++    int i, j = 1;
++    for (i = 1; i < argc; ++i)
++      if (strcmp (argv[i], "--profile") == 0)
++        setenv ("AMK_PROFILE", "-", 1);
++      else if (strncmp (argv[i], "--profile=", 10) == 0 && argv[i][10] != '\0')
++        setenv ("AMK_PROFILE", argv[i] + 10, 1);
++      else
++        argv[j++] = argv[i];
++    argv[j] = NULL;
++    argc = j;
++  }
++
+ #ifndef WINDOWS32
+   /* Multi-call: run under an engine's name, or with its flag first, the file is that engine; --list-engines names them.  */
+   {
