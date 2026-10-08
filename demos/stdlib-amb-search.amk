@@ -1,0 +1,21 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-search.amk
+#
+
+__main__: search
+
+@s7.target
+define search
+  (load "amb.scm" (rootlet))
+  (define (upto n)
+    (let loop ((i n) (acc ()))
+      (if (< i 1) acc (loop (- i 1) (cons i acc)))))
+  (define (triples n)
+    (amb-collect
+      (lambda ()
+        (let* ((a (amb (upto n))) (b (amb (upto n))) (c (amb (upto n))))
+          (if (or (> a b) (not (= (+ (* a a) (* b b)) (* c c)))) (fail))
+          (list a b c)))))
+  (format #t "triples: ~A~%" (triples 20))
+endef

@@ -1,7 +1,7 @@
 {
   "name": "amk",
   "displayName": "amk",
-  "description": "Highlights the engine programs in amk makefiles: a define under an @lua, @micropy, @js, @s7, @jq, or @awk line takes that language's grammar.",
+  "description": "Highlights amk makefiles: a define under an @lua, @micropy, @js, @s7, @jq, @awk, @tinygo, @zig, @wat, @amk.target, or @bash.target decorator takes that language's grammar, and a decorator's arguments, options, and prerequisites are marked.",
   "version": "0.0.1",
   "publisher": "robot-wranglers",
   "license": "MIT",
@@ -21,6 +21,12 @@
     "vscode-textmate": "^9.0.0"
   },
   "contributes": {
+    "languages": [
+      {
+        "id": "makefile",
+        "extensions": [".amk"]
+      }
+    ],
     "grammars": [
       {
         "scopeName": "source.makefile.amk-engines",
@@ -32,7 +38,11 @@
           "meta.embedded.block.javascript": "javascript",
           "meta.embedded.block.scheme": "scheme",
           "meta.embedded.block.jq": "jq",
-          "meta.embedded.block.awk": "awk"
+          "meta.embedded.block.awk": "awk",
+          "meta.embedded.block.go": "go",
+          "meta.embedded.block.zig": "zig",
+          "meta.embedded.block.wat": "wat",
+          "meta.embedded.block.shellscript": "shellscript"
         }
       },
       {

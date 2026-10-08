@@ -1,0 +1,50 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/actors-group-handle.amk:
+#  members reaching their group through its handle: a bound body sees the
+#  group by its own name and as __group__, with the mailbox verbs as
+#  itself. alpha, in micropy, asks beta, in lua, for three squares and
+#  waits on each answer, then casts bye; every inbox and reply ends empty.
+#
+
+load actor
+
+__main__: my_group.__main__ show.after
+
+@actor.group
+define my_group
+  {
+    "backend": "effection",
+    // an inbox per member, and a reply pool so any member may ask
+    "mailbox": "pool", "ask": true,
+    // every member a call by default, none restarted
+    "kind": "call", "restart": "never",
+    // no members as data: each joins by its at line
+    "children": {},
+  }
+endef
+
+# Asks as itself through the group's handle, by the group's name.
+@my_group.actor/micropy
+define alpha
+  for n in (2, 3, 4):
+    got = __group__.ask("beta", str(n))
+    print("alpha: %d squared is %s" % (n, got))
+  my_group.cast("beta", "bye")
+endef
+
+# Reads its own inbox through __group__, the same handle under a fixed name.
+@my_group.actor/lua
+define beta
+  while true do
+    local m = __group__.recv()
+    if m == "bye" then print("beta: bye") break end
+    local n = tonumber(m:match(":(%d+)$"))
+    __group__.reply(m, tostring(n * n))
+  end
+endef
+
+show.after:
+	@echo "alpha inbox: $(amk.pool.size my_group.alpha.inbox)"
+	@echo "beta inbox: $(amk.pool.size my_group.beta.inbox)"
+	@echo "reply: $(amk.pool.size my_group.alpha.reply)"

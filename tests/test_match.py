@@ -1,7 +1,7 @@
 """Pins the match builtins against grep.
 
-`$(amk.match re,text)` answers the lines of the text an extended regular expression
-matches, `$(amk.match.file re,path)` the same over a file, and the star form reads the
+`$(re.match re, text)` answers the lines of the text an extended regular expression
+matches, `$(re.match.file re, path)` the same over a file, and the star form reads the
 pattern or the text from a variable. Every answer is compared with `grep -E` over the same
 lines, so the builtin can stand in for a parse-time grep shell.
 """
@@ -60,7 +60,7 @@ def test_match_is_a_feature(amk, tmp_path):
 @pytest.mark.parametrize("case", CASES.keys())
 def test_text_matches_grep(amk, tmp_path, case):
   pattern = CASES[case]
-  text = body("text", TEXT) + "\n" + body("re", pattern) + "\n$(info [$(amk.match $(value re),$(value text))])"
+  text = body("text", TEXT) + "\n" + body("re", pattern) + "\n$(info [$(re.match $(value re),$(value text))])"
   r = run(amk, tmp_path, text)
   assert r.returncode == 0, r.stdout + r.stderr
   assert f"[{host_grep(pattern, TEXT)}]" in r.stdout, r.stdout
@@ -71,7 +71,7 @@ def test_file_matches_grep(amk, tmp_path):
   path = tmp_path / "lines.txt"
   path.write_text(TEXT + "\n")
   pattern = CASES["header"]
-  text = body("re", pattern) + f"\n$(info [$(amk.match.file $(value re),{path})])"
+  text = body("re", pattern) + f"\n$(info [$(re.match.file $(value re),{path})])"
   r = run(amk, tmp_path, text)
   assert r.returncode == 0, r.stdout + r.stderr
   assert f"[{host_grep(pattern, TEXT)}]" in r.stdout, r.stdout
@@ -80,28 +80,36 @@ def test_file_matches_grep(amk, tmp_path):
 def test_a_trailing_newline_is_not_a_line(amk, tmp_path):
   path = tmp_path / "lines.txt"
   path.write_text("a\n\nb\n")
-  r = run(amk, tmp_path, f"$(info [$(amk.match.file ^,{path})])")
+  r = run(amk, tmp_path, f"$(info [$(re.match.file ^, {path})])")
   assert r.returncode == 0, r.stdout + r.stderr
   # every line matches, the empty one included; the newline that ends the file is not a line
   assert "[a\n\nb]" in r.stdout, r.stdout
 
 
+def test_the_file_path_is_trimmed(amk, tmp_path):
+  path = tmp_path / "lines.txt"
+  path.write_text("a\nb\n")
+  r = run(amk, tmp_path, f"$(info [$(re.match.file b, {path} )])")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[b]" in r.stdout, r.stdout + r.stderr
+
+
 def test_a_missing_file_is_empty_with_a_warning(amk, tmp_path):
-  r = run(amk, tmp_path, f"$(info [$(amk.match.file x,{tmp_path}/absent)])")
+  r = run(amk, tmp_path, f"$(info [$(re.match.file x, {tmp_path}/absent)])")
   assert r.returncode == 0, r.stdout + r.stderr
   assert "[]" in r.stdout, r.stdout
-  assert "amk.match.file" in r.stderr and "absent" in r.stderr, r.stderr
+  assert "re.match.file" in r.stderr and "absent" in r.stderr, r.stderr
 
 
 def test_a_bad_pattern_is_fatal(amk, tmp_path):
-  r = run(amk, tmp_path, "$(info [$(amk.match x[,x)])")
+  r = run(amk, tmp_path, "$(info [$(re.match x[, x)])")
   assert r.returncode != 0, r.stdout
-  assert "amk.match" in r.stderr, r.stderr
+  assert "re.match" in r.stderr, r.stderr
 
 
 @needs_host
 def test_star_reads_variables(amk, tmp_path):
-  text = body("text", TEXT) + "\n" + body("re", CASES["colon"]) + "\n$(info [$(amk.match* re, text)])"
+  text = body("text", TEXT) + "\n" + body("re", CASES["colon"]) + "\n$(info [$(re.match* re, text)])"
   r = run(amk, tmp_path, text)
   assert r.returncode == 0, r.stdout + r.stderr
   assert f"[{host_grep(CASES['colon'], TEXT)}]" in r.stdout, r.stdout

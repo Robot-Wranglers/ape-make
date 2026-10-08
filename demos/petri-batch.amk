@@ -1,0 +1,40 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/petri-batch.amk:
+#  concurrent firing: six one-second jobs as agoal steps, in flight at once
+#  as far as an arc from a pool of three runners allows. A firing takes its
+#  inputs and a runner, launches its job, and gives both back when it lands,
+#  so the run takes about two seconds where a serial one takes six.
+#
+
+load dsys/petri
+
+__main__: batch.__main__ show.after
+
+$(amk.pool runners, 3)
+batch.began := $(shell date +%s)
+
+@petri
+define batch
+  {
+    "places": { "queue": ["j1", "j2", "j3", "j4", "j5", "j6"], "done": [] },
+    "transitions": ["work"],
+    // work takes a job and a runner, then frees the runner and files the job
+    "arcs": [["queue", "work"], ["runners", "work"],
+             ["work", "done"], ["work", "runners"]],
+    "amk": {
+      // the runners place is the runners pool, so its size bounds the work
+      "pools": { "runners": "runners" },
+      "steps": { "work": { "run": "job", "kind": "agoal" } },
+      "final": { "done": 6 },
+    },
+  }
+endef
+
+# A job prints as it starts and ends, so the overlap shows in its lines.
+job:
+	@echo "start $(batch.work.token)"; sleep 1; echo "end $(batch.work.token)"
+
+show.after:
+	@echo "marking: $(batch.marking ), runners free: $(amk.pool.size runners)"
+	@echo "elapsed: $$(( $$(date +%s) - $(batch.began) ))s for 6 jobs of 1s"

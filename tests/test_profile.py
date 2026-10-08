@@ -9,6 +9,8 @@ what it dispatched to. Unset, nothing is written.
 
 import re
 
+import pytest
+
 from conftest import sh
 
 PROGRAM = "\n".join([
@@ -97,3 +99,27 @@ def test_a_file_collects_every_process(amk, tmp_path):
   text = log.read_text()
   assert len(HEADER.findall(text)) == 1, text
   assert "call twice" in text, text
+
+
+@pytest.mark.engines("lua")
+def test_a_guest_target_appends_its_own_table(amk, tmp_path):
+  """A guest target runs in a forked job, whose calls land in a second table under its pid."""
+  mk = tmp_path / "job.mk"
+  mk.write_text("\n".join([
+    "@lua.target",
+    "define job",
+    '  print(amk.expand("$(words a b c)"))',
+    "endef",
+    "all: job",
+    "",
+  ]))
+  log = tmp_path / "profile.txt"
+  r = sh(amk, ["-f", str(mk)], env={"AMK_PROFILE": str(log)}, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "3", r.stdout
+  text = log.read_text()
+  tables = [t for t in text.split("# amk profile")[1:]]
+  assert len(tables) >= 2, text
+  # the main process writes last; the job's table is an earlier one and holds the call its body made
+  assert "fn words" not in rows(tables[-1]), tables[-1]
+  assert [rows(t).get("fn words", (0, 0, 0))[2] for t in tables[:-1]].count(1) == 1, text

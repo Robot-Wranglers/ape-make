@@ -1,0 +1,26 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-yinyang.amk
+#  Adapted from: "Call-with-current-continuation", Wikipedia,
+#  https://en.wikipedia.org/wiki/Call-with-current-continuation#Examples
+#
+
+__main__: yinyang
+
+@s7.target
+define yinyang
+  (define out (open-output-string))
+  (define budget 20)
+  (define escape #f)
+  (define (mark c)
+    (write-char c out)
+    (set! budget (- budget 1))
+    (if (= budget 0) (escape (get-output-string out))))
+  (format #t "yin-yang: ~A~%"
+    (call/cc
+      (lambda (stop)
+        (set! escape stop)
+        (let* ((yin ((lambda (cc) (mark #\@) cc) (call/cc (lambda (c) c))))
+               (yang ((lambda (cc) (mark #\*) cc) (call/cc (lambda (c) c)))))
+          (yin yang)))))
+endef

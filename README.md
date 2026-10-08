@@ -1,72 +1,61 @@
-<!-- header amk "amk" | Overview #overview | Install #install | Bundling #bundling | Guests #guests | Special Guests #special-guests | Zygote #zygote | CLI #cli | Dev #dev -->
-<p align="right"><a id="amk"></a><a href="#amk"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.title.dark.svg"><img align=left src="docs/img/hdr/readme.amk.title.svg" alt="amk"></picture></a><a href="#overview"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.0.dark.svg"><img src="docs/img/hdr/readme.amk.0.svg" alt="Overview"></picture></a><a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.1.dark.svg"><img src="docs/img/hdr/readme.amk.1.svg" alt="Install"></picture></a><a href="#bundling"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.2.dark.svg"><img src="docs/img/hdr/readme.amk.2.svg" alt="Bundling"></picture></a><a href="#guests"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.3.dark.svg"><img src="docs/img/hdr/readme.amk.3.svg" alt="Guests"></picture></a><a href="#special-guests"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.4.dark.svg"><img src="docs/img/hdr/readme.amk.4.svg" alt="Special Guests"></picture></a><a href="#zygote"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.5.dark.svg"><img src="docs/img/hdr/readme.amk.5.svg" alt="Zygote"></picture></a><a href="#cli"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.6.dark.svg"><img src="docs/img/hdr/readme.amk.6.svg" alt="CLI"></picture></a><a href="#dev"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.7.dark.svg"><img src="docs/img/hdr/readme.amk.7.svg" alt="Dev"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+<!-- header # amk "amk" | Features #features | Install #install | Bundling #bundling | Tools #tools | Libraries #libraries | Engines #engines | Zygote #zygote | Env & CLI #environment-and-cli | Dev #dev | Refs #references -->
+<h1><a id="amk"></a>amk<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.9.dark.svg"><img align=right src="docs/img/hdr/readme.amk.9.svg" alt="Refs"></picture></a><a href="#dev"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.8.dark.svg"><img align=right src="docs/img/hdr/readme.amk.8.svg" alt="Dev"></picture></a><a href="#environment-and-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.7.dark.svg"><img align=right src="docs/img/hdr/readme.amk.7.svg" alt="Env &amp; CLI"></picture></a><a href="#zygote"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.6.dark.svg"><img align=right src="docs/img/hdr/readme.amk.6.svg" alt="Zygote"></picture></a><a href="#engines"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.5.dark.svg"><img align=right src="docs/img/hdr/readme.amk.5.svg" alt="Engines"></picture></a><a href="#libraries"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.4.dark.svg"><img align=right src="docs/img/hdr/readme.amk.4.svg" alt="Libraries"></picture></a><a href="#tools"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.3.dark.svg"><img align=right src="docs/img/hdr/readme.amk.3.svg" alt="Tools"></picture></a><a href="#bundling"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.2.dark.svg"><img align=right src="docs/img/hdr/readme.amk.2.svg" alt="Bundling"></picture></a><a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.1.dark.svg"><img align=right src="docs/img/hdr/readme.amk.1.svg" alt="Install"></picture></a><a href="#features"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.amk.0.dark.svg"><img align=right src="docs/img/hdr/readme.amk.0.svg" alt="Features"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/icon-dark.svg"><img src="docs/img/icon.svg" width="60%" alt="amk"></picture></p>
 
 <p><strong>amk</strong> is ape-make, an actually portable cosmopolitan <code>make</code>.  It's a drop in replacement forked from make-4.4.1, but with enough brand new superpowers that it's a distinct dialect.</p>
 
-Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, multi-language scripting environment without any need for docker.  Besides embedding support for [python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm), it also provides other support for bidirectional FFI, can handle modules, package external tools, and can output a bundle as a portable artifact.
+Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, single-file, multi-language scripting environment without any need for docker.  Besides embedding support for [python](#micropy), [js](#js), [lua](#lua), and [lisp](#s7), other guests can be reached via [wasm](#wasm).  FFI support is omnidirectional: guest-to-host, host-to-guest, and guest-to-guest are all supported.  Additionally `amk` can also handle [modules](#modules), package [external tools](#tools), and can output a [bundle](#bundles) as a portable artifact.
 
-One consequence of this is that Makefile *(and a small, optional extension of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh?  Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.
+One consequence of this is that Makefile *(and a small, optional extension of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh?  Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.  But there's more!  Is it ready for concurrent guests?  [Yes.](docs/runtime.md) Collaborative datastructures and ways to build more?  [Yes.](docs/data-engines.md)
 
-Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.
+Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.  Or rather.. `amk` is several languages + the new one that coordinates.  AMK-Lang is a <a href=https://esolangs.org/wiki/Matrioshka_language>Matrioshka Language</a> that's actually useful.
+
+<p align="center"><img src="docs/img/engines.png" width="90%" alt="amk's engines as a tree: language and data engines, with the stacked engines and services under the engines they run on"></p>
+
+<a id="just-show-me"></a>
 
 ## Just Show Me
 
-Here's a JSON-RPC server where every method lives in a different language and `amk` glues them together.  Transport works via HTTP, using a python guest, serving with microdot *(like flask, but smaller)* from mip *(like pip, but micropython)*.
+Back to the regularly scheduled docs after a demo for the impatient.  Here's a JSON-RPC server where every method lives in a different language and `amk` glues them together.  Transport works via HTTP, using a python guest, serving with microdot *(like flask, but smaller)* from mip *(like pip, but micropython)*.
 
 ```Makefile
-#!/usr/bin/env -S amk -f
-
 PORT ?= 18090
 
-include /zip/lib/mip.mk
+load mip
 
 @lua.import
 define lua_namespace
-  function add(a, b) return tonumber(a) + tonumber(b) end
-  function sorted(xs)
-    local t = {}
-    for x in xs:gmatch("%S+") do t[#t + 1] = tonumber(x) end
-    table.sort(t)
-    return table.concat(t, " ")
-  end
+  function title(s) return (s:gsub("%f[%w]%l", string.upper)) end
+  function flip(s) return s:reverse() end
 endef
 
 @js.import
 define js_namespace
-  function shout(s) { return s.toUpperCase() + "!"; }
-  function report(sorted, total) {
-    return JSON.stringify({
-      sorted: sorted.split(" ").map(Number),
-      total: Number(total) }); }
+  function report(sorted, title, loud) {
+    return JSON.stringify({ sorted: sorted.split(" "), title, loud }); }
 endef
 
 @s7.import
 define s7_namespace
-  (define (fact n)
-    (let loop
-      ((n (string->number n)) (acc 1)) \
-      (if (< n 2) acc (loop (- n 1) (* n acc)))))
-  (define (total xs)
-    (apply + (with-input-from-string (string-append "(" xs ")") read)))
+  (define (shout s) (string-append (string-upcase s) "!"))
+  (define (quiet s) (string-downcase s))
 endef
 
 # Another method, composed on host, made up of different guests
-stats = $(report $(sorted $1),$(total $1))
+describe = $(report $(sort $1),$(title $1),$(shout $1))
 
-# Register the host method directly and all guests via reflection
-rpc.methods = stats $(amk.fxns? lua, js, s7)
+# Register the host-method directly, all the guests via reflection
+rpc.methods = describe $(amk.fxns? lua, js, s7)
 
 # HTTP server deps (caching after first run)
-define mip.manifest
+@mip.install
+define deps
   { "microdot": {
+      // no sha256, so the run names the digest to pin
       "version": "v2.7.0",
-      "spec": "github:miguelgrinberg/microdot/src/microdot/microdot.py",
-      "sha256": "7abf80436064aff030fb123c2947260674c84001517322d7c8517b7f2425e01a"
-    }
-  }
+      "spec": "github:miguelgrinberg/microdot/src/microdot/microdot.py" } }
 endef
 
 @micropy.import
@@ -80,29 +69,20 @@ define rpc.server
     try: return json.loads(s)
     except ValueError: return s
 
-  def _arg(p):
-    return " ".join(map(str, p)) \
-      if isinstance(p, list) else str(p)
-
   def serve(port):
     from microdot import Microdot
     app = Microdot()
 
     @app.post("/")
     async def rpc(req):
-      q = req.json
-      reply = dict(jsonrpc="2.0", id=q["id"])
+      q, reply = req.json, dict(jsonrpc="2.0", id=req.json["id"])
       if q["method"] not in methods:
-        reply["error"] = dict(code=-32601, message="No Such Method")
-        return reply
-      params = [_arg(p) for p in q["params"]]
-
+        return dict(reply, error=dict(code=-32601, message="No Such Method"))
       # Async-call dispatch back into other guests: `amk.acall`
-      reply["result"] = _val(await amk.acall(q["method"], *params))
+      reply["result"] = _val(await amk.acall(q["method"], *q["params"]))
       return reply
 
-    print("http://127.0.0.1:%s/" % port, file=sys.stderr)
-    print("Methods: %s" % " ".join(methods), file=sys.stderr)
+    print(f"http://127.0.0.1:{port}/ {' '.join(methods)}", file=sys.stderr)
     app.run(port=int(port))
 endef
 
@@ -110,39 +90,43 @@ __main__:
 	echo "json-rpc: methods $(rpc.methods)"
 	echo "run it with: $(amk) serve PORT=$(PORT)"
 
-serve: mip.install
+serve: deps
 	$(serve $(PORT))
 ```
 
-Run it with `amk -f demos/json-rpc.mk serve`, then post a request:
+Run it with `amk -f demos/json-rpc.amk serve`, then post a request:
 
 ```bash
 curl -s -X POST \
   -H 'Content-Type: application/json' http://127.0.0.1:18090/ \
-  -d '{ "jsonrpc":"2.0","id":1, "method":"stats","params":["3 1 2"]}'
-# {"jsonrpc": "2.0", "id": 1, "result": {"sorted": [1, 2, 3], "total": 6}}
+  -d '{ "jsonrpc":"2.0","id":1, "method":"describe","params":["pear fig banana"]}'
+# {"jsonrpc": "2.0", "id": 1, "result": {"sorted": ["banana", "fig", "pear"], "title": "Pear Fig Banana", "loud": "PEAR FIG BANANA!"}}
 ```
 
-A toy example, but what do you think?  Not so far away from useful FAAS or MCP, eh?  The whole thing is in the repo [here](demos/json-rpc.mk), runnable from a checkout.  Highlights:
+A toy example, but what do you think?  Not so far away from useful FAAS or MCP, eh?  This highlights:
 
-* Optional [extended grammar](#extended-grammar) with `@lua.import` and friends
-* [Simple reflection](docs/FFI.md#reflection) with `amk.fxns?`
-* [Bundled builtin libs](#builtin-libraries), via `include /zip/..`
-* [Guest handle](#bridge-mode), as seen in `amk.var`, `amk.acall`
+* Optional [Extended Grammar](#extended-grammar) with `@micropy.import` and friends
+* [Simple Reflection](docs/FFI.md#reflection) with `amk.fxns?`
+* [Bundled Builtin Libs](#libraries), via `include /zip/..`
+* [Guest Handles](#bridge-mode), as seen in `amk.var`, `amk.acall`
 
-For smaller demos jump to [this section](#misc-examples), and for a larger one more in the notebook / dataflow style, see [here](demos/dataflow-1.mk).  With that out of the way.. back to the docs.
+If you're moving past the Makefiles of your ancestors, you may want to consider a `.amk` extension when leveraging the optional features.  And speaking of highlighting and grammar, syntax coloring for the guests [is supported too](docs/syntax-hl.md).  
 
-<a id="overview"></a><br/>
+For other demos, see also [this section](#misc-examples) for small snippets, or the index of all demos [here](demos/).  A few of special interest: [Notebook / Dataflow style](demos/dataflow-1.amk), [Actors / Supervisors](docs/runtime.md#demos), and advanced [datastructures](docs/data-engines.md) including [tuple-space reactors](demos/tuplespace-1.amk).  
 
-## Overview
+With that out of the way.. back to the regularly scheduled documentation.
 
-The main use-cases:
+<a id="features"></a><br/>
 
-1. **[Bundling & Distribution](#bundling):**  Solves for *bundles anything* as well as *runs anywhere*.  Did you know that all APEs are at once bins and zip files?  Besides just being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  Code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work, or, several can be involved.  **Shipping monoliths composed of modules is easy.**
+## Features
 
-1. **[Standard Guests](#guests)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit;  No worries if `make` is available **or** which `awk` is available, or if either is available.  **Portable scripting environment, no containers.**
+The main use-cases for `amk` are:
 
-1. **[Special Guests](#special-guests):** Basically a **polyglot VM in miniature!** Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  **A tiny Graal, but without JDK.**
+1. **[Bundling & Distribution](#bundling):**  Solves for *bundles anything* as well as *runs anywhere*.  Did you know that all APEs are at once bins and zip files?  Beyond just being platform-agnostic `amk` leverages this into a working *quasi-compiler* for Makefile, i.e. producing new executables by shipping source file(s) with a copy of the interpreter.  Code involved *does not* actually need to be Makefile either.. a layered approach to bootstrap permits any language that `amk` embeds to work, or, several can be involved.  **Shipping monoliths composed of modules is easy.**
+
+1. **[Standard Guests](#tools)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit;  No worries if `make` is available **or** which awk/sed are available, or if any are available.  **Portable scripting environment, no containers.**
+
+1. **[Special Guests](#engines):** Yup it's basically a **polyglot VM in miniature!** Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [js](#js), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  Lightweight supervision and orchestration not enough?  Put any of the guests in charge of it instead and nerd out with [effection](#js), [coroutines](#lua), or [call/cc](#s7).  **A tiny Graal, but without JDK.**
 
 1. **[Zygote / Resident Mode](#zygote):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Keep most of the "incremental computing" model, get extras for **improved recursion, FP, workflows, dataflows.**
 
@@ -162,7 +146,7 @@ mkdir -p ~/.local/bin && mv amk ~/.local/bin/
 amk --version
 ```
 
-Apple silicon's first run may need a C compiler.. run `xcode-select --install` if `cc` is missing.  (Annoying, but it's an upstream thing about code-signing, see [cosmo docs](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas))
+Apple silicon's first run may need a C compiler.. run `xcode-select --install` if `cc` is missing.  (Annoying, but it's an upstream thing about code-signing, see cosmo docs[^cosmo-gotchas])
 
 Each release carries a checksum beside the binary:
 
@@ -177,21 +161,23 @@ sha256sum -c amk.sha256
 shasum -a 256 -c amk.sha256
 ```
 
-A first run, with lua doing the arithmetic:
+A first run, with python doing the arithmetic:
 
 ```bash
-printf 'hello:\n\techo $(lua print(6 * 7))\n' | amk -f - hello
+printf 'hello:\n\techo $(micropy print(6 * 7))\n' | amk -f - hello
 # 42
 ```
 
+<a id="docker"></a>
+
 ### Docker
+
+Since `amk` on your host is usable from any container, you can share the binary with a bind-mount.  This repository publishes a container anyway, which is useful in case you don't want the binary on the host, or if want to pull it into other containers during builds.
 
 ```bash
 docker run --rm -v "$PWD:/work" \
   ghcr.io/robot-wranglers/amk:latest <target>
 ```
-
-Use the `wasm3` tag for the build with the [wasm](#wasm) engine.  Also of interest, `amk` on your host is typically usable from from *any* container if you want to bind-mount the binary.
 
 <a id="bundling"></a><br/>
 <a id="payloads"></a><br/>
@@ -226,33 +212,34 @@ Extraction prints the path and skips the copy when one is already current.  Amon
 include $(shell ./my.tool --ape-unpack=lib/greet.mk)
 ```
 
-Inside a bundle, `include` can resolve against the payload and `$(MAKE)` reaches the same program.
+Inside a bundle, `include` can resolve against the payload, so can [`load`](#modules), and `$(MAKE)` reaches the same program.
 
 - Run `--bundle` from the directory your includes are relative to; archive members keep those names.
 - A file of the same name in the working directory shadows a payload include.
 - Bundling needs nothing but amk: no compiler, no external `zip` tool.
 
-<a id="guests"></a><br/>
+## Batteries Included 
 
-## Standard Guests
-
-Standard guests are bundled tools and a few libraries that ride along in the payload.
+[Bundled tools](#tools) and [a few libraries](#libraries) ride along in the [payload](#payloads).
 
 The problem this solves is that certain platforms (looking at you MacOS, but also minimal containers) may default to having *other* utilities besides `make` which are missing by default, or non-GNU, or pinned to incredibly ancient versions.  Usual suspects might include things like *bash, awk, sed, jq*.  Luckily this is solvable with some combination of APEs and bundling, so, `amk` ships with those and a few more.
 
 <a id="tools"></a><br/>
 
-### Bundled Tools
+### Tools
 
-| tool | version | from | run as |
-| --- | --- | --- | --- |
+To make this stuff as portable as `amk` itself, tools must also be platform-independent.
+
+
+| Tool | Version | From |
+| --- | --- | --- |
 | sed | GNU sed 4.9 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) |
 | bash | 5.2.0 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) |
-| awk | gawk 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | 
-| jq | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | 
-| jb | json.bash 0.3.0 | [github.com/h4l](https://github.com/h4l/json.bash/tree/v0.3.0) | 
+| awk | gawk 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) |
+| jq | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) |
+| jb | json.bash 0.3.0 | [github.com/h4l](https://github.com/h4l/json.bash/tree/v0.3.0) |
 
-Bundled tools are on `PATH` for any recipe, on any host, ahead of the system path, so reference by name just works.  For example.. a modern bash on MacOS, and a working bash even in a container where it doesn't ship.
+Bundled tools are on `PATH` for any recipe, on any host, and ahead of the system path so that reference by name just works.  For example.. a modern bash on MacOS, and a working bash even in a container where it doesn't ship.
 
 ```Makefile
 SHELL:=bash
@@ -260,57 +247,174 @@ check:
 	echo "$${BASH_VERSINFO[0]}"
 ```
 
-In a few cases the standard guests are also [*special guests*](#special-guests), which we'll discuss in more detail [later](#tool-mode).  Briefly though, `jq` and `awk` are *linked* as well as bundled.  Thus `jq` is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have suddenly grown sophisticated datastructures, and a query-language, with no speed penalty.
+In a few cases the standard guests are also [*special guests*](#engines), which we'll discuss in more detail later.  Briefly though, `jq` and `awk` are *linked* as well as bundled.  Thus `jq` is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have suddenly grown [sophisticated datastructures](docs/data-engines.md) and a query-language, with no speed penalty.
 
-### Builtin Libraries
+<a id="libraries"></a><br/>
 
-A library is portable if its platform is, so it only needs to ride in the payload.  Your own libraries [bundle](#bundling) the same way, so the builtin list stays short: things almost always needed, or needed at bootstrap.
+### Vendored Libraries
 
-| library | version | from | use as |
-| --- | --- | --- | --- |
-| gmsl | 1.2.4 | [github.com/jgrahamc](https://github.com/jgrahamc/gmsl/tree/v1.2.4) | `include /zip/lib/gmsl` for sets, associative arrays, stacks, and integer and string ops in pure make |
-| dkjson | 2.8 | [dkolf.de](http://dkolf.de/dkjson-lua/) | `require("dkjson")` inside [`$(lua)`](#lua) for JSON |
-| mip | micropython-lib | [github.com/micropython](https://github.com/micropython/micropython-lib) | `include /zip/lib/mip.mk` for pinned [micropy](#micropy) packages, through `mip.manifest` and `mip.install` |
+A library is portable if its platform is.  Your own libraries [bundle](#bundling) the same way, so the vendored third-party list stays short: things almost always needed, or things needed at bootstrap.  
 
-<!-- header special-guests "Special Guests" | Tool #tool-mode | Eval #eval-mode | Exec #exec-mode | Import #import-mode | Bridge #bridge-mode | Engine API #engine-api | Examples #misc-examples -->
-<p align="right"><a id="special-guests"></a><a href="#special-guests"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.title.dark.svg"><img align=left src="docs/img/hdr/readme.special-guests.title.svg" alt="Special Guests"></picture></a><a href="#tool-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.0.dark.svg"><img src="docs/img/hdr/readme.special-guests.0.svg" alt="Tool"></picture></a><a href="#eval-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.1.dark.svg"><img src="docs/img/hdr/readme.special-guests.1.svg" alt="Eval"></picture></a><a href="#exec-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.2.dark.svg"><img src="docs/img/hdr/readme.special-guests.2.svg" alt="Exec"></picture></a><a href="#import-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.3.dark.svg"><img src="docs/img/hdr/readme.special-guests.3.svg" alt="Import"></picture></a><a href="#bridge-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.4.dark.svg"><img src="docs/img/hdr/readme.special-guests.4.svg" alt="Bridge"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.5.dark.svg"><img src="docs/img/hdr/readme.special-guests.5.svg" alt="Engine API"></picture></a><a href="#misc-examples"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.special-guests.6.dark.svg"><img src="docs/img/hdr/readme.special-guests.6.svg" alt="Examples"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+| Library | Platform | Version | From | Use As |
+| --- | --- | --- | --- | --- |
+| gmsl | make | 1.2.4 | [github.com/jgrahamc](https://github.com/jgrahamc/gmsl/tree/v1.2.4) | `include /zip/lib/gmsl` for sets, associative arrays, stacks, and integer and string ops in pure make |
+| dkjson | [lua](#lua) | 2.8 | [dkolf.de](http://dkolf.de/dkjson-lua/) | `require("dkjson")` inside [`$(lua)`](#lua) for JSON |
+| utemplate | [micropython](#micropy) | 1.4.1 | [pypi.org](https://pypi.org/project/utemplate/) | `load utmpl` for jinja-style templates (see [these docs](docs/utmpl.md)) |
+| mip | [micropython](#micropy) | micropython-lib | [github.com/micropython](https://github.com/micropython/micropython-lib) | `load mip` for pinned [micropy](#micropy) packages, a json define under `@mip.install` whose name is their install target (see [these docs](docs/mip.md)) |
+
+See also the [modules documentation](#modules) for more details about usage.
+
+<a id="modules"></a><a id="stdlib"></a><a id="lib"></a>
+
+### Standard Lib
+
+Modules in `amk` are reached via the `load` directive, and can be written in any language that an [engine](#engines) supports.  
+
+Search order covers the filesystem the way you'd expect, and it also works inside [bundles](#bundles) and [payloads](#payloads): a module rides in a bundle the way a makefile does.
+
+The semantics for `load` are similar to the associated engine's [import-mode](#import-mode), i.e. it lifts code from a guest into the host, but from files instead of inlined strings.  To put it another way, amk's `load` directive generalizes make's upstream `load` directive[^make-load].  Whereas stock make loads a shared object into the runtime, amk loads an engine's file into that guest instead, then lifts the results into the shared host namespace.
+
+<a id="load-filesystem"></a>
+
+#### Usage (Filesystem)
+
+```Makefile
+# ./ and / are the filesystem; a bare name is the payload's library for that engine
+load ./lib/twice.lua               # twice(x) is now $(twice 21)
+load /opt/mods/fib32.wasm          # a wasm module's exports, $(fib 10)
+load dkjson.lua                    # /zip/lib/lua/dkjson.lua
+load ./src/.../stats.jq            # one file at any depth below src/, as jq's state
+```
+
+<a id="stdlib"></a>
+
+#### Standard Lib
+
+A bare name with no extension is looked up in amk's **standard library**, the `lib/` folder inside the payload: first as an engine's own file, `lib/<eng>/<name>.*`, then as whatever `$(amk.include <name>)` would read, `lib/amk/<name>.mk` or the topic's `lib/<name>/init.amk`.
+
+```Makefile
+# resolves to /zip/lib/tspace/init.amk
+load tspace
+```
+
+So in this case `load tspace` is exactly equivalent to `$(amk.include tspace)`, guard included: the file is read once however many times either line asks for it.
+
+<a id="load-guest-standard-library"></a>
+
+#### Usage (Guest Standard Library)
+
+A bare name is first tried as an engine's own library file, `lib/<eng>/<name>.*`, and the folder it is found in names the engine, with a warning saying which.  The match has to be unique: a stem that two engine libraries both hold stops make, naming both files.  An example with the [amb operator](payload/lib/s7/README.md), s7's library file:
+
+```Makefile
+# resolves to /zip/lib/s7/amb.scm, loaded in s7; load amb.scm spells the same file exactly
+load amb
+```
+
+`AMKPATH`, colon separated, adds library roots searched ahead of the payload's `lib/`, each laid out like it, so an entry shadows the payload the way python's path shadows its stdlib; `AMK_PATH` is read when `AMKPATH` is unset, and `amk.include` walks the same roots.  The extensions are the [engine table](#engines)'s names and aliases, `.FEATURES` says `load`, and `amk.loaded` records every `load` line as `amk.included` records every include.  One path component spelled `...` walks every depth below the folder before it and must land on exactly one file.  The full search order and each error case are in [docs/FFI.md#load](docs/FFI.md#load).  The payload's own [module directories](docs/payloads.md#modules), one init per guest, are a different thing: they are what `amk.<name>` reaches from inside a guest.
+
+<a id="module-index"></a>
+
+#### Module Index
+
+Every module with a page of its own. A module page's up arrow returns here, and a
+submodule page's left arrow returns to its parent module.
+
+| Module | Load | Description |
+| --- | --- | --- |
+| [actor](docs/actor.md) | `load actor` | supervision trees under a charter |
+| [amb](docs/amb.md) | `load amb` | McCarthy's `amb` for s7 |
+| [dsys](docs/dsys.md) | `load dsys` | distributed and dynamic systems over pools |
+| [dsys/job](docs/job.md) | `load dsys/job` | the host's job verbs under one name |
+| [dsys/petri](docs/petri.md) | `load dsys/petri` | Petri nets as data |
+| [dsys/workflow](docs/workflow.md) | `load dsys/workflow` | task graphs compiled to a net |
+| [dsys/kahn](docs/kahn.md) | `load dsys/kahn` | Kahn networks compiled to a net |
+| [dsys/fsm](docs/fsm.md) | `load dsys/fsm` | state machines, xstate or scxml, compiled to a net |
+| [io](docs/io.md) | `load io/json` | data in defines, read and checked |
+| [io/json](docs/json.md) | `load io/json` | JSON5 and JSON Schema for defines |
+| [dsys/jobman](docs/jobman.md) | `load dsys/jobman` | pools of jobs and each guest's handle on one |
+| [plex](docs/plex.md) | `load plex` | the control multiplexer |
+| [tspace](docs/tspace.md) | `load tspace` | tuple spaces |
+| [utmpl](docs/utmpl.md) | `load utmpl` | templates |
+
+<!-- header engines "Engines" | Tool #tool-mode | Eval #eval-mode | Exec #exec-mode | Import #import-mode | Bridge #bridge-mode | Engine API #engine-api | Examples #misc-examples -->
+<h2><a id="engines"></a>Engines<a href="#misc-examples"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.6.dark.svg"><img align=right src="docs/img/hdr/readme.engines.6.svg" alt="Examples"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.5.dark.svg"><img align=right src="docs/img/hdr/readme.engines.5.svg" alt="Engine API"></picture></a><a href="#bridge-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.4.dark.svg"><img align=right src="docs/img/hdr/readme.engines.4.svg" alt="Bridge"></picture></a><a href="#import-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.3.dark.svg"><img align=right src="docs/img/hdr/readme.engines.3.svg" alt="Import"></picture></a><a href="#exec-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.2.dark.svg"><img align=right src="docs/img/hdr/readme.engines.2.svg" alt="Exec"></picture></a><a href="#eval-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.1.dark.svg"><img align=right src="docs/img/hdr/readme.engines.1.svg" alt="Eval"></picture></a><a href="#tool-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.0.dark.svg"><img align=right src="docs/img/hdr/readme.engines.0.svg" alt="Tool"></picture></a><br clear="all"></h2>
 <!-- /header -->
 
-Special guests are the embedded engines that are linked into `amk` directly.
+Most guest engines are embedded, i.e. linked into `amk` directly. 
 
-| engine | version | from | adds | default |
+<dl>
+<dt>Language Engines</dt>
+<dd>
+
+| Guest | Version | From | Adds | Default |
 | --- | --- | --- | --- | --- |
-| [gawk](#awk-jq) | 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | 1.3 MB | on |
-| [jq](#awk-jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | 1.9 MB | on |
 | [lua](#lua) | 5.4.8 | [lua.org](https://www.lua.org/ftp/) | 0.5 MB | on |
-| [s7](#s7) | 11.9 | [ccrma.stanford.edu](https://ccrma.stanford.edu/software/s7/) | 4.1 MB | on |
-| [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | 0.8 MB | on |
+| [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | 0.9 MB | on |
+| [s7](#s7) (lisp) | 11.9 | [ccrma.stanford.edu](https://ccrma.stanford.edu/software/s7/) | 4.1 MB | on |
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | 2.0 MB | on |
-| [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | off |
+| [gawk](#awk) | 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | 1.3 MB | on |
+| [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | on |
 
-Besides the choice of guest, two other concepts that relate to the engine API are **Interface Style** and **Access Mode**.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
+</dd>
+<dt>Data Engines</dt>
+<dd>
 
-<!-- Each guest backend has a more or less unified interface, so there's not a demo in every language for every mode.  Just switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `lua`, `s7`, `js`, etc).  That said.. backend implementation details can differ, and so details for FFI support can also differ.  In particular `wasm` and `jq` are misfits: `wasm` takes a [module](#wasm) rather than program text, and `jq` keeps its state in a [store](docs/FFI.md#the-jq-store).  The [capabilities table](docs/FFI.md#capabilities-by-engine) has the per-engine breakdown. -->
+| Guest | Version | From | Adds | Default |
+| --- | --- | --- | --- | --- |
+| [jq](#jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | 1.9 MB | on |
+| [sqlite](#sqlite) | 3.53.4 | [sqlite.org](https://sqlite.org/download.html) | 1.0 MB | on |
+
+ </dd>
+</dl>
+
+Let's get organized, we need a few concepts.
+
+**Language Engines vs Data Engines.**  Both engine types have a concept of "statefulness", but there's a difference.  You can guess that jqlang and SQL are different than the other engines, right?  These guests do *involve* languages but there's something extra too.  Full details [here](docs/data-engines.md), but let's do the overview quickly:  Language engines keep **namespaces**, which is a group of functions and values that *[import](#import-mode)* may lift into the host (and make available to other guests via [FFI](docs/FFI.md)). Data engines keep **workspaces**, which are data stores that `import` can seed with a value, plus mutators that change values.  Data-engines are interesting because besides the [simple stuff](#sqlite), `amk` also leverages them into [collaborative concurrent datastructures](docs/tspace.md), allowing for guests to talk to each other without the host in the middle.
+
+**Stacked Engines.** Do we need engines on engines?  Yes!  Especially for something like the [wasm support](#wasm), that is kind of the point.  But then there's other reasons you might want this, like wrangling DSLs, or like moving from data engines to [datastructures](docs/dsys.md#pools), or [services on those datastructures](docs/tspace.md).
+
+<dl>
+<dt>Stacked Engines</dt>
+<dd>
+| Guest | Version | From | Adds | Default |
+| --- | --- | --- | --- | --- |
+| [golang](docs/wasm.md#golang) | tinygo 0.39.0 | [hub.docker.com/r/tinygo](https://hub.docker.com/r/tinygo/tinygo), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
+| [zig](docs/wasm.md#zig) | 0.13.0 | [pkgs.alpinelinux.org](https://pkgs.alpinelinux.org/package/v3.21/community/x86_64/zig), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
+| [amklang](docs/FFI.md#stacked-engines) | amk's own | make itself, registered by the prelude: `@amklang.target` as `@amk.target`, `@amklang.import`, `@amklang.exec`, `@amklang.argv`, and `$(amklang prog)`, `$(amklang.exec prog)`, `$(amklang.argv argv, prog)` in a fork of this make | 0 MB | on |
+| [bash](docs/FFI.md#stacked-engines) | lua 5.4.8 | the bash on `PATH`, on the [lua guest](#lua): `@bash.target` | 0 MB | with lua |
+
+</dd>
+</dl>
+
+
+
+**[Stacked Engines](docs/FFI.md#stacked-engines)** are a different category, and they run guests which are *derived* in some sense from the foundational layers above.  These guests are non-native, not linked into the binary, and may involve a caching JIT cross-compilation pipeline.  This engine category is *user-space* (i.e. no C layer, so they can be defined in the [standard library](#stdlib)) and can be user-defined (i.e. distributed as [modules](#modules) via [bundling](#bundling) or [payload](#payloads)).
+
+**Interface Style** and **Access Mode** are properties of the engine API for each guest.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  The API aims to be more or less uniform for all engines.. but guest capabilities do differ somewhat in terms of what they can support.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 
 **Interface Style:**
 
-1. [Pass by Value](#pass-by-value):
-1. [Pass by Reference](#pass-by-reference):
-1. [Extended Grammar](#extended-grammar):
+1. [Pass by Value](#pass-by-value): Pass programs/data directly.
+1. [Pass by Reference](#pass-by-reference): Use mixed variables/literals as programs/data.
+1. [Extended Grammar](#extended-grammar): Syntactic sugar; small, optional, but powerful and nice to have.
 
 **Guest Access Modes:**
 
-1. [Tool Mode](#tool-mode): A CLI interface you can script against directly.
-1. [Eval Mode](#eval-mode): Stateless compute in guest.  Usually lifting vals into host
-1. [Exec Mode](#exec-mode):  Stateful engine / persistent guests
-1. [Import Mode](#import-mode): Lift whole namespaces (functions + variables)
+1. [Tool Mode](#tool-mode): A CLI interface you can shell-script against directly.
+1. [Eval Mode](#eval-mode): Stateless compute in guest.  Usually lifting vals into host.
+1. [Exec Mode](#exec-mode):  Statefulness: persistent guest namespaces
+1. [Import Mode](#import-mode): Lifting namespaces (functions + variables) into host
 1. [Bridge Mode](#bridge-mode): Guest-to-host actions or reads; Guest-to-guest calls
 
-<!-- header engine-api "Engine API" | By value #pass-by-value | By reference #pass-by-reference | Grammar #extended-grammar -->
-<p align="right"><a id="engine-api"></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.title.dark.svg"><img align=left src="docs/img/hdr/readme.engine-api.title.svg" alt="Engine API"></picture></a><a href="#pass-by-value"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.0.dark.svg"><img src="docs/img/hdr/readme.engine-api.0.svg" alt="By value"></picture></a><a href="#pass-by-reference"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.1.dark.svg"><img src="docs/img/hdr/readme.engine-api.1.svg" alt="By reference"></picture></a><a href="#extended-grammar"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.2.dark.svg"><img src="docs/img/hdr/readme.engine-api.2.svg" alt="Grammar"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+
+<!-- Each guest backend has a more or less unified interface, so there's not a demo in every language for every mode.  Just switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `lua`, `s7`, `js`, etc).  That said.. backend implementation details can differ, and so details for FFI support can also differ.  In particular `wasm` and `jq` are misfits: `wasm` takes a [module](#wasm) rather than program text, and `jq` keeps its state in [workspaces](docs/data-engines.md#jq-workspaces).  The [capabilities table](docs/FFI.md#capabilities-by-engine) has the per-engine breakdown. -->
+
+
+<!-- header ### engine-api "Engine API" | By value #pass-by-value | By reference #pass-by-reference | Grammar #extended-grammar -->
+<h3><a id="engine-api"></a>Engine API<a href="#extended-grammar"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.2.dark.svg"><img align=right src="docs/img/hdr/readme.engine-api.2.svg" alt="Grammar"></picture></a><a href="#pass-by-reference"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.1.dark.svg"><img align=right src="docs/img/hdr/readme.engine-api.1.svg" alt="By reference"></picture></a><a href="#pass-by-value"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engine-api.0.dark.svg"><img align=right src="docs/img/hdr/readme.engine-api.0.svg" alt="By value"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h3>
 <!-- /header -->
 
-#### Interface Style
+<a id="interface-style"></a> <a id="pass-by-value"></a>
 
 ##### Pass by Value
 
@@ -323,48 +427,47 @@ $(eng.argv argv, program, [input])
 
 # Exec-mode: an operation in the namespace main, one argument, so the program keeps its commas
 $(eng.exec program)
-$(eng.ns workspace, create)
-$(eng.ns workspace, exec, program)
-$(workspace.exec program)
+$(eng.ns.create work)
+$(eng.ns work, exec, program)
+$(work.exec program)
 
 # Import-mode
 $(eng.import program)
-$(eng.import.target program)
+$(eng.target target, program)
 ```
+
+A call that fails stops make at that line with the engine's message, whichever form made it; see [failures](docs/FFI.md#failures).
 
 See [Misc Examples](#misc-examples) for concrete examples, and the extended documentation [here](docs/FFI.md#pass-by-value) for every form by engine.
 
-<a name=star-mode></a>
-<a id="pass-by-reference"></a>
+<a name=star-mode></a> <a id="pass-by-reference"></a>
 
 ##### Pass by Reference
 
-Star-mode version of the API.  The trouble with literals is that it breaks down for multi-lines, escaping or quoting hazards etc.  In that case you'll want star-mode calls, where we try to dereference variables to grab values and *fall back* to literal mode only if no variables are available.
+Pass-by-value breaks down for multi-lines, escaping or quoting hazards, etc.  *Technically,* the API style in last section works with references *and* values, since you can always use `$(eng ${code_var})`, but that too gets awkward.  It's convenient to have a "always dereference" version of the API available that **defaults to variable names**, and only falls back to literal mode only if no variables are available.
 
 ```Makefile
 # Eval-mode
 $(eng* program_var, [input_var])
 $(eng.argv* argv, program_var, [input_var])
 
-# Exec-mode: only the program is dereferenced; the workspace and the op pass as written
+# Exec-mode: only the program is dereferenced; the namespace and the op pass as written
 $(eng.exec* program_var)
-$(eng.ns* workspace, exec, program_var)
-$(workspace.exec* program_var)
+$(eng.ns* work, exec, program_var)
+$(work.exec* program_var)
 
 # Import-mode
 $(eng.import* program_var)
-$(eng.import.target* program_var)
+$(eng.target* program_var)
 ```
 
-See the extended documentation [here](docs/FFI.md#pass-by-reference) for every form by engine.
+Sometimes called the "star mode" API.  See the extended documentation [here](docs/FFI.md#pass-by-reference) for every form by engine.
+
+<a id="extended-grammar"></a>
 
 ##### Extended Grammar
 
-We met the optional, extended Makefile grammar already in the [server example](#) in the introduction.  This section describes how it works, and why it's simpler than it looks.
-
-First, recall the [pass-by-reference](#pass-by-reference) interface style from the last section.  The usual thing is to put guest code in a `define my_prog .. endef` block then use an API call like `$(my_engine.import* my_prog)` on that same block, dereferencing the value from the var and passing it into the engine.
-
-Much more readable to flip it though, which is exactly what the decorator-style idiom does, now dropping the star since it's implied.  No extra semantics, just syntactic sugar:
+We met the optional, extended Makefile grammar already in the [server example](#just-show-me) in the introduction.  Here's an overview of how it works, and why it's simpler than it looks.  Recall the [pass-by-reference](#pass-by-reference) interface style from the last section?  It's common to put guest code in a `define my_prog .. endef` block then use an API call like `$(my_engine.import* my_prog)` on that same block.  **Much** more readable to flip it though, which is exactly what the decorator-style idiom does, now dropping the star since it's implied.  
 
 ```Makefile
 @my_engine.import
@@ -373,11 +476,23 @@ define my_prog
 endef
 ```
 
-Note that this also works the same way for the full pass-by-reference API *(i.e. everything that ends with star)*, and not just `<eng>.import`.
+No extra semantics.. just syntactic sugar.  The sugar is general too, and there's nothing special about `<eng>.import` here.  That means decorators work for the full [pass-by-reference engine API](#pass-by-reference), and that **user-defined code can create and call new decorators too**.
 
-The only other piece of optional grammar is `@goal@` substitution, a useful trick for dataflow.  See the full documentation [here](docs/dataflow.md).
+There are other smaller extensions to grammar, but they aren't related to the the engine API.  See the full docs [here](docs/grammar.md)
+
+--------------
+
+<a id="access-mode"></a>
 
 ### Access Mode
+
+1. [Tool Mode](#tool-mode): A CLI interface you can script against directly.
+1. [Eval Mode](#eval-mode): Stateless compute in guest.  Usually lifting vals into host
+1. [Exec Mode](#exec-mode):  Statefulness / persistent guest namespaces
+1. [Import Mode](#import-mode): Lifting namespaces (functions + variables) into host
+1. [Bridge Mode](#bridge-mode): Guest-to-host actions or reads; Guest-to-guest calls
+
+<a id="tool-mode"></a>
 
 #### Tool Mode
 
@@ -401,23 +516,25 @@ From inside a Makefile, every other mode is better than tool-mode. A tool call i
 #! /usr/bin/env amk -f
 
 # bundled jq and awk are on PATH already, just use them.
-my_target:; jq ...
+my_target:; awk ...
 
 # equivalently, and introducing the way amk calls itself.
-my_other_target:; ${amk} --jq ...
+my_other_target:; ${amk} --awk ...
 ```
+
+<a id="eval-mode"></a>
 
 #### Eval Mode
 
-Eval-mode is useful for many things, but most often it's a way to "lift" computed values from guests into the host.  For example, working around the impoverished Makefile primitives, getting real numbers, regex, or string operations done easily.
+Eval-mode is useful for many things, but most often it's a way to "lift" computed values from guests into the host.  For example, working around the impoverished Makefile primitives and getting real numbers, regex, or string operations done easily.
 
 ```Makefile
-answer.lua := $(lua print(6 * 7))
+answer.py := $(micropy print(6 * 7))
 ```
 
-Works fine with simple stuff, and not so simple.  Besides values, you could also code-gen targets, avoiding the eval/foreach type of pure-Makefile loops.  Despite the "eval" name.. nothing prevents importing modules in the guest, etc.  
+Works fine with simple stuff, and not so simple.. besides values, you could also code-gen targets, avoiding the eval/foreach pattern in pure-Makefile loops.  And despite the "eval" name.. nothing prevents importing modules in the guest.
 
-Since line-feeds and escaping gets annoying quickly, using multiline data and multiline programs is common.
+Line-feeds and escaping gets annoying though, and using multiline data and multiline programs is common.
 
 ```Makefile
 define words
@@ -425,70 +542,80 @@ define words
   jumps over the lazy dog
 endef
 
-define lua.count
-  local n = 0
-  for line in io.lines() do
-    for _ in line:gmatch("%S+") do n = n + 1 end
-  end
-  print(n)
+define py.count
+  import sys
+  print(len(sys.stdin.read().split()))
 endef
 
-count := $(lua ${lua.count}, $(words))
-
-# or, using star-mode
-count := $(lua* lua.count, words)
+# now we need pass-by-reference: star-mode names the variables, and drops the define's indentation, which python insists on.
+# 9
+count := $(micropy* py.count, words)
 ```
 
-<!-- header exec-mode "Exec Mode" | Persistent state docs/FFI.md#persistent-state | Init docs/FFI.md#init -->
-<p align="right"><a id="exec-mode"></a><a href="#exec-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.exec-mode.title.dark.svg"><img align=left src="docs/img/hdr/readme.exec-mode.title.svg" alt="Exec Mode"></picture></a><a href="docs/FFI.md#persistent-state"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.exec-mode.0.dark.svg"><img src="docs/img/hdr/readme.exec-mode.0.svg" alt="Persistent state"></picture></a><a href="docs/FFI.md#init"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.exec-mode.1.dark.svg"><img src="docs/img/hdr/readme.exec-mode.1.svg" alt="Init"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+<!-- header #### exec-mode "Exec Mode" | Persistent state docs/FFI.md#persistent-state | Init docs/FFI.md#init -->
+<h4><a id="exec-mode"></a>Exec Mode<a href="docs/FFI.md#init"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.exec-mode.1.dark.svg"><img align=right src="docs/img/hdr/readme.exec-mode.1.svg" alt="Init"></picture></a><a href="docs/FFI.md#persistent-state"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.exec-mode.0.dark.svg"><img align=right src="docs/img/hdr/readme.exec-mode.0.svg" alt="Persistent state"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h4>
 <!-- /header -->
 
-Exec-mode gives a persistent stateful engine on the backend instead of a one-shot eval.  Each `exec` runs in the same state, and `ns` makes more of them:
+Exec-mode gives a persistent stateful engine on the backend instead of a one-shot eval.  Each `exec` runs in the same state:
 
 ```Makefile
-$(lua.exec total = 40)
-$(lua.exec total = total + 2)
+$(micropy.exec total = 40)
+$(micropy.exec total = total + 2)
 
 # 42
-answer := $(lua.exec print(total))
+answer := $(micropy.exec print(total))
+```
 
-# a second workspace, reached through its handle
-$(lua.ns work, create)
-$(work.exec total = 1)
+MicroPython has one heap, so it keeps the one state, `main`.  The other language engines can create more with `<eng>.ns.create`, each reached through its handle:
+
+```Makefile
+$(js.exec var total = 42;)
+
+# a second namespace, reached through its handle
+$(js.ns.create work)
+$(work.exec var total = 1;)
 
 # 1 42
-both := $(work.exec print(total)) $(lua.exec print(total))
+both := $(work.exec print(total);) $(js.exec print(total);)
 ```
+
+See [namespaces](docs/FFI.md#namespaces) for every form.
+
+<a id="import-mode"></a>
 
 #### Import Mode
 
-Import runs a chunk in the engine's persistent state and lifts every global it defines into make.  Guest functions map onto make functions, any other value a variable.  The [decorator](#extended-grammar) form is the usual way to write it:
+A language engine's import runs a chunk in the engine's persistent state and lifts every global it defines into `amk`.  A data engine's import loads data into a workspace instead; see [data engines](docs/data-engines.md#import-mode).  Guest functions map onto make functions, any other value a variable.  The [decorator](#extended-grammar) form is the usual way to write it:
 
 ```Makefile
-@lua.import
-define lua.lib
+@micropy.import
+define py.lib
   version = "1.2.3"
-  pkg = { name = "abc" }
-  function bump(v) return (v:gsub("%d+$", function(n) return n + 1 end)) end
+  pkg = {"name": "abc"}
+  def bump(v):
+      head, _, n = v.rpartition(".")
+      return head + "." + str(int(n) + 1)
 endef
 
 # abc 1.2.4
 next := $(pkg.name) $(bump $(version))
 ```
 
-See [registering make functions](docs/FFI.md#registering-make-functions) for the conversion rules per engine.
+See [registering make functions](docs/FFI.md#registering-make-functions) for the conversion rules per engine.  The same lift from a file, the engine picked by its extension, is the `load` directive; see [modules](#modules).
+
+<a id="import-as-a-target"></a>
 
 ##### Import as a Target
 
-`import.target` turns a guest program into a target instead of a set of globals.  The define's name becomes a phony target, and its body runs in that engine on the job's own stdin and stdout, every time the target runs.
+`eng.target`, short for `eng.import.target`, turns a guest program into a target instead of a set of globals.  The define's name becomes a phony target, and its body runs in that engine on the job's own stdin and stdout, every time the target runs.
 
 ```Makefile
-@lua.import.target
+@micropy.target
 define hello
-  print("hello from lua")
+  print("hello from python")
 endef
 
-@micropy.import.target
+@micropy.target
 define count
   import sys
   print(len(sys.stdin.read().split()))
@@ -497,7 +624,7 @@ endef
 
 ```bash
 amk hello
-# hello from lua
+# hello from python
 
 echo "a b c" | amk count
 # 3
@@ -505,8 +632,8 @@ echo "a b c" | amk count
 
 See [defining a target in an engine](docs/FFI.md#defining-a-target-in-an-engine) for targets that keep their value between goals.
 
-<!-- header bridge-mode "Bridge Mode" | Guest handle docs/FFI.md#the-guest-handle | Functions docs/FFI.md#registering-make-functions | Hooks docs/FFI.md#hooks -->
-<p align="right"><a id="bridge-mode"></a><a href="#bridge-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.title.dark.svg"><img align=left src="docs/img/hdr/readme.bridge-mode.title.svg" alt="Bridge Mode"></picture></a><a href="docs/FFI.md#the-guest-handle"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.0.dark.svg"><img src="docs/img/hdr/readme.bridge-mode.0.svg" alt="Guest handle"></picture></a><a href="docs/FFI.md#registering-make-functions"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.1.dark.svg"><img src="docs/img/hdr/readme.bridge-mode.1.svg" alt="Functions"></picture></a><a href="docs/FFI.md#hooks"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.2.dark.svg"><img src="docs/img/hdr/readme.bridge-mode.2.svg" alt="Hooks"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+<!-- header #### bridge-mode "Bridge Mode" | Guest handle docs/FFI.md#guest-handle | Functions docs/FFI.md#registering-make-functions | Hooks docs/FFI.md#hooks -->
+<h4><a id="bridge-mode"></a>Bridge Mode<a href="docs/FFI.md#hooks"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.2.dark.svg"><img align=right src="docs/img/hdr/readme.bridge-mode.2.svg" alt="Hooks"></picture></a><a href="docs/FFI.md#registering-make-functions"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.1.dark.svg"><img align=right src="docs/img/hdr/readme.bridge-mode.1.svg" alt="Functions"></picture></a><a href="docs/FFI.md#guest-handle"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.bridge-mode.0.dark.svg"><img align=right src="docs/img/hdr/readme.bridge-mode.0.svg" alt="Guest handle"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h4>
 <!-- /header -->
 
 Since `amk` is an extension of `make` and since Makefile (or the [extended grammar](#extended-grammar)) is the obvious choice for the coordination language, host-to-guest is the obvious choice for the primary direction of *control-flow and orchestration*.
@@ -521,9 +648,9 @@ define js_namespace
   function shout(s) { return s.toUpperCase() + "!"; }
 endef
 
-# lua reads a make variable, calls a js function through make,
+# python reads a make variable, calls a js function through make,
 # then defines a target with the result
-$(lua amk.eval("hi: ; echo " .. amk.call("shout", amk.var.greeting)))
+$(micropy.exec import amk; amk.eval("hi: ; echo " + amk.call("shout", amk.var.greeting)))
 ```
 
 ```bash
@@ -531,13 +658,27 @@ amk hi
 # HELLO!
 ```
 
-<!-- header misc-examples "Misc Examples" | awk and jq #awk-jq | lua #lua | s7 #s7 | micropy #micropy | js #js | wasm #wasm -->
-<p align="right"><a id="misc-examples"></a><a href="#misc-examples"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.title.dark.svg"><img align=left src="docs/img/hdr/readme.misc-examples.title.svg" alt="Misc Examples"></picture></a><a href="#awk-jq"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.0.dark.svg"><img src="docs/img/hdr/readme.misc-examples.0.svg" alt="awk and jq"></picture></a><a href="#lua"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.1.dark.svg"><img src="docs/img/hdr/readme.misc-examples.1.svg" alt="lua"></picture></a><a href="#s7"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.2.dark.svg"><img src="docs/img/hdr/readme.misc-examples.2.svg" alt="s7"></picture></a><a href="#micropy"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.3.dark.svg"><img src="docs/img/hdr/readme.misc-examples.3.svg" alt="micropy"></picture></a><a href="#js"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.4.dark.svg"><img src="docs/img/hdr/readme.misc-examples.4.svg" alt="js"></picture></a><a href="#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.5.dark.svg"><img src="docs/img/hdr/readme.misc-examples.5.svg" alt="wasm"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></p>
+Every language engine's guest reaches `amk` through the same handle, named `amk`. Spellings below are lua's; micropy and js match it, and s7 uses `amk-var`, `amk-call` and so on.
+
+| Call | Does |
+| --- | --- |
+| `amk.var.NAME`, `amk.var.NAME = v` | reads or writes a make variable |
+| `amk.expand(text)` | expands make text, functions included |
+| `amk.eval(text)` | evaluates make text, such as a new rule |
+| `amk.call(name, ...)` | calls a make function, which may be another guest's |
+| `amk.func(name, fn)` | gives make a new function, answered by this guest |
+| `amk.ask(op, ns, prog)` | runs an operation in any namespace or workspace |
+| `amk.on[event]` | hears goal and recipe [hooks](docs/FFI.md#hooks) |
+
+Guest-to-guest calls go through make: one guest's function becomes a make function, and any other guest reaches it with `amk.call`. See [the guest handle](docs/FFI.md#guest-handle) for every call in every language, including the async `amk.acall`, and [the host handle](docs/FFI.md#host-handle) for `amk.spawn`, `amk.wait` and the rest of job control.
+
+<!-- header ### misc-examples "Misc Examples" | awk #awk | lua #lua | s7 #s7 | micropy #micropy | js #js | wasm #wasm | sqlite #sqlite | jq #jq -->
+<h3><a id="misc-examples"></a>Misc Examples<a href="#jq"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.7.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.7.svg" alt="jq"></picture></a><a href="#sqlite"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.6.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.6.svg" alt="sqlite"></picture></a><a href="#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.5.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.5.svg" alt="wasm"></picture></a><a href="#js"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.4.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.4.svg" alt="js"></picture></a><a href="#micropy"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.3.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.3.svg" alt="micropy"></picture></a><a href="#s7"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.2.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.2.svg" alt="s7"></picture></a><a href="#lua"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.1.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.1.svg" alt="lua"></picture></a><a href="#awk"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.0.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.0.svg" alt="awk"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h3>
 <!-- /header -->
 
-<a id="awk-jq"></a>
+<a id="awk"></a>
 
-#### awk and jq
+#### Awk
 
 Another simple inline, enjoy floats
 
@@ -548,25 +689,12 @@ percent := $(awk BEGIN { print 100 * 3 / 8 })
 An example with an argv
 
 ```Makefile
-longest := $(awk.argv -v RS=[[:space:]]+,length > n { n = length; w = $$0 } END { print w },make awk portable jq)
-```
-
-Complex datastructures, fast and no tools required.  Make helpers and you're well on your way to stacks and other fun.
-
-```Makefile
-pkg := {"name": "cmk", "version": "1.2.3"}
-pkg.version := $(jq.argv -r,.version,$(pkg))
-```
-
-Quoting or commas in calls may need a variable in the middle.
-
-```Makefile
-opts = -n -r --arg alts 'k/a k/b' --arg none ""
-frame := $(jq.argv ${opts},$$alts + "|" + $$none)
+longest := $(awk.argv -v RS=[[:space:]]+, length > n { n = length; w = $$0 } END { print w }, make awk portable jq)
 ```
 
 <a id="lua"></a>
-#### lua
+
+#### Lua
 
 Lua 5.4 with its standard libraries, plus the bundled `dkjson` for JSON. The input is
 standard input, read with `io.read` or `io.lines`.
@@ -585,14 +713,15 @@ define lua.top
   print(top)
 endef
 scores := {"ada": 3, "bob": 7, "cy": 5}
-top := $(lua ${lua.top},$(scores))
+top := $(lua ${lua.top}, $(scores))
 ```
 
-<a id="s7"></a>
-#### s7
+<a id="s7"></a> <a id="lisp"></a>
 
-The input is the current input port, for `read-line` or `read`. An error reports on
-stderr and the call expands to nothing.
+#### S7 (Lisp)
+
+The input is the current input port, for `read-line` or `read`. s7 also backs the supervisors: see the
+[layers](docs/runtime.md#layers) it provides and its [backend](docs/actor.md#backends).
 
 ```Makefile
 # inline: 42
@@ -606,35 +735,46 @@ endef
 big := $(s7 ${s7.fact})
 ```
 
-<a id="micropy"></a>
-#### micropy
+<a id="micropy"></a> <a id="python"></a>
 
-MicroPython: Python 3 with `sys`, `os`, `io`, `json`, `re`, `time`, `math`, `random`,
+#### Micropy
+
+MicroPython is Python 3 with `asyncio`, `sys`, `os`, `io`, `json`, `re`, `time`, `math`, `random`,
 `struct`, `collections`, `hashlib`, `binascii`, `deflate`, `select` and `errno`. The input
-is `sys.stdin`. There is no `input`, `asyncio`, threads or `machine`.
+is `sys.stdin`.
+
+The build is MicroPython's fullest feature level, with these limits:
+
+* `re` has groups and spans, but no named groups, lookaround or inline flags.
+* There is no `subprocess` and no `os.popen`; `os.system` is the one way to run a command.
+
+It also has `ssl`, `socket`, `requests` and `mip` (MicroPython's package installer), which
+makes it the guest with the easiest access to TLS and to packages.
 
 ```Makefile
-# inline, a comma inside ( ): 7
-answer.py := $(micropy print(max(3, 7)))
+# pass program by value, capture result
+answer := $(micropy print(max(3, 7)))
 
-# multiline chunk from a define, dedented by the star form, JSON input from a variable: bob
+# pass program and data by reference
 define py.top
   import json, sys
   d = json.load(sys.stdin)
   print(max(d, key=d.get))
 endef
 scores := {"ada": 3, "bob": 7, "cy": 5}
-top := $(micropy* py.top,scores)
+top := $(micropy* py.top, scores)
 ```
 
-<a id="js"></a>
-#### js
+<a id="js"></a><a id="javascript"></a>
+
+#### Javascript
 
 QuickJS: ES2023 JavaScript with `JSON`, `RegExp`, `BigInt`, `Promise` and the rest of
 the language builtins, plus the qjs `std` and `os` modules bound as globals. The input
 is `std.in`, read with `getline` or `readAsString`, and `print` writes the result. A
 top-level `await` is allowed. There is no `require`, `console` beyond `console.log`,
-`fetch` or `setTimeout` past what `os` provides.
+`fetch` or `setTimeout` past what `os` provides. js also backs the supervisors: see the
+[layers](docs/runtime.md#layers) it provides and its [effection backend](docs/actor.md#backends).
 
 ```Makefile
 # inline: 42
@@ -646,69 +786,159 @@ define js.newest
   print(pkgs.sort((a, b) => b.year - a.year)[0].name);
 endef
 pkgs := [{"name": "make", "year": 1976}, {"name": "cmk", "year": 2024}]
-newest := $(js ${js.newest},$(pkgs))
+newest := $(js ${js.newest}, $(pkgs))
 ```
 
 <a id="wasm"></a>
-#### wasm
+#### WASM
 
-Off by default; build `with=wasm3`. The first argument is a module path and its
-arguments, not program text. What the module's `_start` writes to stdout is the result.
-
-```Makefile
-# a WASI module with an argument
-module := src/wasm3-0.9.0/test/wasi/simple/test.wasm
-echoed := $(findstring Args: test.wasm; hello;,$(wasm ${module} hello))
-
-# an exported function by name; its return value is the result, as a Result: line
-$(wasm.argv --func fib,src/wasm3-0.9.0/test/lang/fib32.wasm 20)
-```
-
-The wasm3 command line, repl included, is `amk --wasm`:
-
-```bash
-# prints "Result: 6765"
-./amk --wasm --func fib src/wasm3-0.9.0/test/lang/fib32.wasm 20
-```
-
-The repl takes a module from its input rather than a path, as `:load-hex <bytes>` followed
-by the module in hex, and then one call per line. A make variable holds the hex, so the
-module never has to touch disk; [demos/wasm-1.mk](demos/wasm-1.mk) compiles one in a
-container and calls it three times this way.
+A wasm program is a [module](#modules), not text. `wasm.import` loads one and lifts its exports as
+make functions, as does `load module.wasm`, `wasm.exec` calls one by name, and the wasm library is a factory: a
+compile environment and a compile command, registered with `amk.engine` as a [user-defined engine](docs/FFI.md#stacked-engines)
+whose guest is wasm, so a zig or go function held in a define imports like any other guest's and `load fib.zig` reaches it. [docs/wasm.md](docs/wasm.md) has the rest: wasi
+programs, deadlines, the `amk` imports a module can call, and the toolchains.
 
 ```Makefile
-# the module as hex in a variable, then three calls in one session: 55 6765 832040
-hex := $(shell od -An -v -tx1 src/wasm3-0.9.0/test/lang/fib32.wasm)
-define session
-:load-hex $(words $(hex))
-$(hex)
-fib 10
-fib 20
-fib 30
+# the exports, then a lifted call and the same call through exec: fib, 6765, 55
+exports := $(wasm.import src/wasm3-0.9.0/test/lang/fib32.wasm)
+twenty := $(fib 20)
+ten := $(wasm.exec fib 10)
+```
 
+<a id="golang"></a><a id="go"></a>
+
+#### Go (tinygo)
+
+Not a linked engine but a [stacked engine](docs/FFI.md#stacked-engines) on the [wasm guest](#wasm): `load golang` registers it, and a go function held in a define, or in a `.go` file given to `load`, is compiled to a wasi module and its exports lifted as make functions. The module runs in-process; only the compile needs docker, and its result is [cached](docs/wasm.md#cache) by the hash of source, command and image, so a second run compiles nothing. [docs/wasm.md](docs/wasm.md#golang) has the full demo, wasi programs with a `main`, and the toolchain.
+
+```Makefile
+load golang
+
+@golang.import
+define fib.go
+  package main
+
+  //export fib
+  func fib(n uint32) uint32 {
+      a, b := uint32(0), uint32(1)
+      for i := uint32(0); i < n; i++ {
+          a, b = b, a+b
+      }
+      return a
+  }
+
+  func main() {}
 endef
-fibs := $(subst Result: ,,$(wasm.argv --repl,,$(session)))
+
+# a lifted call, then a file's exports the same way: 6765, then 5 49
+twenty := $(fib 20)
+load ./demos/data/my_functions.go
+sums := $(add 2 3) $(square 7)
 ```
+
+<a id="zig"></a>
+
+#### Zig
+
+The same [stacked engine](docs/FFI.md#stacked-engines) pattern on the [wasm guest](#wasm), with zig from alpine's package as the compiler: `load zig` registers it, a define under `@zig.import` or a `.zig` file given to `load` is built as a freestanding module, and every exported function is a make function. Compile in docker, run in-process, [cached](docs/wasm.md#cache) by content. [docs/wasm.md](docs/wasm.md#zig) has the full demo.
+
+```Makefile
+load zig
+
+@zig.import
+define fib.zig
+  export fn fib(n: u32) u32 {
+      var a: u32 = 0;
+      var b: u32 = 1;
+      var i: u32 = 0;
+      while (i < n) : (i += 1) {
+          const t = a + b;
+          a = b;
+          b = t;
+      }
+      return a;
+  }
+endef
+
+# a lifted call, then a file's exports the same way: 6765, then 5 49
+twenty := $(fib 20)
+load ./demos/data/my_functions.zig
+sums := $(add 2 3) $(square 7)
+```
+
+<a id="sqlite"></a><a id="sql"></a>
+
+#### SQL (sqlite)
+
+One of the [data-engines](docs/data-engines.md): an in-memory database held by the host process, with JSON functions and recursive CTEs.
+
+A program is one or more SQL statements; each result row comes back as a JSON object on a line.
+`@sqlite.import` loads a define as the schema, and `--arg name value` binds `:name` as text,
+which a typed column converts. See [data engines](docs/data-engines.md) for sqlite workspaces.
+
+```Makefile
+@sqlite.import
+define edges
+  CREATE TABLE e(a INTEGER, b INTEGER);
+  INSERT INTO e VALUES(1,2),(2,3),(3,1);
+endef
+
+# a recursive walk of the cycle: {"seen":[1,2,3]}
+seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WHERE a = x) SELECT json_group_array(x) AS seen FROM r)
+
+# a bound value never becomes SQL text: {"n":2}
+$(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
+n := $(edges.get --arg a 3 SELECT count(*) AS n FROM e WHERE a = :a)
+```
+
+A recipe reaches the same database over the call channel, so shell stages and engine
+stages share one store. [demos/tuplespace-1.amk](demos/tuplespace-1.amk) builds a Linda tuple
+space on it, with workers in four languages under `-j4`. The `sqlite3` command line is
+`amk --sqlite`, one in-memory database for its arguments and then stdin.
+
+<a id="jq"></a>
+
+#### JQ
+
+Complex datastructures, fast and no tools required.  Make helpers and you're well on your way to stacks and other fun.
+
+```Makefile
+pkg := {"name": "cmk", "version": "1.2.3"}
+pkg.version := $(jq.argv -r, .version, $(pkg))
+```
+
+Quoting or commas in calls may need a variable in the middle.
+
+```Makefile
+opts = -n -r --arg alts 'k/a k/b' --arg none ""
+frame := $(jq.argv ${opts}, $$alts + "|" + $$none)
+```
+
+--------------
+
+<a id="further-reading"></a>
 
 ### Further Reading
 
 The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 
-| topic | what it gives |
+| Topic | What It Gives |
 | --- | --- |
 | [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
-| [The jq store](docs/FFI.md#the-jq-store) | named JSON values, updated in the make process with no fork |
-| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | the jq store from a running recipe's shell |
-| [Init](docs/FFI.md#init) | a chunk run in each persistent state before the parse |
+| [Data engines](docs/FFI.md#data-engines) | jq values and sqlite databases held by the make process, and the verbs every workspace has |
+| [jq workspaces](docs/data-engines.md#jq-workspaces) | named JSON values, updated in the make process with no fork |
+| [Asks from a recipe](docs/FFI.md#calls-from-a-recipe) | namespaces and workspaces from a running recipe's shell |
+| [Init](docs/FFI.md#init) | a chunk run in each scripting guest's main state before the parse |
 | [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
-| [The guest handle](docs/FFI.md#the-guest-handle) | variable reads and writes, expansion, and eval from a guest |
+| [The guest handle](docs/FFI.md#guest-handle) | variable reads and writes, expansion, and eval from a guest |
+| [The host handle](docs/FFI.md#host-handle) | spawned jobs, their mail, signals and the terminal, and the exit status, from lua and js |
 | [Registering make functions](docs/FFI.md#registering-make-functions) | guest functions and values as make functions and variables |
 
 <a id="zygote"></a><br/>
 
-## Resident Dispatch
+## Zygote
 
-**Background, briefly.** For resident mode, the idea is that a large program should parse *only once*, regardless of how many times it's calling itself recursively.  Obvious right?, and completely standard for a Real Programming Language(tm), but for various reasons this is **not** what a build-system like `make` typically wants or needs.  Since `amk` has optional extra use-cases that may be very far away from just a build-system.. it has optional extra support that works around this whole bottleneck.
+**Background, briefly.** For resident dispatch, the idea is that a large program should parse *only once*, regardless of how many times it's calling itself recursively.  Obvious right?, and completely standard for a Real Programming Language(tm), but for various reasons this is **not** what a build-system like `make` typically wants or needs.  Since `amk` has optional extra use-cases that may be very far away from just a build-system.. it has optional extra support that works around this whole bottleneck.
 
 **Architecture, briefly.**  A server (the zygote) reads makefiles once and waits on a unix socket.  Each client request runs as an ordinary make in a fresh copy of that parsed state, with the client's working directory, arguments, environment and terminal.  
 
@@ -753,34 +983,42 @@ that:
 
 Primitive functions amk adds beside the engines. 
 
-| function | answers | feature |
+| Function | Answers | Feature |
 | --- | --- | --- |
 | `$(cksum text)`, `$(cksum.file path)` | the checksum and byte length the cksum utility prints, joined by a dash | `cksum` |
 | `$(cksum.hex text)`, `$(cksum.file.hex path)` | seven hex digits of that checksum modulo 2^28 | `cksum` |
 | `$(cksum* var)`, `$(cksum.hex* var)` | the same over a variable's dedented value | `cksum` |
 | `$(amk.sys name)` | `pid`, `ppid`, `uid`, `uname`, `arch`, `hostname`, `epoch` or `uuid` from the kernel; an unknown name is fatal | `sys` |
-| `$(amk.match re,text)`, `$(amk.match.file re,path)` | the lines an extended regular expression matches, joined by newlines; a bad pattern is fatal, a missing file is empty with a warning | `match` |
-| `$(amk.match* re, var)` | the same with either argument read from a variable | `match` |
+| `$(re.match re,text)`, `$(re.match.file re,path)` | the lines an extended regular expression matches, joined by newlines; a bad pattern is fatal, a missing file is empty with a warning | `match` |
+| `$(re.match* re, var)` | the same with either argument read from a variable | `match` |
 | `$(amk.dedent text)`, `$(amk.val.dedent var)`, `$(amk.dedent* var)` | the block indent removed from the text, or from a variable's unexpanded value | always |
+| `$(amk.kwarg key, arg)` | the value of `arg` when it reads `key=value` with that key, split at the first `=`; otherwise empty | always |
 | `$(amk.require names...)` | empty, or fatal naming the features this amk lacks | always |
-| `$(goal name)` | the goal brought up to date in a fork, and its value | always |
+| `$(amk.goal name)` | the goal brought up to date in a fork, and its value | always |
+| `$(amk.mode name)`, `$(amk.mode)` | sets the [mode](docs/dataflow.md#modes) for the whole process, before any file target; answers the active mode's name | always |
 | `$(amk.stdin text)` | the text fed to the recipe line's command on its standard input | always |
- 
-Each function names its feature in `.FEATURES`, so a makefile can guard on it and keep a shell for a stock make.  See [reflection](#) for more details.
+
+Each function names its feature in `.FEATURES`, so a makefile can guard on it and keep a shell for a stock make.  See [reflection](docs/FFI.md#reflection) for more details.
 
 `AMK_PROFILE=<file>` or `-` in the environment times every function, `call` macro and
-recursive variable by name and appends the table when the process dies.  See [profiler docs](#) for more details.
+recursive variable by name and appends the table when the process dies.  See [profiler docs](docs/dev.md#profiling) for more details.
+
+<a id="environment-and-cli"></a><br/>
+
+## Environment & CLI
+
+The catalog of what `amk` reads from its command line and its environment beyond what `make` does.  Other sections above have the details; see also `amk --help`.
 
 <a id="cli"></a><br/>
 
-## Command Line
+### Command Line
 
-Several new flags are added by `amk` to defaults for `make`, each read ahead of other option decoding.  Other sections above have more details, but this section is the catalog.  See also  `amkk --help`.
+Several new flags are added by `amk` to defaults for `make`, each read ahead of other option decoding.
 
-| flag | takes | does |
+| Flag | Takes | Does |
 | --- | --- | --- |
-| `--<engine>` | the engine's arguments | runs that engine with the rest of the line: `--awk`, `--jq`, `--lua`, `--s7`, `--micropy`, `--js`, `--wasm` |
-| `--list-engines` | | prints one engine per line, the builtin name and then its multi-call names, if any |
+| `--<engine>` | the engine's arguments | runs that engine with the rest of the line: `--awk`, `--jq`, `--lua`, `--s7`, `--micropy`, `--js`, `--wasm`, `--sqlite` |
+| `--list-engines` | | prints every engine as JSON: its names, language, guest and version, interface, and the capabilities it supports |
 | `--serve SOCK` | a socket path, then make's arguments | parses once and answers requests on the socket as the [zygote](#zygote) |
 | `--client SOCK` | a socket path, then the request, optionally `-- <cold command>` | runs the request against a zygote, or the cold command when refused |
 | `--resident` | make's arguments | one command served by a zygote it starts and reaps itself |
@@ -788,10 +1026,59 @@ Several new flags are added by `amk` to defaults for `make`, each read ahead of 
 | `--force` | | with `--ape-unpack`, overwrites a destination that exists |
 | `--ape-list` | | prints every payload member, one per line, sorted, as `--ape-unpack` names them |
 | `--bundle FILES... --out DEST` | makefiles and directories, the output path | writes a copy of amk whose default entry is that [program](#bundles) |
+| `--preprocessor [FILE]` | a makefile, or stdin | prints the makefile with its [decorators](#extended-grammar) rewritten and does nothing else, exiting 76 on a refused decorator line; `AMK_DISABLE_PREPROCESS=1` skips that rewrite inside amk |
 | `--profile`, `--profile=FILE` | an optional output file | sets `AMK_PROFILE` to FILE, or to stderr without one, from anywhere on the line |
+
+<a id="environment"></a><br/>
+
+### Environment
+
+Variables `amk` reads, grouped by what they steer.  The last group is set by `amk` itself for the recipes and children of a run, and read back by them.
+
+| Variable | Does | See |
+| --- | --- | --- |
+| `AMK_<ENGINE>_INIT` | a chunk the language engine runs in `main` before the parse, as text or as `@path`; without it, the payload's `__init__.<engine>` | [init](docs/FFI.md#init) |
+| `AMKPATH`, `AMK_PATH` | colon-separated library roots searched ahead of the payload's `lib/`; `AMK_PATH` is read when `AMKPATH` is unset | [modules](#modules) |
+| `AMK_MODE` | selects a mode for the run, as `$(amk.mode ...)` would; `AMK_MODE=dataflow` | [dataflow](docs/dataflow.md#dataflow) |
+| `AMK_SHELL`, `AMK_SHELLFLAGS`, `AMK_GOAL` | the prelude's defaults for `SHELL`, `.SHELLFLAGS` and `.DEFAULT_GOAL`, each overridable by a later assignment | [payloads](docs/payloads.md) |
+| `AMK_NO_PRELUDE` | skips the payload's prelude | [payloads](docs/payloads.md) |
+| `AMK_NO_PATH` | leaves `PATH` as found and unpacks no bundled tool | [tools](docs/payloads.md#tools) |
+| `XDG_CACHE_HOME`, `HOME` | where unpacked tools are cached: `$XDG_CACHE_HOME`, else `$HOME/.cache` | [tools](docs/payloads.md#tools) |
+| `AMK_DISABLE_PREPROCESS` | `1` skips the decorator rewrite inside amk | [extended grammar](#extended-grammar) |
+| `AMK_PROFILE` | a file, or `-` for stderr, that takes the timing table when the process dies; `--profile` sets it | [profiling](docs/dev.md#profiling) |
+| `AMK_DEBUG` | set to anything, adds diagnostics on stderr: a workspace loaded from its backing, a request the zygote refused | |
+| `AMK_ZYGOTE` | the pid of a zygote still starting; a client waits a bounded time for its socket instead of running cold | [zygote](#zygote) |
+| `AMK_COLD` | the command a client runs when no zygote answers and the line has no `-- <cold command>` | [zygote](#zygote) |
+| `AMK_REARM` | variables a served request recomputes, for parse-time values a shared parse would freeze | [zygote](#zygote) |
+| `AMK_WATCH` | set and not `0`, arms a serving zygote's check of the modification times of the makefiles it parsed | [zygote](#zygote) |
+| `TMPDIR` | where the ape loader installs itself on first run, and where `--resident` keeps its socket | [payloads](docs/payloads.md) |
+| `NO_COLOR`, `NOCOLOR` | either one set turns color off in amk's own messages | |
+| `AMK_BIN` | the binary the test suite runs, for a build somewhere other than `out/bin/amk` | [testing](docs/dev.md#testing) |
+| `AMK_ASK`, `AMK_REPLY` | set by amk: the request and reply descriptors of the ask channel, one pair per recipe child and per spawned job | [asks](docs/FFI.md#calls-from-a-recipe) |
+| `AMK_MAIL` | set by amk: the descriptor a job's recipe writes to reach its parent's mail | [host handle](docs/FFI.md#host-handle) |
+| `AMK_DATAFLOW_DIR` | set by amk: the value directory of a dataflow run, shared by every sub-make | [dataflow](docs/dataflow.md#dataflow) |
+| `AMK_BOOTED` | set by amk: a child of a run is told the payload is booted, so recursion does not boot it again | |
 
 <a id="dev"></a><br/>
 
 ## Developers
 
 [Building](docs/dev.md#building), [Testing](docs/dev.md#testing), [Dependencies](docs/dev.md#dependencies), [Patch Series](docs/dev.md#patches), [Release Process](docs/dev.md#releases), [Tree layout](docs/dev.md#layout), and [Payload Internals](docs/dev.md#payload-internals) are all in the [main developer docs](docs/dev.md).
+
+<a id="references"></a><br/>
+
+## References
+
+Related pages:
+
+- [The FFI](docs/FFI.md), every engine's interface in full.
+- [The runtime](docs/runtime.md), the concurrency flavors.
+- [Data engines](docs/data-engines.md), workspaces in jq and sqlite.
+- [Payloads](docs/payloads.md) and [the zygote](docs/zygote.md), how the binary carries files and serves requests.
+
+Further reading:
+
+- [Make](https://en.wikipedia.org/wiki/Make_(software)), [polyglot programming](https://en.wikipedia.org/wiki/Polyglot_(computing)) and [foreign function interfaces](https://en.wikipedia.org/wiki/Foreign_function_interface), on Wikipedia.
+
+[^cosmo-gotchas]: Cosmopolitan, the cosmocc toolchain's README, "Gotchas", [github.com/jart/cosmopolitan](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas).
+[^make-load]: The GNU make manual, "The load Directive", [gnu.org](https://www.gnu.org/software/make/manual/html_node/load-Directive.html).

@@ -1,0 +1,38 @@
+;; plex/init.scm: a cooperative plex for stock s7, multiplexing tasks onto one thread: a ready list of continuations, fork queueing a task, yield handing control to the next, and a task's end running what is left. The list is a queue, or a stack under the order lifo, where a forked group goes to the front in its own order. Many plexes may exist; each is a procedure of a verb. No amk in it.
+
+;; One plex: run seeds it with a thunk and answers once every task has ended, or what finish was handed.
+(define (make-plex . order)
+  (let ((ready ()) (finish #f) (lifo (and (pair? order) (eq? (car order) 'lifo))))
+    (define (next!)
+      (let ((task (car ready)))
+        (set! ready (cdr ready))
+        (task #f)))
+    (define (done)
+      (if (null? ready) (finish 'done) (next!)))
+    (define (task thunk)
+      (lambda (x) (thunk) (done)))
+    (define (fork-all thunks)
+      (let ((tasks (map task thunks)))
+        (set! ready (if lifo (append tasks ready) (append ready tasks)))))
+    (define (yield)
+      (call/cc
+        (lambda (k)
+          (set! ready (append ready (list k)))
+          (done))))
+    (define (run thunk)
+      (call/cc
+        (lambda (stop)
+          (set! finish stop)
+          (thunk)
+          (done))))
+    (lambda (verb . args)
+      (case verb
+        ((fork) (fork-all (list (car args))))
+        ((fork-all) (fork-all (car args)))
+        ((yield) (yield))
+        ((done) (done))
+        ((run) (run (car args)))
+        ((finish) (finish (if (pair? args) (car args) 'done)))
+        ((pending) (length ready))
+        ((order) (if lifo 'lifo 'fifo))
+        (else (error 'wrong-type-arg "plex: no verb ~S" verb))))))

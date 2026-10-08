@@ -1,0 +1,157 @@
+#
+# payload/lib/actor/init.amk:
+#  actor groups: a set of actors under a charter, declared as JSON in a
+#  define under the at line @actor.group, kept as a jq workspace of the
+#  define's name, and run by the backend the charter names. a member
+#  may also join by at line, @name.actor (lua) above its define. a group's
+#  members run under a pool, the charter's or the default actor pool.
+#
+$(amk.require jq)
+load dsys/job
+
+# The default actor pool, opened once: actors by AMK_MAX_ACTORS, or max_actors.
+actor.max_actors ?= 64
+actor._env = $(if $(filter-out undefined,$(origin $(1))),$($(1)))
+actor._actors = $(strip $(or \
+  $(call actor._env,AMK_MAX_ACTORS),$(actor.max_actors)))
+$(if $(amk.pool actors),,$(amk.pool actors, $(actor._actors)))
+
+# A backend's baseline: its charter defaults and those of each child kind.
+actor.baseline = /zip/lib/actor/$(1).json
+actor.backend = $(jq.ns $(1), get, -r .backend // "effection")
+$(amk.fxn! actor.baseline)
+$(amk.fxn! actor.backend)
+
+# The body over the baseline, then each child over its kind's and the charter's.
+define actor.merge
+  ($$base[0] * .) | .kinds as $$kinds | .restart as $$restart
+  | (.kind // "goal") as $$kind
+  | .children |= with_entries(.value |= (
+      (.kind // $$kind) as $$k
+      | if $$kinds | has($$k) then . else error("no kind " + $$k) end
+      | $$kinds[$$k] * { kind: $$k, restart: $$restart } * .))
+endef
+
+# A member's entry from its at line: kind and engine implied, its options.
+actor.cm := ,
+actor.sp := $(subst ,, )
+actor.entry = {$(subst $(actor.sp),$(actor.cm),$(strip $(foreach k, \
+  $(amk.decorator.kws),"$(k)":"$(amk.decorator.kw.$(k))")))}
+define actor.join
+$(jq.ns $(1), update, --argjson own '$(actor.entry)'
+  ($$own | with_entries(.value |= (tonumber? // .))) as $$own
+  | ($$own.kind // .kind // "call") as $$k
+  | .children.$(2) = (.kinds[$$k]
+      * { kind: $$k, engine: "$(3)", restart: .restart } * $$own))
+endef
+$(amk.fxn! actor.join)
+
+# Mailboxes by the charter: none opens no pool, pool an inbox per member.
+actor.mailbox = $(jq.ns $(1), get, -r .mailbox // "none")
+actor.ids = $(jq.ns $(1), get, -r .children | keys | join(" "))
+actor._cast = $(amk.pool.produce $(1).$(2).inbox, $(3))
+actor._recv = $(amk.pool.consume $(1).$(2).inbox)
+actor._nomail = $(error $(1): no mailboxes; the charter's mailbox is none)
+
+# An ask: asker:msg in the member's inbox, the answer from the asker's reply.
+actor._ask = $(strip $(if $(amk.pool $(1).$(2).reply),, \
+  $(error $(1): $(2) does not ask; give it ask=true)) \
+  $(amk.pool.produce $(1).$(3).inbox, $(2):$(4)) \
+  $(amk.pool.consume $(1).$(2).reply))
+actor._reply = $(amk.pool.produce \
+  $(1).$(firstword $(subst :, ,$(2))).reply, $(3))
+actor.verbs := cast recv ask reply
+actor.askers = $(jq.ns $(1), get, -r .ask as $$c | [.children | to_entries[] \
+  | select(if .value | has("ask") then .value.ask else $$c end \
+    | . == true or . == "true") | .key] | join(" "))
+actor._open = $(if $(amk.pool $(1)),,$(if $(word 64,$(amk.pool )), \
+  $(error $(2): no pool left for $(1)), \
+  $(amk.pool $(1), labeled=true, strategy=open)))
+actor.inbox = $(if $(actor.mailbox.pool.$(1)),$(strip \
+  $(actor._open $(1).$(2).inbox, $(1)) \
+  $(if $(filter $(2),$(actor.askers $(1))), \
+    $(actor._open $(1).$(2).reply, $(1)))))
+define actor.mailboxes
+$(strip
+  $(if $(filter pool,$(actor.mailbox $(1))),
+    $(eval actor.mailbox.pool.$(1) := 1)
+    $(if $(word 65,$(amk.pool ) $(actor.ids $(1)) $(actor.askers $(1))),
+      $(error $(1): $(words $(actor.ids $(1)) $(actor.askers $(1))) inboxes \
+        and replies do not fit; $(words $(amk.pool )) of 64 pools are open))
+    $(foreach id,$(actor.ids $(1)),$(actor.inbox $(1), $(id)))
+    $(foreach v,$(actor.verbs),$(amk.fxn! $(1).$(v), actor._$(v), $(1))),
+    $(eval actor.mailbox.pool.$(1) :=)
+    $(foreach v,$(actor.verbs),$(amk.fxn! $(1).$(v), actor._nomail, $(1)))))
+endef
+$(amk.fxn! actor.mailbox)
+$(amk.fxn! actor.ids)
+$(amk.fxn! actor._cast)
+$(amk.fxn! actor._recv)
+$(amk.fxn! actor._nomail)
+$(amk.fxn! actor._ask)
+$(amk.fxn! actor._reply)
+$(amk.fxn! actor.askers)
+$(amk.fxn! actor._open)
+$(amk.fxn! actor.inbox)
+$(amk.fxn! actor.mailboxes)
+
+# What each engine runs to compile a member's body: the group, then the member.
+actor.engines := lua js micropy s7
+actor.body.lua = $(lua.exec amk.actor.bind("$(1)", "$(2)"))
+actor.body.js = $(js.exec amk.actor.bind("$(1)", "$(2)", "$(3)"))
+actor.body.micropy = $(micropy.exec import amk; \
+  amk.actor.bind("$(1)", "$(2)"))
+actor.body.s7 = $(s7.exec (amk-actor-bind "$(1)" "$(2)" "$(3)"))
+
+# Each backend's __main__ target, in the engine that hosts the backend.
+actor.run.effection = $(js.target $(1).__main__, await amk.actor.run("$(1)"))
+actor.run.s7 = $(s7.target $(1).__main__, (amk-actor-run "$(1)"))
+actor.run = $(call actor.run.$(actor.backend $(1)),$(1))
+$(amk.fxn! actor.run)
+
+# A goal is the define as the engine's target; any other kind, a compiled body.
+actor.kind = $(strip $(or $(if $(filter kind,$(amk.decorator.kws)), \
+  $(amk.decorator.kw.kind)),$(jq.ns $(1), get, -r .kind // "call")))
+actor.way = $(if $(filter goal,$(call actor.kind,$(1))),goal,body)
+actor.compile.goal = $(call $(1).target_star,$(3))
+actor.compile.body = $(call actor.body.$(1),$(2),$(3),$(call actor.kind,$(2)))
+actor.compile = $(call actor.compile.$(call actor.way,$(2)),$(1),$(2),$(3))
+$(amk.fxn! actor.compile)
+
+# The decorator: the body compiled in its engine, then joined under its kind.
+define actor.member_star
+$(strip
+  $(if $(filter undefined,$(origin actor.body.$(word 1,$(2)))),
+    $(error $(1): $(word 1,$(2)) cannot run an actor; $(actor.engines) can))
+  $(actor.compile $(word 1,$(2)), $(word 2,$(2)), $(1))
+  $(actor.join $(word 2,$(2)), $(1), $(word 1,$(2)))
+  $(amk.schema.text $(1), $(jq.ns $(word 2,$(2)), get, -c .),
+    $(actor.group.__schema__))
+  $(actor.inbox $(word 2,$(2)), $(1)))
+endef
+
+# The at line @<group>.actor (<engine>), one per group.
+actor.actor.engine = $(if $(filter-out 0,$(amk.decorator.argc)), \
+  $(amk.decorator.1))
+actor.actor.via = $(call actor.member_star,$(1),$(or $(actor.actor.engine), \
+  $(error $(1): @<group>.actor needs an engine; $(actor.engines))) <group>)
+actor.actor.at = $(subst <group>,$(1),$(value actor.actor.via))
+$(amk.fxn! actor.actor.at)
+
+# The at line @actor.group: the define's JSON as its data, plus its run.
+actor.group.__schema__ := actor/schema/group.json
+actor.groups :=
+@amk.fxn!
+define actor.group_star
+$(strip
+  $(jq.import $(1), $(amk.val.json5 $(1)))
+  $(jq.ns $(1), update, \
+    --slurpfile base $(actor.baseline $(actor.backend $(1))) \
+    $(strip $(actor.merge)))
+  $(if $(amk.pool $(jq.ns $(1), get, -r .pool)),, \
+    $(error $(1): no pool named $(jq.ns $(1), get, -r .pool); open it first))
+  $(actor.mailboxes $(1))
+  $(eval actor.groups += $(1))
+  $(eval $(1).actor_star = $(actor.actor.at $(1)))
+  $(actor.run $(1)))
+endef

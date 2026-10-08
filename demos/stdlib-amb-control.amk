@@ -1,0 +1,17 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-control.amk
+#
+
+__main__: control
+
+@s7.target
+define control
+  (load "amb.scm" (rootlet))
+  (format #t "reset alone: ~A~%"
+    (reset (lambda () (+ 1 2))))
+  (format #t "rest called twice: ~A~%"
+    (reset (lambda () (+ 1 (shift (lambda (k) (k (k 1))))))))
+  (format #t "rest dropped: ~A~%"
+    (reset (lambda () (+ 1 (shift (lambda (k) 10))))))
+endef

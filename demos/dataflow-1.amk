@@ -1,0 +1,91 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/dataflow-1.amk:
+#  5 imported targets in 5 langs, a shell stage, and a marked file,
+#  using incremental computing, dataflow style.  pipeline is *implicit*
+#  here: change an input and only what depends on it reruns.
+#
+$(amk.mode dataflow)
+amk.dataflow_dir := build/dataflow-1
+
+# Where each stage of the graph lands under the value directory.
+input        := $(amk.dataflow_dir)/external_input.txt
+intermediate := $(amk.dataflow_dir)/sorted
+derived      := $(amk.dataflow_dir)/median
+downstream   := $(amk.dataflow_dir)/report
+
+# The input is a source edited from outside; the empty rule makes it a target.
+$(input): ;
+
+# A plain recipe is a stage too: what it prints is its value.
+cleaned: $(input)
+	tr -s ' ' < $(input)
+
+# Each imported target names the values it reads, shouted like a module global.
+@awk.target
+define sorted
+  BEGIN {
+    n = split(">>CLEANED<<", a, " ");
+    asort(a)
+    for (i = 1; i <= n; i++) printf "%s%s", a[i], (i < n ? " " : "\n")
+  }
+endef
+
+@lua.target
+define json
+  print("[" .. (">>SORTED<<"):gsub(" ", ",") .. "]")
+endef
+
+@s7.target
+define stats
+  (let ((xs (list >>SORTED<<)))
+    (format #t "~A numbers, sum ~A" (length xs) (apply + xs)))
+endef
+
+@micropy.target
+define median
+  import json
+  xs = json.loads('>>JSON<<')
+  print(xs[len(xs) // 2])
+endef
+
+@js.target
+define report
+  print(">>STATS<<" + ", median >>MEDIAN<<");
+endef
+
+# A recipe that writes its file is marked, so the file itself is its value.
+@amk.file
+$(amk.dataflow_dir)/summary.txt: $(downstream)
+	echo "summary: $(amk.goal report)" > $@
+
+@lua.target
+define banner
+  print((">>SUMMARY.TXT<<"):upper())
+endef
+
+__main__:
+	$(file >$(input),3 1 4 1 5 9 2 6)
+	${amk} report
+	${amk} check expect="8 numbers, sum 31, median 4"
+	test "$$(${amk} banner)" = "SUMMARY: 8 NUMBERS, SUM 31, MEDIAN 4"
+	# A new input: only the stages downstream of it rerun.
+	sleep 1.1 && echo "10 20 30" > $(input)
+	${amk} report
+	${amk} check expect="3 numbers, sum 60, median 20"
+	# Same numbers, new order: intermediate is unchanged, nothing past it reruns.
+	sleep 1.1 && echo "30 10 20" > $(input)
+	${amk} report
+	${amk} check expect="3 numbers, sum 60, median 20"
+	test ! $(downstream) -nt $(input)
+	# Bad input: a derived value fails and moves aside; the report keeps its last.
+	sleep 1.1 && echo "x y" > $(input)
+	! ${amk} report 2>/dev/null
+	test -f $(derived).failed && test -s $(derived).err
+	${amk} check expect="3 numbers, sum 60, median 20"
+	echo "five languages, one dataflow, incremental"
+
+# A recipe expands whole first, so a value read after a change needs a target.
+expect ?=
+check:
+	test "$(file <$(downstream))" = "$(expect)"

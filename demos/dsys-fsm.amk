@@ -1,0 +1,81 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/dsys-fsm.amk:
+#  a state machine under @fsm in the shape of an xstate machine config,
+#  compiled by dsys/fsm to a net that dsys/petri runs. a door moves by the
+#  events it is sent; entering a state runs its entry action in a guest,
+#  and checking invokes a service whose output the guards route on.
+#
+
+load dsys/fsm
+
+__main__: door.__main__ show.after
+
+@fsm
+define door
+  {
+    "id": "door",
+    "initial": "locked",
+    "states": {
+      "locked":   { "entry": "bolt",  "on": { "unlock": "closed" } },
+      "closed":   { "entry": "latch",
+                    "on": { "pull": "checking", "lock": "locked" } },
+      "checking": {
+        "invoke": {
+          "src": "hinge",
+          "onDone": [
+            { "guard": "jammed",  "target": "closed" },
+            { "guard": "snapped", "target": "broken" },
+            { "target": "open" }
+          ]
+        }
+      },
+      "open":     { "entry": "swing", "on": { "push": "closed" } },
+      "broken":   { "type": "final" }
+    }
+  }
+endef
+
+# The environment sends the events; the machine never holds its own input.
+$(door.send unlock)
+$(door.send pull)
+$(door.send pull)
+$(door.send push)
+$(door.send pull)
+
+# Entry actions: the event that brought the machine here is door.event.
+@lua.target
+define bolt
+  print("door: bolted, on " .. amk.var["door.event"])
+endef
+
+@micropy.target
+define latch
+  import amk
+  print("door: latched, on %s" % amk.var["door.event"])
+endef
+
+# The invoked service: what it prints is what the onDone guards see.
+@js.target
+define hinge
+  const checks = amk.var["door.trace"].split(" ")
+    .filter(t => t === "checking.invoke").length;
+  print(["jam", "ok", "snap"][Math.min(checks, 2)]);
+endef
+
+@s7.target
+define swing
+  (format #t "door: swung open~%")
+endef
+
+# Guards over the service's output: a variable by its value, a target by its exit status.
+jammed = $(filter jam,$(door.checking.output))
+
+snapped:
+	@test "$(door.checking.output)" = snap
+
+show.after:
+	@echo "state: $(door.state )"
+	@echo "trace: $(door.trace)"
+	@echo "transitions: $(words $(door.transitions))"
+	@echo "places: $(words $(door.places))"

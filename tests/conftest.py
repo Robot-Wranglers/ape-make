@@ -67,7 +67,7 @@ def amk():
   """The binary under test, or a skip that says how to get one."""
   binary = _binary()
   if not binary.exists():
-    pytest.skip(f"no amk at {binary} (run make build in via/amk, or set AMK_BIN)")
+    pytest.skip(f"no amk at {binary} (run make build, or set AMK_BIN)")
   r = sh(binary, ["--version"], timeout=60)
   assert "GNU Make" in r.stdout, f"{binary} is not a make: {r.stderr[-500:]}"
   return binary

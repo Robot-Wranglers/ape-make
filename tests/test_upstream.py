@@ -48,7 +48,7 @@ def render(results):
 def test_upstream_suite_does_not_regress(amk, tmp_path):
   src = next(AMK_DIR.glob("src/make-*"), None)
   if src is None or not (src / "tests" / "run_make_tests.pl").exists():
-    pytest.skip("no patched make source under src/ (run make patch in via/amk)")
+    pytest.skip("no patched make source under src/ (run make patch)")
   if not shutil.which("perl"):
     pytest.skip("the upstream suite needs perl")
   # The driver resets the environment to its own whitelist, so the switch rides in a wrapper that also names itself as MAKE.

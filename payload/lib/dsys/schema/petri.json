@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "petri.json",
+  "title": "@petri",
+  "description": "a net under @petri: the place/transition core of PNML, with what only amk reads under amk",
+  "type": "object",
+  "required": ["places", "transitions", "arcs"],
+  "additionalProperties": false,
+  "properties": {
+    "places": {
+      "description": "each place and its initial marking: a count of plain tokens, or a list of labels for a labeled place",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "integer", "minimum": 0 },
+          { "type": "array", "items": { "$ref": "#/$defs/label" } }
+        ]
+      }
+    },
+    "transitions": {
+      "description": "the transitions, in the order an enabled one is chosen to fire",
+      "type": "array",
+      "items": { "$ref": "#/$defs/name" }
+    },
+    "arcs": {
+      "description": "place to transition or transition to place, with a weight, the tokens it moves per firing",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          { "$ref": "#/$defs/name" },
+          { "$ref": "#/$defs/name" },
+          { "type": "integer", "minimum": 1, "default": 1 }
+        ],
+        "minItems": 2,
+        "maxItems": 3
+      }
+    },
+    "amk": {
+      "description": "what only amk reads; PNML export leaves it out",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": ["petri"],
+          "default": "petri"
+        },
+        "strategy": {
+          "description": "who may add to the net's places: default and strict, only the process running the net; open, any process",
+          "enum": ["default", "strict", "open"],
+          "default": "default"
+        },
+        "open": {
+          "description": "the places the environment feeds, each opened with strategy open",
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" },
+          "default": []
+        },
+        "pools": {
+          "description": "names usable in arcs as places, each an existing open pool, by the pool's name",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/name" },
+          "additionalProperties": { "type": "string" }
+        },
+        "steps": {
+          "description": "what each transition runs when it fires, by transition",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "run": {
+                "description": "a target, or targets run in order; the last one's value is the step's output",
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                ]
+              },
+              "bind": {
+                "description": "make variables set before the step runs, each a word",
+                "type": "object",
+                "additionalProperties": { "type": "string", "pattern": "^[^\\s=]*$" }
+              },
+              "kind": {
+                "description": "goal and goal.maybe run in place; agoal and agoal.maybe run as a job, in flight as a token of <t>.busy; a .maybe failure is an outcome, not fatal",
+                "enum": ["goal", "goal.maybe", "agoal", "agoal.maybe"],
+                "default": "goal"
+              }
+            }
+          }
+        },
+        "guard": {
+          "description": "a condition on the labels of a transition's inputs, by transition; each input it reads holds one token. a rule name over outcomes, or a label the token must carry",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "enum": [
+                  "all success", "not all success", "any failed", "not any failed",
+                  "all_success", "not_all_success", "any_failed", "not_any_failed"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": { "label": { "type": "string", "minLength": 1 } },
+                "required": ["label"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "label": {
+          "description": "the label a transition gives the tokens it produces, by transition; without one, the label it took passes on",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "enum": ["outcome", "skipped", "merge", "output"] },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["items"],
+                "properties": {
+                  "items": { "type": "array", "items": { "$ref": "#/$defs/label" } }
+                }
+              }
+            ]
+          }
+        },
+        "invariants": {
+          "description": "weighted sums of places, and of <t>.busy counts, that hold whenever no firing is in flight",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["="],
+            "properties": { "=": { "type": "integer" } },
+            "additionalProperties": { "type": "integer" }
+          }
+        },
+        "final": {
+          "description": "the marking a run ends at, by place, or the alternatives; a place left out wants 0",
+          "oneOf": [
+            { "$ref": "#/$defs/marking" },
+            { "type": "array", "items": { "$ref": "#/$defs/marking" }, "minItems": 2 }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "marking": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "name": {
+      "description": "a place or transition; no name is both, and a place is not named <t>.busy for an agoal transition t",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "label": {
+      "description": "a labeled token: 1 to 31 bytes, no whitespace, no $, # or backslash",
+      "type": "string",
+      "pattern": "^[^\\s$#\\\\]{1,31}$"
+    }
+  }
+}

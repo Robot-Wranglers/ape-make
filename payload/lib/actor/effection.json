@@ -1,0 +1,18 @@
+{
+  "backend": "effection",
+  "strategy": "one_for_one",
+  "intensity": 3,
+  "period": 10000,
+  "restart": "always",
+  "pool": "actors",
+  "mailbox": "none",
+  "ask": false,
+  "kinds": {
+    "goal": {},
+    "call": {},
+    "block": { "engine": "micropy" },
+    "scoped": {},
+    "group": {}
+  },
+  "children": {}
+}

@@ -1,6 +1,6 @@
 """Pins how the argv builtins split their option list.
 
-`$(jq.argv opts,program)` and `$(awk.argv opts,program)` build the guest's argv from
+`$(jq.argv opts, program)` and `$(awk.argv opts, program)` build the guest's argv from
 one string. The split follows a shell command line, so an option list that works after
 `jq` in a recipe means the same thing here: quotes group, a backslash escapes, nothing
 expands.

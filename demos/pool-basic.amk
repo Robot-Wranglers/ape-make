@@ -1,0 +1,44 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/pool-basic.amk:
+#  a named semaphore from the jobserver's own machinery: a pool of one
+#  token declared under @pool, three jobs spawned from lua, and each
+#  job a micropy target that takes the token, works, and gives it back,
+#  so the three critical sections never overlap. goals is the pool make
+#  already had; `amk.pool` reads both.
+#
+
+load dsys/pool
+load dsys/jobman
+
+__main__: show.pools run.workers
+
+@pool
+define door
+  { "size": 1 }
+endef
+
+show.pools:
+	@echo "pools: $(amk.pool )"
+	@echo "door: size=$(amk.pool.size door) held=$(amk.pool.held door)"
+	@echo "goals: size=$(amk.pool.size goals)"
+
+# A worker: the token taken before the work and given back after.
+@micropy.target
+define worker
+  import amk, time
+  me = amk.sys("pid")
+  amk.pool.door.acquire()
+  print("worker %s: in" % me)
+  time.sleep(0.2)
+  print("worker %s: out" % me)
+  amk.pool.door.release()
+endef
+
+# Three forks run the worker; a fork keeps the pool, so they contend.
+@lua.target
+define run.workers
+  local jobman, jobs = amk.jobman.__jobs__, {}
+  for i = 1, 3 do jobs[i] = jobman.spawn.goal('worker') end
+  for i = 1, 3 do jobman.wait(jobs[i]) end
+endef

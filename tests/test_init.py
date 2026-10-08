@@ -124,7 +124,7 @@ def test_the_payload_chunk_runs(amk, tmp_path):
   if shutil.which("zip") is None:
     pytest.skip("no zip to add a payload member")
   if not zipfile.is_zipfile(amk):
-    pytest.skip("this amk carries no payload, so it is the native build")
+    pytest.skip("this amk carries no payload")
   mk = tmp_path / "reader.mk"
   mk.write_text(reader)
   (tmp_path / "__init__.lua").write_text("seen = 'payload'\n")

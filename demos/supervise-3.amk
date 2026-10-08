@@ -1,0 +1,90 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/supervise-3.amk:
+#  a group declared as data under the Effection backend: one charter under
+#  @actor.group names the backend and the members declared as data, the
+#  rest join by at line with their kind and restart as its words, and
+#  bravo crashes inside a nested group whose giving up is one
+#  member's exit. g1.__main__ is the group's own target.
+#
+
+load actor
+
+__main__: g1.__main__
+
+# The charter: the Effection backend, one-for-one, three crashes in a period.
+@actor.group
+define g1
+  {
+    "backend": "effection",
+    // a crash restarts only the member that crashed
+    "strategy": "one_for_one",
+    // three restarts in the period, then the group gives up
+    "intensity": 3,
+    "children": {
+      // a nested group: its giving up is one exit here, never restarted
+      "noisy": { "kind": "group", "restart": "never" },
+      // a micropy block, run once and restarted only on a crash
+      "echo": { "kind": "block", "engine": "micropy", "restart": "on-failure" },
+    },
+  }
+endef
+
+# A group as a member: its one child crashes on every start until it gives up.
+@actor.group
+define noisy {} endef
+
+# A goal by at line: a lua target restarted on failure, so a clean end is last.
+@g1.actor/lua {kind=goal restart=on-failure}
+define alpha
+  for n = 1, 3 do print("alpha: step " .. n) end
+endef
+
+# Always restarted, the charter's default: a crash on every start escalates.
+@noisy.actor/micropy {kind=goal}
+define bravo
+  print("bravo: up")
+  raise SystemExit(1)
+endef
+
+# Never restarted, whatever its exit.
+@g1.actor/js {kind=goal restart=never}
+define charlie
+  print("charlie: up");
+  std.exit(1);
+endef
+
+# A call member in micropy: the body runs with the handle, answering its return.
+@g1.actor/micropy {restart=on-failure}
+define delta
+  if g1.delta.start_count < 3:
+      raise ValueError("not yet on start %s" % g1.delta.start_count)
+  return "done on start %s" % g1.delta.start_count
+endef
+
+# A block member: a plain define the backend runs whole in its engine.
+define echo
+  print("ran as a block")
+endef
+
+# A scoped member by at line: a generator run in the backend's scope, no fork.
+@g1.actor/js {kind=scoped restart=on-failure}
+define foxtrot
+  const start = g1.foxtrot.start_count;
+  for (let n = 1; n <= 3; ++n) {
+    yield* amk.plex.sleep(50);
+    if (start === 1 && n === 2) throw new Error(`crashed on step ${n}`);
+    print(`foxtrot: step ${n} of start ${start}`);
+  }
+endef
+
+# A call member in lua: it reads its own entry and its siblings' via the handle.
+@g1.actor/lua {restart=on-failure}
+define clerk
+  print("clerk: start " .. g1.clerk.start_count
+    .. " under " .. g1.config.strategy)
+  local ids = {}
+  for id in pairs(g1.siblings()) do ids[#ids + 1] = id end
+  table.sort(ids)
+  print("clerk: siblings " .. table.concat(ids, " "))
+endef

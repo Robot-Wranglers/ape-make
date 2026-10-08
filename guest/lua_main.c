@@ -13,7 +13,7 @@
 
 static void lua_push_amk (lua_State *L);
 
-/* A state with the standard libraries and the payload's lib/ on the module path, so require finds what the build zipped in. */
+/* A state with the standard libraries and the payload's lib/lua/ on the module path, so require finds the vendored modules the build zipped in. */
 static lua_State *
 lua_open_state (void)
 {
@@ -23,7 +23,7 @@ lua_open_state (void)
   luaL_openlibs (L);
   lua_getglobal (L, "package");
   lua_getfield (L, -1, "path");
-  lua_pushfstring (L, "/zip/lib/?.lua;%s", lua_tostring (L, -1));
+  lua_pushfstring (L, "/zip/lib/lua/?.lua;%s", lua_tostring (L, -1));
   lua_setfield (L, -3, "path");
   lua_pop (L, 2);
   return L;
@@ -216,82 +216,6 @@ lua_is_kept (lua_State *L)
   return kept;
 }
 
-/* amk.spawn(goals[, opts]): a fork of this parsed image runs the listed goals as its own process group and its pid comes back; opts.foreground hands it the terminal, opts.stdout names a file for its output. */
-static int
-lua_amk_spawn (lua_State *L)
-{
-  char *words[64];
-  lua_Integer n, i;
-  int foreground = 0;
-  const char *stdout_path = NULL;
-  pid_t pid;
-
-  luaL_checktype (L, 1, LUA_TTABLE);
-  if (lua_istable (L, 2))
-    {
-      lua_getfield (L, 2, "foreground");
-      foreground = lua_toboolean (L, -1);
-      lua_pop (L, 1);
-      lua_getfield (L, 2, "stdout");
-      stdout_path = lua_tostring (L, -1);
-      lua_pop (L, 1);
-    }
-  n = luaL_len (L, 1);
-  if (n < 1 || n > 63)
-    return luaL_error (L, "amk.spawn: between 1 and 63 goals");
-  for (i = 1; i <= n; i++)
-    {
-      lua_geti (L, 1, i);
-      words[i - 1] = (char *) luaL_checkstring (L, -1);
-      lua_pop (L, 1);
-    }
-  words[n] = NULL;
-  pid = amk_spawn_goals ((int) n, words, foreground, stdout_path);
-  if (pid < 0)
-    return luaL_error (L, "amk.spawn: fork failed");
-  lua_pushinteger (L, pid);
-  return 1;
-}
-
-/* amk.wait([pid[, block]]): the finished or stopped child as a table, or nil when none has and block is false. */
-static int
-lua_amk_wait (lua_State *L)
-{
-  pid_t want = (pid_t) luaL_optinteger (L, 1, 0);
-  int block = lua_isnoneornil (L, 2) ? 1 : lua_toboolean (L, 2);
-  pid_t got = 0;
-  int code = 0, sig = 0, stopped = 0;
-
-  if (amk_wait_child (want, block, &got, &code, &sig, &stopped) <= 0)
-    {
-      lua_pushnil (L);
-      return 1;
-    }
-  lua_newtable (L);
-  lua_pushinteger (L, got);
-  lua_setfield (L, -2, "pid");
-  lua_pushinteger (L, code);
-  lua_setfield (L, -2, "code");
-  lua_pushinteger (L, sig);
-  lua_setfield (L, -2, "signal");
-  lua_pushstring (L, stopped ? "stopped" : sig ? "signal" : code == 0 ? "success" : code == 1 ? "question" : "failed");
-  lua_setfield (L, -2, "status");
-  if (!stopped)
-    {
-      char *mail = NULL;
-      size_t len = 0;
-      if (amk_mail_take (got, &mail, &len))
-        {
-          lua_pushlstring (L, mail, len);
-          free (mail);
-        }
-      else
-        lua_pushliteral (L, "");
-      lua_setfield (L, -2, "mail");
-    }
-  return 1;
-}
-
 /* amk.send(text): a line to the job's parent, from inside a spawned job. */
 static int
 lua_amk_send (lua_State *L)
@@ -302,23 +226,54 @@ lua_amk_send (lua_State *L)
   return 1;
 }
 
-/* amk.kill(pid[, signal]): the signal, by default terminate, to a spawned job and every shell under it. */
-static int
-lua_amk_kill (lua_State *L)
+/* Fires every thousand instructions, then on every instruction once the process's deadline has passed, so each frame that catches the error raises it again and the run unwinds to the call that set it. */
+static void
+lua_deadline_hook (lua_State *L, lua_Debug *ar)
 {
-  pid_t pid = (pid_t) luaL_checkinteger (L, 1);
-  int sig = (int) luaL_optinteger (L, 2, SIGTERM);
-  lua_pushboolean (L, amk_kill_child (pid, sig) == 0);
-  return 1;
+  (void) ar;
+  if (amk_deadline_expired ())
+    {
+      lua_sethook (L, lua_deadline_hook, LUA_MASKCOUNT, 1);
+      lua_pushfstring (L, "deadline: %d ms", (int) amk_deadline_budget ());
+      lua_error (L);
+    }
 }
 
-/* amk.foreground(pid): the terminal to a spawned job, and the job continued if it was stopped. */
+/* Runs the function and arguments on the stack under the deadline hook, putting the hook before it back either way; answers lua_pcall's code. */
 static int
-lua_amk_foreground (lua_State *L)
+lua_pcall_bounded (lua_State *L, int nargs, int nresults)
 {
-  pid_t pid = (pid_t) luaL_checkinteger (L, 1);
-  lua_pushboolean (L, amk_foreground (pid) == 0);
-  return 1;
+  lua_Hook hook = lua_gethook (L);
+  int mask = lua_gethookmask (L), count = lua_gethookcount (L);
+  int rc;
+  lua_sethook (L, lua_deadline_hook, LUA_MASKCOUNT, 1000);
+  rc = lua_pcall (L, nargs, nresults, 0);
+  lua_sethook (L, hook, mask, count);
+  return rc;
+}
+
+/* amk.deadline(ms, fn, ...): fn's results, or the error "deadline: ms ms" once ms milliseconds pass, in this guest or in any other it calls; a nested deadline keeps the tighter one. */
+static int
+lua_amk_deadline (lua_State *L)
+{
+  lua_Integer ms = luaL_checkinteger (L, 1);
+  struct amk_deadline saved;
+  long hit;
+  int rc;
+
+  luaL_argcheck (L, ms >= 0, 1, "must not be negative");
+  luaL_checktype (L, 2, LUA_TFUNCTION);
+  amk_deadline_push ((long) ms, &saved);
+  rc = lua_pcall_bounded (L, lua_gettop (L) - 2, LUA_MULTRET);
+  hit = amk_deadline_pop (&saved);
+  if (rc != LUA_OK && hit >= 0)
+    {
+      lua_pushfstring (L, "deadline: %d ms", (int) hit);
+      return lua_error (L);
+    }
+  if (rc != LUA_OK)
+    return lua_error (L);
+  return lua_gettop (L) - 1;
 }
 
 /* Under the engine flag make has parsed nothing, so the handle refuses rather than reads. */
@@ -344,25 +299,30 @@ lua_amk_expand (lua_State *L)
 
 /* amk.call(name, ...): the make function or macro of that name, each further argument one whole value, never expanded. */
 static int
-lua_amk_call (lua_State *L)
+lua_amk_call_kind (lua_State *L, int kind, const char *who)
 {
   const char *name = luaL_checkstring (L, 1), *err = NULL, **args;
   int n = lua_gettop (L) - 1, i;
   char *s;
-  lua_need_make (L, "amk.call");
+  lua_need_make (L, who);
   for (i = 0; i < n; i++)
     luaL_checkstring (L, i + 2);
   args = malloc ((n + 1) * sizeof *args);
   for (i = 0; i < n; i++)
     args[i] = lua_tostring (L, i + 2);
-  s = amk_call (name, (unsigned int) n, args, &err);
+  s = amk_call_kind (kind, name, (unsigned int) n, args, &err);
   free (args);
   if (s == NULL)
-    return luaL_error (L, "amk.call: %s", err);
+    return luaL_error (L, "%s: %s", who, err);
   lua_pushstring (L, s);
   gmk_free (s);
   return 1;
 }
+
+/* amk.call(name, ...): the cascade, a make function, the name under amk., a macro; amk.fxn and amk.macro take one layer by its full name. */
+static int lua_amk_call (lua_State *L) { return lua_amk_call_kind (L, AMK_AS_ANY, "amk.call"); }
+static int lua_amk_fxn_call (lua_State *L) { return lua_amk_call_kind (L, AMK_AS_FXN, "amk.fxn"); }
+static int lua_amk_macro (lua_State *L) { return lua_amk_call_kind (L, AMK_AS_MACRO, "amk.macro"); }
 
 /* A handle's result(): the call collected by the pid kept as the upvalue, its text or the error raised. */
 static int
@@ -379,22 +339,34 @@ lua_amk_call_result (lua_State *L)
 }
 
 /* amk.acall(name, values...): the call begun in a fork, as a handle with the pid, the fd that reads as done when the result is in, and result() that collects it. */
+/* amk.agoal(name): amk.acall of the goal function, a goal run in a fork as a handle. */
+static int lua_amk_acall (lua_State *L);
 static int
-lua_amk_acall (lua_State *L)
+lua_amk_agoal (lua_State *L)
+{
+  luaL_checkstring (L, 1);
+  lua_settop (L, 1);
+  lua_pushliteral (L, "amk.goal");
+  lua_insert (L, 1);
+  return lua_amk_acall (L);
+}
+
+static int
+lua_amk_acall_kind (lua_State *L, int kind, const char *who)
 {
   const char *name = luaL_checkstring (L, 1), **args;
   int n = lua_gettop (L) - 1, i, fd = -1;
   pid_t pid;
-  lua_need_make (L, "amk.acall");
+  lua_need_make (L, who);
   for (i = 0; i < n; i++)
     luaL_checkstring (L, i + 2);
   args = malloc ((n + 1) * sizeof *args);
   for (i = 0; i < n; i++)
     args[i] = lua_tostring (L, i + 2);
-  pid = amk_call_begin (name, (unsigned int) n, args, &fd);
+  pid = amk_call_begin (kind, name, (unsigned int) n, args, &fd);
   free (args);
   if (pid < 0)
-    return luaL_error (L, "amk.acall: fork failed");
+    return luaL_error (L, "%s: fork failed", who);
   lua_newtable (L);
   lua_pushinteger (L, pid);
   lua_setfield (L, -2, "pid");
@@ -402,6 +374,54 @@ lua_amk_acall (lua_State *L)
   lua_setfield (L, -2, "fd");
   lua_pushinteger (L, pid);
   lua_pushcclosure (L, lua_amk_call_result, 1);
+  lua_setfield (L, -2, "result");
+  return 1;
+}
+
+/* amk.acall(name, ...): the cascade begun in a fork, as a handle; amk.afxn and amk.amacro take one layer. */
+static int lua_amk_acall (lua_State *L) { return lua_amk_acall_kind (L, AMK_AS_ANY, "amk.acall"); }
+static int lua_amk_afxn (lua_State *L) { return lua_amk_acall_kind (L, AMK_AS_FXN, "amk.afxn"); }
+static int lua_amk_amacro (lua_State *L) { return lua_amk_acall_kind (L, AMK_AS_MACRO, "amk.amacro"); }
+
+/* An ask handle's result(): the reply waited for by the id kept as the upvalue, its text or the error raised. */
+static int
+lua_amk_ask_result (lua_State *L)
+{
+  unsigned long id = (unsigned long) lua_tointeger (L, lua_upvalueindex (1));
+  const char *err = NULL;
+  char *s;
+  if (amk_ask_result (amk_ask_collect (id), &s, &err) < 0)
+    return luaL_error (L, "amk.ask: %s", err);
+  lua_pushstring (L, s);
+  free (s);
+  return 1;
+}
+
+/* amk.ask(op, namespace, values...): one request sent to the owner, as a handle with the id and result() that waits for the reply; the process goes on until then, and in the owner a request that would park is an error. */
+static int
+lua_amk_ask (lua_State *L)
+{
+  const char *op = luaL_checkstring (L, 1), *ns = luaL_checkstring (L, 2), **vals;
+  int n = lua_gettop (L) - 2, i;
+  char *line;
+  long id;
+  lua_need_make (L, "amk.ask");
+  for (i = 0; i < n; i++)
+    luaL_checkstring (L, i + 3);
+  vals = malloc ((n + 1) * sizeof *vals);
+  for (i = 0; i < n; i++)
+    vals[i] = lua_tostring (L, i + 3);
+  line = amk_ask_line (op, ns, (unsigned int) n, vals);
+  free (vals);
+  id = amk_ask_begin (line);
+  free (line);
+  if (id < 0)
+    return luaL_error (L, "amk.ask: %s", AMK_ASK_PARKED);
+  lua_newtable (L);
+  lua_pushinteger (L, id);
+  lua_setfield (L, -2, "id");
+  lua_pushinteger (L, id);
+  lua_pushcclosure (L, lua_amk_ask_result, 1);
   lua_setfield (L, -2, "result");
   return 1;
 }
@@ -415,13 +435,19 @@ lua_amk_eval (lua_State *L)
   return 0;
 }
 
-/* amk.var[name] reads a variable, expanded, or nil when make has never seen the name. */
+/* amk.var[name] reads a variable, expanded, or nil when make has never seen the name; a read of raw is the raw proxy, its upvalue. */
 static int
 lua_amk_var_index (lua_State *L)
 {
   char *s;
+  const char *name = luaL_checkstring (L, 2);
+  if (strcmp (name, "raw") == 0)
+    {
+      lua_pushvalue (L, lua_upvalueindex (1));
+      return 1;
+    }
   lua_need_make (L, "amk.var");
-  s = amk_var_get (luaL_checkstring (L, 2));
+  s = amk_var_get (name);
   if (s == NULL)
     lua_pushnil (L);
   else
@@ -430,6 +456,39 @@ lua_amk_var_index (lua_State *L)
       gmk_free (s);
     }
   return 1;
+}
+
+/* amk.var.raw[name] reads a variable's text as stored, never expanded, or nil when make has never seen the name. */
+static int
+lua_amk_var_raw_index (lua_State *L)
+{
+  char *s;
+  lua_need_make (L, "amk.var.raw");
+  s = amk_var_raw_get (luaL_checkstring (L, 2));
+  if (s == NULL)
+    lua_pushnil (L);
+  else
+    {
+      lua_pushstring (L, s);
+      gmk_free (s);
+    }
+  return 1;
+}
+
+/* amk.var.raw[name] = value defines a recursive variable with the text as written; nil is the empty string. */
+static int
+lua_amk_var_raw_newindex (lua_State *L)
+{
+  const char *name = luaL_checkstring (L, 2);
+  lua_need_make (L, "amk.var.raw");
+  if (lua_isnoneornil (L, 3))
+    amk_var_raw_set (name, "");
+  else
+    {
+      amk_var_raw_set (name, luaL_tolstring (L, 3, NULL));
+      lua_pop (L, 1);
+    }
+  return 0;
 }
 
 /* amk.var[name] = value defines a simple variable with the literal text of the value; nil is the empty string. */
@@ -461,7 +520,7 @@ lua_push_func_table (lua_State *L)
     }
 }
 
-/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
+/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error raised to whoever made the call. */
 static char *
 lua_func_call (void *state, const char *nm, unsigned int argc, char **argv)
 {
@@ -481,10 +540,11 @@ lua_func_call (void *state, const char *nm, unsigned int argc, char **argv)
     }
   for (i = 0; i < argc; i++)
     lua_pushstring (L, argv[i]);
-  if (lua_pcall (L, (int) argc, 1, 0) != LUA_OK)
+  if ((amk_deadline_active () ? lua_pcall_bounded (L, (int) argc, 1) : lua_pcall (L, (int) argc, 1, 0)) != LUA_OK)
     {
       const char *msg = lua_tostring (L, -1);
-      fprintf (stderr, "lua $(%s ...): %s\n", nm, msg ? msg : "unknown error");
+      if (!amk_deadline_expired ())
+        amk_func_raise ("lua", nm, msg);
       lua_pop (L, 2);
       return NULL;
     }
@@ -723,7 +783,79 @@ lua_amk_exit_code (lua_State *L)
   return 0;
 }
 
+/* A missing amk field that names a make function, amk.name: a callable of that function whose own fields reach amk.name.field the same way, kept in the table; nil when make has no such function.  */
+static const char *lua_amk_proxy_chunk =
+  "local call = ...\n"
+  "local function proxy(name)\n"
+  "  return setmetatable({}, {\n"
+  "    __call = function(_, ...) return call(name, ...) end,\n"
+  "    __index = function(_, k) return proxy(name .. '.' .. k) end })\n"
+  "end\n"
+  "return proxy\n";
+
+/* A missing amk field that the cascade resolves: a proxy calling amk.call by that name, whose own fields chain the dotted name on; nil when nothing answers. */
+static int
+lua_amk_proxy_for (lua_State *L, const char *name)
+{
+  char full[512];
+  const char *err;
+  if (amk_resolve (name, full, sizeof full, &err) < 0)
+    {
+      lua_pushnil (L);
+      return 1;
+    }
+  if (lua_getfield (L, LUA_REGISTRYINDEX, "amk.proxy") != LUA_TFUNCTION)
+    {
+      lua_pop (L, 1);
+      if (luaL_loadstring (L, lua_amk_proxy_chunk) != LUA_OK)
+        return lua_error (L);
+      lua_pushcfunction (L, lua_amk_call);
+      lua_call (L, 1, 1);
+      lua_pushvalue (L, -1);
+      lua_setfield (L, LUA_REGISTRYINDEX, "amk.proxy");
+    }
+  lua_pushstring (L, name);
+  lua_call (L, 1, 1);
+  lua_pushvalue (L, 2);
+  lua_pushvalue (L, -2);
+  lua_rawset (L, 1);
+  return 1;
+}
+
+/* A missing amk field names an amk module, the file lib/name/init.lua, loaded once by path and kept in the table; with no such file, what the cascade resolves the name to, else nil. */
+static int
+lua_amk_module (lua_State *L)
+{
+  const char *name = luaL_checkstring (L, 2);
+  const char *path = lua_pushfstring (L, "/zip/lib/%s/init.lua", name);
+  FILE *f;
+  if ((f = fopen (path, "r")) == NULL)
+    {
+      lua_pop (L, 1);
+      return lua_amk_proxy_for (L, name);
+    }
+  fclose (f);
+  if (luaL_loadfile (L, path) != LUA_OK)
+    return lua_error (L);
+  lua_call (L, 0, 1);
+  lua_pushvalue (L, 2);
+  lua_pushvalue (L, -2);
+  lua_rawset (L, 1);
+  return 1;
+}
+
 /* The amk table on the stack, created on first use with an empty amk.on, the variable proxy, and the spawn api beside it. */
+/* The handle's verbs, each a field of the amk table. */
+static const luaL_Reg lua_amk_verbs[] = {
+  { "expand", lua_amk_expand }, { "eval", lua_amk_eval },
+  { "call", lua_amk_call }, { "fxn", lua_amk_fxn_call }, { "macro", lua_amk_macro },
+  { "acall", lua_amk_acall }, { "afxn", lua_amk_afxn }, { "amacro", lua_amk_amacro }, { "agoal", lua_amk_agoal },
+  { "ask", lua_amk_ask }, { "func", lua_amk_func },
+  { "send", lua_amk_send }, { "exit_code", lua_amk_exit_code },
+  { "deadline", lua_amk_deadline },
+  { NULL, NULL },
+};
+
 static void
 lua_push_amk (lua_State *L)
 {
@@ -735,42 +867,32 @@ lua_push_amk (lua_State *L)
       lua_setfield (L, -2, "on");
       lua_newtable (L);
       lua_newtable (L);
-      lua_pushcfunction (L, lua_amk_var_index);
+      lua_newtable (L);
+      lua_newtable (L);
+      lua_pushcfunction (L, lua_amk_var_raw_index);
+      lua_setfield (L, -2, "__index");
+      lua_pushcfunction (L, lua_amk_var_raw_newindex);
+      lua_setfield (L, -2, "__newindex");
+      lua_setmetatable (L, -2);
+      lua_pushcclosure (L, lua_amk_var_index, 1);
       lua_setfield (L, -2, "__index");
       lua_pushcfunction (L, lua_amk_var_newindex);
       lua_setfield (L, -2, "__newindex");
       lua_setmetatable (L, -2);
       lua_setfield (L, -2, "var");
-      lua_pushcfunction (L, lua_amk_expand);
-      lua_setfield (L, -2, "expand");
-      lua_pushcfunction (L, lua_amk_eval);
-      lua_setfield (L, -2, "eval");
-      lua_pushcfunction (L, lua_amk_call);
-      lua_setfield (L, -2, "call");
-      lua_pushcfunction (L, lua_amk_acall);
-      lua_setfield (L, -2, "acall");
-      lua_pushcfunction (L, lua_amk_func);
-      lua_setfield (L, -2, "func");
-      lua_pushcfunction (L, lua_amk_spawn);
-      lua_setfield (L, -2, "spawn");
-      lua_pushcfunction (L, lua_amk_wait);
-      lua_setfield (L, -2, "wait");
-      lua_pushcfunction (L, lua_amk_kill);
-      lua_setfield (L, -2, "kill");
-      lua_pushcfunction (L, lua_amk_foreground);
-      lua_setfield (L, -2, "foreground");
-      lua_pushcfunction (L, lua_amk_send);
-      lua_setfield (L, -2, "send");
-      lua_pushcfunction (L, lua_amk_exit_code);
-      lua_setfield (L, -2, "exit_code");
+      luaL_setfuncs (L, lua_amk_verbs, 0);
+      lua_newtable (L);
+      lua_pushcfunction (L, lua_amk_module);
+      lua_setfield (L, -2, "__index");
+      lua_setmetatable (L, -2);
       lua_pushvalue (L, -1);
       lua_setglobal (L, "amk");
     }
 }
 
-/* The open primitive: a kept state, which make holds for the life of the process, with print and io bound to the sink and the handle in place. */
+/* The create member: a kept state, which make holds for the life of the process, with print and io bound to the sink and the handle in place. */
 __attribute__ ((visibility ("default"))) void *
-lua_open (void)
+lua_create (void)
 {
   lua_State *L = lua_open_state ();
   if (L == NULL)
@@ -786,19 +908,14 @@ lua_open (void)
   return L;
 }
 
-/* The run primitive: exec runs the chunk in the state with its output to the sink; import runs it with print on stderr, then hands make the globals it defined or rebound and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-lua_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the state with its output to the sink; import runs it with print on stderr, then hands make the globals it defined or rebound and the sink their names. */
+static int
+lua_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   lua_State *L = state;
   int export = strcmp (op, "import") == 0;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "lua: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "lua.%s: no chunk\n", op);
@@ -823,6 +940,18 @@ lua_run (void *state, struct amk_sink *out, const char *op, const char *prog)
     }
   lua_sink = &amk_sink_stderr;
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+lua_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return lua_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+lua_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return lua_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a function there, is called with the event as a table. Its print goes to stderr, and an error reports there and is otherwise ignored. */

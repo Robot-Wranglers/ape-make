@@ -1,0 +1,326 @@
+{% set name = "fsm" %}
+{% set topic = "State machines" %}
+{% set root = ".." %}
+<!-- header # fsm "`mod :: dsys/{{ name }}`" |Syntax #syntax | Events #events | Actions #actions | Services #services | Guards #guards | SCXML #scxml | Reduction #reduction | API #api | Subset #subset | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
+<!-- /header -->
+
+<a id="overview"></a>
+
+Part of the [dsys toolkit](dsys.md), the `@fsm` syntax declares a state machine as data, in the shape of an xstate machine config[^xstate], and compiles it to an open [Petri net](petri.md):
+
+```Makefile
+load dsys/{{ name }}
+
+@{{ name }}
+define door
+  {
+    "id": "door", "initial": "locked",
+    "states": {
+      "locked": { "on": { "unlock": "closed" } },
+      "closed": { "on": { "lock": "locked", "open": "opened" } },
+      "opened": { "on": { "close": "closed", "leave": "gone" } },
+      "gone":   { "type": "final" }
+    }
+  }
+endef
+```
+
+* every leaf state is a place, and the machine's configuration is where its tokens are,
+* every event is an open place the environment feeds through the machine's `send` call, and
+* a transition fires when its source holds the token and its event holds one.
+
+The same machine reads from an scxml document[^scxml], [converted](#scxml) in the Lua guest
+and lowered through the same config, so `load door.scxml` and `@{{ name }}.import` over XML
+declare it too.
+
+<a id="syntax"></a>
+
+## Syntax
+
+| Form | Declares |
+| --- | --- |
+| `@{{ name }}` above a define | a machine of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
+| `@{{ name }}.target` above a define | the same, and a phony target of the machine's name |
+| `@{{ name }}.import` above a define | a file's text as the machine, JSON or scxml |
+| `load door.fsm`, `load door.scxml` | the file as a machine named by its stem |
+| `@{{ name }}.exec (name)` above a define | a jq program over the compiled net, printed at parse |
+| `$(fsm.compile name)` | the compiled net's JSON, without loading it |
+
+A config is a machine object with `initial` and `states`; each state has the keys below.
+A target names a sibling by its bare name, a child by a leading dot, or any state by `#`
+and its path under the machine, as `#door.closed`. A target or an `initial` may be a list,
+one leaf per region of a parallel state below, and the regions it leaves out enter by
+their own initials.
+
+| Key | Value |
+| --- | --- |
+| `initial` | the state entered when this one is, a child or any state below it; required on a compound state |
+| `states` | the children, which make the state compound; `"type": "parallel"` makes each child a region active at once |
+| `type` | `atomic`, `compound`, `parallel` or `final`; the default follows the keys |
+| `on` | each event descriptor and its transition: a target, or an object with `target` |
+| `always` | the eventless transition, taken as soon as the state is entered |
+| `onDone` | the transition taken when a child final state is entered, or every region of a parallel has ended |
+| `entry`, `exit` | targets run when the state is entered and left, in any guest; see [actions](#actions) |
+| `invoke` | a service run on entry, `{ "src": target, "onDone": .., "onError": .. }`; see [services](#services) |
+| `guard` on a transition | a variable answering by its value, a target by its exit status, or `@state` for a state being active; see [guards](#guards) |
+
+A transition with no target stays in its state and consumes the event. A compound state's
+transitions are inherited by its children, the nearest handler winning, and a transition
+leaving a parallel state leaves every region.
+
+<a id="actions"></a>
+
+## Actions
+
+`entry` and `exit` name targets, one or a list, in any guest. A transition runs the exits
+of the states it leaves, deepest first, then the entries of the states it enters, from the
+top, as one step of the net transition. The event that moved the machine is bound as
+`<name>.event` before the step runs, so a guest reads it from `amk.var`:
+
+```Makefile
+@lua.target
+define bolt
+  print("bolted on " .. amk.var["door.event"])
+endef
+```
+
+The start configuration's entries run first when `<name>.__main__` starts, with no event
+bound. A targetless transition runs nothing. A transition to the state it is in leaves and
+re-enters it, as xstate's external self-transition does.
+
+<a id="services"></a>
+
+## Services
+
+`invoke` runs its `src` target as a step when the state is entered, and its value is the
+service's output, read back as `<name>.<state>.output`. The state then takes `onDone`, a
+target or a list of guarded alternatives, or `onError` when the service failed. A state
+with no `onError` stops the run when its service fails.
+
+```Makefile
+"checking": {
+  "invoke": { "src": "hinge", "onDone": [
+    { "guard": "jammed",  "target": "closed" },
+    { "guard": "snapped", "target": "broken" },
+    { "target": "open" } ] } }
+```
+
+While the service runs, the machine is in the invoking state; once it has answered, the
+machine holds its outcome until `onDone` or `onError` moves it, and the state's own event
+transitions do not fire in between. Inside a parallel state the other regions go on taking
+their events meanwhile, and a transition out of the parallel takes the outcome with it.
+
+<a id="guards"></a>
+
+## Guards
+
+A transition may be a list of alternatives, each with a `guard` and a `target`, taken
+first-match in order as scxml and xstate do. A guard is a name, answered one of three ways:
+
+| Guard | Holds when |
+| --- | --- |
+| a variable | its value is not empty, read in the step's own process with no fork |
+| a target | its goal succeeds; make prints its error line when it does not |
+| `@state`, a path under the machine | the state is active in the configuration being asked, which is scxml's `In()` |
+
+```Makefile
+jammed = $(filter jam,$(door.checking.output))
+
+snapped:
+	@test "$(door.checking.output)" = snap
+```
+
+An alternative without a guard always holds. When no alternative holds, the event is
+consumed and the machine stays, as xstate discards an event no guard lets through. An
+eventless `always` with guards needs an unguarded alternative, since a machine that stayed
+would ask again at once. Inside a parallel state the question is asked once per
+configuration of its regions, so a region's guard reads its siblings' states, and what
+each region took is settled together as scxml selects.
+
+<a id="events"></a>
+
+## Events
+
+The environment feeds a machine's events as tokens. The machine's `send` call puts one in
+the event's place, and the run fires what the token enables:
+
+```Makefile
+$(door.send unlock)
+$(door.send open)
+$(door.send leave)
+
+__main__: door.__main__
+	@echo '[$(door.trace)] [$(door.marking )]'
+```
+
+An event descriptor under `on` is a name, a partial wildcard `foo.*` taking every name
+under `foo`, or `*` taking any event. The most specific descriptor at the nearest state
+handles an event, as xstate selects. A wildcard's place is a sentinel, `ev.foo._` or `ev._`,
+and `send` routes a name no descriptor gives to the closest one. A name nothing takes is
+dropped, as an scxml queue drops it.
+
+A nested final raises the done event of its parent, `done.state.<path>`, within the same
+macrostep, and the parent's `onDone` takes it. Eventless transitions fire before events,
+done events before the environment's, so a machine's microsteps run to quiescence before the
+next event is read. An scxml descriptor `foo` means `foo` and `foo.*`, and `done.state.<id>`
+names the state by its path; the converter maps both.
+
+<a id="scxml"></a>
+
+## SCXML
+
+An scxml document becomes the config through `scxml.lua`, a converter of its own in the Lua
+guest: lxsc parses the document, and the converter writes the config from the parse, state
+by state. The converter is a call over a define holding the document, and `load` and
+`@{{ name }}.import` go through it:
+
+```Makefile
+define doc
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0" name="door">
+  <state id="s0"><transition event="go" target="done"/></state>
+  <final id="done"/>
+</scxml>
+endef
+
+$(info $(fsm.scxml doc))
+```
+
+The config is what the document says in the config's own words:
+
+| Document | Config |
+| --- | --- |
+| `<scxml name="m">` | the machine, `id` `m`; a document with no name is `machine` |
+| `<state>`, `<parallel>`, `<final>`, `<history>` | a state of the id, with `type` where the config needs one; history is then refused by the normalizer |
+| `initial` on a state, or its `<initial>` element, else the first child | `initial`, as the absolute id `#m.<path>`; several ids, a list |
+| `<transition event="e" target="t">` | an entry under `on` for `e` and for `e.*`, since an scxml descriptor takes every name under it; the target as an absolute id, several as a list; no target, an entry without one |
+| `<transition target="t">` with no event | an entry under `always` |
+| `event="done.state.x"` | `done.state.<path of x>` |
+| `cond="In('x')"` | `guard` `@<path of x>` |
+| any other `cond` | `guard` as written, which the normalizer refuses as an expression |
+
+What the config cannot carry is left out and reported on stderr, one line under the
+define's name, in document order: the `<datamodel>`, the content of `<onentry>`, `<onexit>`
+and transitions with the kinds it held, `<invoke>`, and a top-level `<script>`:
+
+```
+door: scxml leaves out datamodel, onentry of s0 (raise assign), invoke in s2
+```
+
+Within the Lua guest the same two things are `amk.dsys.scxml.convert(text)`, the config as
+JSON and the list of what it left out, and `amk.dsys.scxml.import(name)`, the config of a
+make variable's text with the report written.
+
+<a id="reduction"></a>
+
+## Reduction
+
+`fsm.jq` normalizes the config to the definition xstate serializes, checked against xstate's
+own machine schema, then compiles it to a net for `petri.load`:
+
+| Machine part | Becomes |
+| --- | --- |
+| Aleaf state | a place of its path under the machine, `closed` or `s0.s01`, holding the token when active |
+| Theinitial configuration | one token per active leaf, through each compound's `initial` and every region of a parallel; a list of initials or targets settles each named leaf and the regions left unnamed by default |
+| Anevent | an open place `ev.<event>`; a wildcard, a sentinel `ev.<prefix>._` or `ev._` |
+| Atransition under `on` | a net transition `<leaf>.<event>` from the leaf and the event's place to the leaves entered |
+| `always` | a transition `<leaf>.always` with no event place, listed first |
+| Atransition of a parallel state | one per configuration of its regions and event, moving every region's token |
+| Anested final | an arc from the entering transition to `ev.done.state.<parent>`, when the entered configuration handles it |
+| Atop-level final | an acceptance marking; several finals, a [list of them](petri.md#endings); the final drops every event it is sent |
+| `entry` and `exit` | the net transition's step, the exits then the entries as its targets, `<name>.event` bound |
+| `invoke` | a transition `<leaf>.invoke` into a labeled place `<leaf>.invoked`, its step the service, its label the outcome; `onDone` and `onError` leave that place by the label; inside a parallel state the invoked place is one more position of its region, `<leaf>.invoked` in the configuration's name |
+| Guarded alternatives | a picker transition into a labeled place `<leaf>.<event>.choice`, its step a generated target printing the first alternative whose guard holds, the configuration bound as `<name>.config`; one transition per alternative out of it by that label, and one back when none held; inside a parallel state one picker per configuration, printing each guarded region's choice joined by `-` |
+
+The `definition` call reads the definition and `net` the net. The definition is what
+xstate's `machine.schema.json` describes, so a conformant xstate tool reads it.
+
+<a id="api"></a>
+
+## API
+
+| Call | Does | Answers |
+| --- | --- | --- |
+| `<name>.__main__` | runs the machine as its net; typically `__main__: <name>.__main__` | a target |
+| `$(<name>.send event)` | feeds one event, routed to its place or the closest wildcard's | nothing |
+| `$(<name>.state )` | the active states, leaf paths under the machine | words |
+| `$(<name>.event)`, `$(<name>.config)`, `$(<name>.<state>.output)` | the event of the move whose actions are running, the configuration a guard is asked about, and a service's last output | variables |
+| `$(<name>.step )` | one firing, or none | the transition fired |
+| `$(<name>.definition )` | the normalized definition | JSON |
+| `$(fsm.scxml doc)` | the [config](#scxml) of the scxml document in the define `doc`, its drops reported on stderr | JSON |
+| `$(<name>.net )` | the compiled net | JSON |
+| `$(<name>.marking )`, `$(<name>.trace)`, `$(<name>.exec prog)`, `$(<name>.version )` | as for [any net](petri.md#api) | words |
+
+A run ends when the token reaches a top-level final state. A token left in an event place
+keeps the run from ending, so feed a machine the events it takes.
+
+<a id="subset"></a>
+
+## Subset
+
+The lowering takes names, never expressions. What it refuses is named at parse, so a
+machine either lowers whole or stops make with the construct:
+
+| Construct | Status |
+| --- | --- |
+| compound and parallel states, `always`, `onDone`, wildcards, targetless transitions, several finals | lowered |
+| `entry`, `exit`, `invoke`, guards by variable, target or `@state`, inside a parallel state too | lowered |
+| a `target` or `initial` naming one leaf per region, or a state below a child | lowered |
+| an scxml `cond` other than `In()` | refused; a guard is a name, not an expression |
+| several targets not one per region of one parallel state | refused |
+| `history`, `after`, `context`, `meta`, `always` on the machine itself | outside the subset |
+| a parallel state inside a parallel state | refused |
+
+The subset is pinned against the W3C scxml conformance tests' core groups and against lxsc,
+an scxml interpreter in the Lua guest, which steps each machine beside the net.
+
+<a id="errors"></a>
+
+## Errors
+
+A body that fails the [schema](#schema) is refused first, as in
+`door: does not meet schema/fsm.json: Additional property 'after' not allowed`. The
+normalizer and compiler then refuse what a schema cannot say:
+
+| Condition | Message |
+| --- | --- |
+| `initial` naming no state below | `door: initial nope is no state` |
+| Atarget naming no state | `door.closed: target door.gone2 is no state` |
+| Several targets not one per region | `door.closed: targets a b are not one per region of a parallel state` |
+| Aguard written as an expression | `door.closed: guard x > 1 is an expression, not a name` |
+| Guarded `always` with no fallback | `door.closed: an eventless transition with guards needs an unguarded alternative` |
+| Ahistory state | `door.h: history is outside the subset` |
+| Aparallel inside a parallel | `door.p.q: a parallel state inside a parallel state is not lowered yet` |
+
+<a id="demos"></a>
+
+## Demos
+
+| Demo | Shows |
+| --- | --- |
+| [`dsys-fsm.amk`]({{ root }}/demos/dsys-fsm.amk) | a door whose entry actions run in lua, micropy and s7, a hinge service in js whose answer a variable guard and a target guard route on, and events sent ahead of the run |
+
+<a id="references"></a>
+
+## References
+
+- [Petri nets](petri.md), what a machine compiles to.
+- [Workflows](workflow.md) and [Kahn networks](kahn.md), the other forms that compile to a net.
+- [dsys](dsys.md), the topic this module is a part of.
+- [xstate](https://stately.ai/docs/xstate), whose machine config is the shape, and its [machine schema]({{ root }}/payload/lib/dsys/schema/xstate.machine.json) the definition's check.
+- [SCXML](https://www.w3.org/TR/scxml/), the W3C state chart XML, and [lxsc](https://github.com/Phrogz/LXSC), its Lua interpreter.
+
+[^xstate]: The config of an xstate machine, `createMachine({...})`, as [stately.ai documents it](https://stately.ai/docs/machines). Only the keys under [the subset](#subset) are read.
+[^scxml]: W3C, "State Chart XML (SCXML): State Machine Notation for Control Abstraction", 2015, [w3.org/TR/scxml](https://www.w3.org/TR/scxml/).
+
+<a id="schema"></a>
+
+## Schema
+
+The config's form, as a JSON Schema, [`schema/fsm.json`]({{ root }}/payload/lib/dsys/schema/fsm.json),
+and every `@{{ name }}` body is checked against it as the makefile is read. An scxml body
+skips this check, since the [converter](#scxml) writes the config, and the normalizer
+refuses what it does not lower.
+
+```json
+{{ open("payload/lib/dsys/schema/fsm.json").read().rstrip() }}
+```

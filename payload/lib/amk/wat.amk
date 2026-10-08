@@ -1,0 +1,18 @@
+#
+# payload/lib/amk/wat.amk:
+#  wasm text as a user-defined engine over wasm: wabt's assembler in a
+#  debian image, registered so that @wat.import over a define and load of
+#  a .wat file both work.
+#
+load wasm
+
+define Dockerfile.wat
+  FROM debian:bookworm-slim
+  RUN apt-get update -qq && apt-get install -y -qq wabt
+endef
+
+define wat.build
+  wat2wasm $< -o $@
+endef
+
+$(amk.engine wat, guest=wasm, language=WebAssembly text, implementation=wabt)

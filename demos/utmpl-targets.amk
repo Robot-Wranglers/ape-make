@@ -1,0 +1,60 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/utmpl-targets.amk:
+#  a template as a target that renders when it runs, fed three ways:
+#  a stem naming the data variable, json on stdin, and a parse-time
+#  render of the same template; then a table of this binary's engines
+#  from a command's output.
+#
+
+load utmpl
+
+@utmpl.target
+define release.md
+  {{project}} {{version}}
+  ===
+  {% for e in engines %}
+  - {{e["name"]}} {{e["version"]}}
+  {% endfor %}
+endef
+
+define release.data
+  { "project": "myproject", "version": "0.1",
+    "engines": [
+      {"name": "e1", "version": "v1"},
+      {"name": "e2", "version": "v2"} ] }
+endef
+
+# Data mode: the stem names the variable that holds the json.
+stem:
+	test "$$(${amk} release.md/release.data | head -1)" = "myproject 0.1"
+	${amk} release.md/release.data
+
+# Stream mode: json on stdin, so any producer can feed the template.
+piped.data = {"project": "piped", "version": "0.2", "engines": []}
+stdin:
+	test "$$(echo '$(piped.data)' | ${amk} release.md | head -1)" = "piped 0.2"
+	echo '$(piped.data)' | ${amk} release.md
+
+# Library mode: the same template rendered at parse time, no target run.
+render:
+	test "$(words $(utmpl.render release.md, release.data))" = "9"
+	echo "$(words $(utmpl.render release.md, release.data)) words at parse time"
+
+# The listing is one json object; the template reads its engines key directly.
+listing := $(amk.bash $(MAKE) --list-engines)
+
+@utmpl.target
+define engines.md
+  | engine | implementation | version |
+  | --- | --- | --- |
+  {% for e in engines %}
+  | {{e["name"]}} | {{e["implementation"]}} | {{e["version"]}} |
+  {% endfor %}
+endef
+
+table:
+	test "$$(${amk} engines.md/listing | grep -c '^|')" -gt 2
+	${amk} engines.md/listing
+
+__main__: stem stdin render table

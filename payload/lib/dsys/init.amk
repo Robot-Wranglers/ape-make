@@ -1,0 +1,7 @@
+#
+# payload/lib/dsys/init.amk:
+#  structures built on the pool builtins, every part of the topic: the
+#  @pool decorator from dsys/pool and the locks and channels from
+#  dsys/locks. load either part alone for less.
+#
+$(amk.include.submodules dsys, pool locks)

@@ -1,7 +1,11 @@
-# Developers
+<!-- header # developers "Developers" | Building #building | Testing #testing | Dependencies #dependencies | Patches #patches | Releases #releases | Layout #layout | Payload #payload-internals | Refs #references -->
+<h1><a id="developers"></a>Developers<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.7.dark.svg"><img align=right src="img/hdr/docs-dev.developers.7.svg" alt="Refs"></picture></a><a href="#payload-internals"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.6.dark.svg"><img align=right src="img/hdr/docs-dev.developers.6.svg" alt="Payload"></picture></a><a href="#layout"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.5.dark.svg"><img align=right src="img/hdr/docs-dev.developers.5.svg" alt="Layout"></picture></a><a href="#releases"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.4.dark.svg"><img align=right src="img/hdr/docs-dev.developers.4.svg" alt="Releases"></picture></a><a href="#patches"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.3.dark.svg"><img align=right src="img/hdr/docs-dev.developers.3.svg" alt="Patches"></picture></a><a href="#dependencies"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.2.dark.svg"><img align=right src="img/hdr/docs-dev.developers.2.svg" alt="Dependencies"></picture></a><a href="#testing"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.1.dark.svg"><img align=right src="img/hdr/docs-dev.developers.1.svg" alt="Testing"></picture></a><a href="#building"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dev.developers.0.dark.svg"><img align=right src="img/hdr/docs-dev.developers.0.svg" alt="Building"></picture></a><br clear="all"></h1>
+<!-- /header -->
 
 Building, releasing, and the layout of the build tree. Testing, payload internals,
 dependencies, and patches stay in the [README](../README.md#dev).
+
+<a id="building"></a>
 
 ## Building
 
@@ -18,8 +22,8 @@ make
 Opting in and out:
 
 ```bash
-# the default engines plus $(wasm)
-make amk with=wasm3
+# the default engines plus kv
+make amk with=kv
 
 # no $(s7), and no s7 download
 make amk without=s7
@@ -33,8 +37,8 @@ make amk without='s7 lua'
 build, and leaving out every engine stops it too. An engine left out is absent, not
 stubbed: its builtin does not exist, its name is not in `.FEATURES`, its multi-call alias
 is not created, and `make deps` does not download it. The engines, what each gives, and
-its size are in the table under [Special guests](../README.md#special-guests). Of the default build's
-14.1 MB, the two payload tools are about 5 MB. An engine's size is that build against the
+its size are in the table under [Special guests](../README.md#engines). Of the default build's
+20.1 MB, the two payload tools are about 4 MB. An engine's size is that build against the
 same build without it, or with it for one that is off.
 
 Development flow:
@@ -55,18 +59,23 @@ make smoke
 # what is built here, and which of it is an artifact
 make stat
 
-# ./amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
+# out/bin/amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
 make install
 ```
 
-Additionally `make build.native` builds the same sources with the host compiler, make at `-O0 -g`,
-as `out/bin-native/amk`; `make smoke.native` runs the builtins through it. Guests build
-on their own with `make guests` and `make guests.native`.
+Guests build on their own with `make guests`.
+
+<a id="testing"></a>
 
 ## Testing
 
 `make smoke` runs the builtins cold, the multi-call names, the payload tools, one zygote
-with three clients, and a bundle.
+with three clients, a bundle, and the demos `demos.smoke` names in the Makefile: the wasm
+demos whose toolchain images are heavy downloads.
+
+`make itest` runs every other committed demo at the top of `demos/`, found at run time
+with `git ls-files`, and requires each to exit zero. A demo under `demos/experimental/`
+is never collected. The `CI` workflow runs it on every push, after the build.
 
 `make test` runs the pytest suite under `tests/` against `out/bin/amk`. It pins what a
 smoke script cannot: the resident role parses once however deep the recursion goes and
@@ -76,7 +85,7 @@ and rejects a climbing name, and a bundle runs, recurses, and serves with nothin
 on disk. The suite needs pytest and the binary, nothing else.
 
 ```bash
-# the suite against out/bin/amk; test.native takes the host build
+# the suite against out/bin/amk
 make test
 
 # a runner that is not on PATH, and flags through to pytest
@@ -89,6 +98,8 @@ AMK_BIN=/usr/local/bin/amk pytest tests
 Docker Desktop's Rosetta layer segfaults every ape, so `--platform linux/amd64`
 containers on an arm64 Mac are not a test of the x86_64 half; `arch -x86_64` on the
 host is.
+
+<a id="profiling"></a>
 
 ## Profiling
 
@@ -137,14 +148,16 @@ A sub-make inherits the setting and appends its own table to the same file, so a
 recursive build leaves one table per process. With profiling off, the cost is one check
 per expansion. The profiler is patch `0070`, and the flag is patch `0071`.
 
+<a id="dependencies"></a>
+
 ## Dependencies
 
 Every input is pinned by version and sha256 in the Makefile. Upstream ships no
 checksum files, so the digests are ours. The guests' versions are in the
-[standard guests](../README.md#guests) and [special guests](../README.md#special-guests) tables; the
+[standard guests](../README.md#tools) and [special guests](../README.md#engines) tables; the
 rest of the build is make itself and its toolchain:
 
-| input | version | from |
+| Input | Version | From |
 | --- | --- | --- |
 | make | 4.4.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/make/) |
 | cosmocc | 4.0.2 | [cosmo.zip](https://cosmo.zip/pub/cosmocc/) |
@@ -159,6 +172,8 @@ an opt-in engine is fetched only `with` it. The
 toolchain unpacks to `cosmocc/` on first use; set `cosmocc.dir=/opt/cosmocc` to use
 an installed copy instead. Invoke cosmocc through `PATH`, never through a symlink:
 it locates `mktemper` and its siblings beside its own path.
+
+<a id="patches"></a>
 
 ## Patches
 
@@ -178,6 +193,8 @@ make build flavor=cmk patch.dirs='patches ../ape/patches'
 
 Both must be given together. The overlay's patches are written against the tree this series
 leaves, so they say which amk version they apply to and are rebased when it moves.
+
+<a id="releases"></a>
 
 ## Releases
 
@@ -205,21 +222,21 @@ platforms, and pushes nothing. Every push and pull request runs the same build t
 keeps the result as a workflow artifact. A weekly `Pins` workflow fetches every input cold
 and verifies it, so a digest that moved upstream surfaces before it breaks a release.
 
+<a id="layout"></a>
+
 ## Layout
 
 `out/` holds artifacts only. Everything else this directory produces stays under
 `build/`, and `make stat` prints the whole list with sizes. `st` and `status` are aliases.
 
-| path | what it is |
+| Path | What It Is |
 | --- | --- |
 | `./amk` | the deliverable, the copy `make amk` lands for a caller |
 | `out/bin/amk` | the artifact: make with its guests, both architectures, one file |
 | `out/bin/{awk,jq,wasm3}` | symlinks to `amk` beside them, the names its argv[0] dispatch answers to |
-| `out/bin-native/amk` | the same sources built by the host compiler, for the debug loop |
-| `out/bin-native/{awk,jq,wasm3}` | the same names for the host build |
 | `build/.engines` | the engine list the artifacts were built from, so a change to it relinks |
 
-`build/guests/ape/` and `build/guests/native/` hold each guest partial-linked into one
+`build/guests/ape/` holds each guest partial-linked into one
 relocatable, the inputs the final link consumes. They are the expensive half of a build,
 so nothing removes them on the way to `out/bin/amk`: cosmocc compiles every guest for both
 architectures, and a rebuild that reuses them takes a fraction of the time. `build/` also
@@ -228,6 +245,8 @@ is reported.
 
 `make clean` drops `./amk` along with `src build out`, which discards those relocatables
 and costs a full rebuild. The downloads and the unpacked toolchain always stay.
+
+<a id="payload-internals"></a>
 
 ## Payload Internals
 
@@ -249,7 +268,23 @@ they replace. `--ape-unpack` and `--bundle` both write beside the destination an
 into place. A zygote started from a bundle holds the entry among its own options, so its
 clients match it.
 
+<a id="ape-loader"></a>
+
 ## The APE Loader
 
 An ape's header installs its loader at `$TMPDIR/.ape-1.10` on first run. A caller that
 cannot go through a shell can name that loader explicitly.
+
+<a id="references"></a>
+
+## References
+
+Related pages:
+
+- [Tools](../README.md#tools) and [engines](../README.md#engines), the pinned inputs a build fetches.
+- [Payloads](payloads.md), what the build zips into the binary.
+- [Syntax highlighting](syntax-hl.md), the editor support built from this tree.
+
+Further reading:
+
+- [Make](https://en.wikipedia.org/wiki/Make_(software)), on Wikipedia.

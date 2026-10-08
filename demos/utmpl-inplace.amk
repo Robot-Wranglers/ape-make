@@ -1,0 +1,71 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/utmpl-inplace.amk:
+#  the utmpl forms that render at parse time, before any goal runs:
+#  inline text, a decorated define rendered in place, name=value
+#  words, words laid over a data variable, and a file included by path.
+#
+
+load utmpl
+
+define release.data
+  { "project": "myproject", "version": "0.1",
+    "engines": [
+      {"name": "e1", "version": "v1"},
+      {"name": "e2", "version": "v2"} ] }
+endef
+
+# Inline text is expanded by make first, then rendered with the data.
+title := $(utmpl {{project}} {{version}}, release.data)
+
+# A decorated define renders once, in place; its name then holds the result.
+@utmpl release.data
+define changelog.md
+  ## {{project}}
+  {% for e in engines %}
+  - {{e["name"]}} {{e["version"]}}
+  {% endfor %}
+endef
+
+# Words on the decorator line are the template's names, as strings.
+@utmpl who=world mood=calm
+define greeting
+  hello {{who}}, stay {{mood}}
+endef
+
+# Words go on top of the data, so one field changes and the rest stays.
+@utmpl release.data version=0.2
+define next
+  {{project}} {{version}}
+endef
+
+# An include statement splices a template file, by path, with the same data.
+@utmpl release.data
+define page.md
+  {{project}} release notes
+  {% include "demos/utmpl-footer.tpl" %}
+endef
+
+inline:
+	test "$(title)" = "myproject 0.1"
+	echo "inline: $(title)"
+
+in-place:
+	test "$(firstword $(changelog.md))" = "##"
+	test -n "$(findstring e2 v2,$(changelog.md))"
+	$(info in place: $(changelog.md))
+
+words:
+	test "$(greeting)" = "hello world, stay calm"
+	echo "words: $(greeting)"
+
+words-over-data:
+	test "$(next)" = "myproject 0.2"
+	echo "words over data: $(next)"
+
+include:
+	test "$(lastword $(page.md))" = "--"
+	test -n "$(findstring rendered by amk,$(page.md))"
+	$(info include: $(page.md))
+
+__main__: inline in-place words words-over-data include

@@ -1,0 +1,23 @@
+# Run every committed demo that smoke does not name against the binary build.yml kept; ci.yml calls this after build.yml.
+name: Integration demos
+on:
+  workflow_call: {}
+permissions:
+  contents: read
+jobs:
+  # The demo loop is make itest; the list is found at run time, so the checkout needs the index.
+  itest:
+    name: Integration demos
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download amk
+        uses: actions/download-artifact@v8
+        with:
+          name: amk-default
+      - name: Restore the exec bit
+        run: chmod +x amk
+      # The downloaded binary stands in for the artifact, and -o keeps make from rebuilding it.
+      - name: Integration demos
+        run: make -o "$PWD/amk" itest artifact.ape="$PWD/amk"

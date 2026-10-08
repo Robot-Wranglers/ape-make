@@ -1,11 +1,14 @@
-/* MicroPython's configuration for the amk guest: the extra-features level, numbers as CPython has them, and stdio and files through the host filesystem. */
+/* MicroPython's configuration for the amk guest: the everything level, numbers as CPython has them, and stdio and files through the host filesystem. */
 
 #include <alloca.h>
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
-#define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EXTRA_FEATURES)
+#define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EVERYTHING)
+
+/* marshal saves bytecode, which needs the qstr table that persistent code brings, so mpy loading comes on as in the unix port. */
+#define MICROPY_PERSISTENT_CODE_LOAD            (1)
 
 typedef long mp_off_t;
 
@@ -74,3 +77,8 @@ mp_random_seed_init (void)
 #define MICROPY_PY_THREAD                       (0)
 #define MICROPY_PY_MACHINE                      (0)
 #define MICROPY_PY_ASYNCIO                      (1)
+
+/* amk.deadline's check, on a countdown of branches so a run without a deadline pays one decrement per branch. */
+extern int amk_deadline_tick;
+void amk_deadline_poll (void);
+#define MICROPY_VM_HOOK_LOOP                    if (--amk_deadline_tick <= 0) amk_deadline_poll ();

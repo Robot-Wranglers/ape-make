@@ -1,0 +1,186 @@
+#
+# payload/lib/amk/utmpl.amk:
+#  utemplate templates held in defines, each one an imported target
+#  under a decorator; the target renders json from stdin, and name/var
+#  renders the json held in the variable var. The other forms render
+#  at parse time: inline text, a decorated define, or a make function.
+#  An include statement reads another template file by its path.
+#
+$(amk.require micropy)
+utmpl.__version__ := $(micropy.__version__)
+
+# The renderer, run here to register and again by each target in its own job.
+define utmpl.py
+  import amk, io, json, os, sys
+  import utemplate.source
+
+  # Literal text keeps its backslashes, an included file's too.
+  class Compiler(utemplate.source.Compiler):
+    def literal(self, s):
+      super().literal(s.replace("\\", "\\\\"))
+
+  utemplate.source.Compiler = Compiler
+
+  _cache = {}
+
+  # A define's template is held dedented at name.tpl.
+  def _text(name):
+    return amk.call("amk.val.dedent", name + ".tpl")
+
+  # An include statement names a file by its path from the working directory.
+  class _Loader:
+    def input_open(self, path):
+      return open(path)
+
+  # Object keys arrive as names, unless the template has its own args line.
+  def _compile(text, keys):
+    k = (text, keys)
+    if k not in _cache:
+      src = io.StringIO()
+      c = Compiler(io.StringIO(text), src, loader=_Loader())
+      named = ", ".join(keys + ("**_",)) if keys is not None else c.args
+      c.args = named
+      c.compile()
+      ns = {}
+      exec(src.getvalue(), ns)
+      _cache[k] = (ns["render"], keys is not None and c.args == named)
+    return _cache[k]
+
+  def _fail(msg):
+    amk.expand("$(error utmpl: %s)" % msg)
+
+  def _render_text(label, text, data):
+    keys = tuple(sorted(data)) if isinstance(data, dict) else None
+    try:
+      fn, splat = _compile(text, keys)
+    except OSError as e:
+      _fail("%s includes a file it cannot read: %s" % (label, e))
+    try:
+      return "".join(fn(**data) if splat else fn(data))
+    except Exception as e:
+      _fail("%s did not render: %s: %s" % (label, type(e).__name__, e))
+
+  def _render(name, data):
+    return _render_text(name, _text(name), data)
+
+  def _data(var):
+    if var:
+      text = amk.var[var]
+      if text is None:
+        _fail("no variable named %s holds the data" % var)
+    else:
+      var, text = "stdin", sys.stdin.read()
+    try:
+      return json.loads(text)
+    except ValueError as e:
+      _fail("%s is not json: %s" % (var, e))
+
+  # One source alone is the data whole; several merge as objects, words on top.
+  def _merge(srcs, words):
+    if len(srcs) == 1 and not words:
+      return srcs[0][1]
+    data = {}
+    for label, d in srcs:
+      if not isinstance(d, dict):
+        _fail("%s holds no json object to merge" % label)
+      data.update(d)
+    data.update(words)
+    return data
+
+  # Decorator data, then name/var or stdin, then words; ends with a newline.
+  def _run(name, vars=(), words=()):
+    srcs = [(v, _data(v)) for v in vars]
+    stem = os.getenv("UTMPL_DATA") or ""
+    if stem or not (vars or words):
+      srcs.append((stem or "stdin", _data(stem)))
+    out = _render(name, _merge(srcs, dict(words)))
+    sys.stdout.write(out if out.endswith("\n") else out + "\n")
+endef
+
+@micropy.exec
+define micropy.utmpl
+  import amk
+  exec(amk.call("amk.val.dedent", "utmpl.py"))
+
+  def _aside(name):
+    amk.var.raw[name + ".tpl"] = amk.var.raw[name]
+
+  def _is_ref(v):
+    name = v[2:-2]
+    marked = len(v) > 4 and v.startswith(">>") and v.endswith("<<")
+    return marked and "<" not in name and ">" not in name
+
+  # Json never holds three quotes in a row, so a goal's value splices safely.
+  def _literal(v):
+    return 'r"""%s """[:-1]' % v if _is_ref(v) else repr(v)
+
+  # The template moves aside to name.tpl; the target keeps name for its program.
+  def _import_target(name, *_):
+    _aside(name)
+    words = _decorator_words()
+    vars = [v for k, v in words if not k]
+    pairs = ", ".join("(%r, %s)" % (k, _literal(v)) for k, v in words if k)
+    boot = 'import amk\nexec(amk.call("amk.val.dedent", "utmpl.py"))\n'
+    prog = boot + '_run(%r, %r, [%s])\n' % (name, vars, pairs)
+    deps = (amk.var["amk.decorator.deps"] or "").strip()
+    extra = [": " + deps] if deps else []
+    amk.call("micropy.import.target", name, prog, *extra)
+    rule = "%s/%%: export UTMPL_DATA = $*\n%s/%%:\n\t$(amk) %s\n"
+    amk.eval(rule % (name, name, name))
+    return ""
+
+  def _render_var(name, var):
+    return _render(name.strip(), _data(var.strip()))
+
+  # Make splits the text on its commas; the last argument names the data.
+  def _inline(*args):
+    if len(args) < 2 or not args[-1].strip():
+      _fail("the inline form takes text, then the data variable")
+    text = ",".join(args[:-1])
+    return _render_text("inline template", text, _data(args[-1].strip()))
+
+  def _decorator_words():
+    n = int(amk.var["amk.decorator.argc"] or "0")
+    word = lambda i, s: amk.var["amk.decorator.%d%s" % (i, s)] or ""
+    return [(word(i, ".key"), word(i, "")) for i in range(1, n + 1)]
+
+  # A decorated define renders once, into its own name or into=var.
+  def _store(name, out):
+    into = name
+    if "into" in (amk.var["amk.decorator.kws"] or "").split():
+      into = amk.var["amk.decorator.kw.into"]
+    amk.var[into] = out
+    return ""
+
+  # Data variables merge left to right, then name=value words go on top.
+  def _decorate(name, *_):
+    _aside(name)
+    words = _decorator_words()
+    if not words:
+      _fail("@utmpl over %s takes data variables or name=value" % name)
+    for k, v in words:
+      if k and _is_ref(v):
+        _fail("@utmpl over %s renders at parse time; %s=%s needs @utmpl.target"
+          % (name, k, v))
+    srcs = [(v, _data(v)) for k, v in words if not k]
+    data = _merge(srcs, dict((k, v) for k, v in words if k))
+    return _store(name, _render(name, data))
+
+  def _import(name, *_):
+    _aside(name)
+    def fn(var=""):
+      if not var.strip():
+        _fail("$(%s) takes the variable holding the data" % name)
+      return _render(name, _data(var.strip()))
+    amk.func(name, fn)
+    return ""
+
+  amk.func("utmpl", _inline)
+  amk.func("utmpl*", _decorate)
+  amk.func("utmpl.import*", _import)
+  amk.func("utmpl.render", _render_var)
+  amk.func("utmpl.import.target*", _import_target)
+  amk.func("utmpl.target*", _import_target)
+endef
+
+$(amk.engine utmpl, guest=micropy)

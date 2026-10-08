@@ -1,0 +1,44 @@
+commands.c: the target variable of a recipe run for its value file names the target as
+written, a recipe line that names amk or make is recursive, like one that names the make
+command variable, and a fatal signal reaches every spawned job group before make releases
+the jobserver.
+
+--- a/src/commands.c
++++ b/src/commands.c
+@@ -21,6 +21,7 @@
+ #include "variable.h"
+ #include "job.h"
+ #include "commands.h"
++#include "amk.h"
+ #ifdef WINDOWS32
+ #include <windows.h>
+ #include "w32err.h"
+@@ -90,7 +91,8 @@
+   else
+ #endif  /* NO_ARCHIVES.  */
+     {
+-      at = file->name;
++      /* A value file running a recipe target's recipe names that target, as the recipe was written for.  */
++      at = file->amk_name != NULL ? file->amk_name : file->name;
+       percent = "";
+     }
+
+@@ -421,7 +423,9 @@
+
+       /* If no explicit '+' was given, look for MAKE variable references.  */
+       if (! ANY_SET (flags, COMMANDS_RECURSE)
+-          && (strstr (p, "$(MAKE)") != 0 || strstr (p, "${MAKE}") != 0))
++          && (strstr (p, "$(MAKE)") != 0 || strstr (p, "${MAKE}") != 0
++              || strstr (p, "$(amk)") != 0 || strstr (p, "${amk}") != 0
++              || strstr (p, "$(make)") != 0 || strstr (p, "${make}") != 0))
+         flags |= COMMANDS_RECURSE;
+
+       cmds->lines_flags[i] = flags;
+@@ -531,6 +535,7 @@
+
+   temp_stdin_unlink ();
+   osync_clear ();
++  amk_signal_spawned (sig);
+   jobserver_clear ();
+
+   /* A termination signal won't be sent to the entire

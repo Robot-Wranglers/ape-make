@@ -89,7 +89,7 @@ def test_a_deferred_call_answers_the_blocking_calls_text(amk, tmp_path, engine):
 
 @pytest.mark.parametrize("engine", every_engine)
 def test_a_deferred_call_raises_the_same_error(amk, tmp_path, engine):
-  assert "no function or variable named 'nope.fn'" in run(amk, tmp_path, engine, catch, "nope.fn")
+  assert "no function or macro named 'nope.fn'" in run(amk, tmp_path, engine, catch, "nope.fn")
 
 
 @pytest.mark.engines("lua")

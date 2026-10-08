@@ -1,0 +1,53 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tuplespace-todo.amk:
+#  a todo list in a disk-backed tuple space: each run opens the same
+#  sqlite file, so add, rm, list and purge work on what earlier runs left.
+#    ./demos/tuplespace-todo.amk add item='buy tea'
+#    ./demos/tuplespace-todo.amk rm item='buy tea'
+#    ./demos/tuplespace-todo.amk list purge
+#
+
+load tspace
+
+# The store, owned by this run and kept between runs.
+TODO_DB ?= .amk/todo.db
+$(shell mkdir -p $(dir $(TODO_DB)))
+
+@tspace
+define TODO
+  {"owned": "$(TODO_DB)"}
+endef
+
+__main__: list
+
+# Each item is the tuple ["todo", text]; adding one twice keeps one.
+@TODO.micropy.target
+define add
+  item = amk.var["item"].strip()
+  if not item:
+    raise SystemExit("add: give item='...'")
+  if not TODO.rdp("todo", item):
+    TODO.out("todo", item)
+  print("added:", item)
+endef
+
+@TODO.micropy.target
+define rm
+  item = amk.var["item"].strip()
+  print("removed:" if TODO.inp("todo", item) else "not found:", item)
+endef
+
+@TODO.micropy.target
+define list
+  items = TODO.read("todo", str)
+  for n, (_, item) in enumerate(items, 1):
+    print("%d. %s" % (n, item))
+  if not items:
+    print("nothing to do")
+endef
+
+@TODO.micropy.target
+define purge
+  print("purged:", len(TODO.in_all("todo", str)))
+endef

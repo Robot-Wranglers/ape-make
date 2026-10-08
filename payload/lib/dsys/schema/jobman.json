@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jobman.json",
+  "title": "@jobman",
+  "description": "a pool of jobs under @jobman: every key of a pool, from pool.json, and fail_fast; merged over lib/dsys/pool.default.json and then lib/dsys/jobman.default.json",
+  "$ref": "pool.json#/$defs/pool",
+  "properties": {
+    "fail_fast": {
+      "description": "whether map stops launching after the first result that is not success",
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "unevaluatedProperties": false
+}

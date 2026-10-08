@@ -1,0 +1,30 @@
+#
+# payload/lib/amk/bash.mk:
+#  a shell command held in a define, run by bash as an imported target
+#  under a decorator, so its standard output is a value that the dataflow
+#  mode records and caches like any other.
+#
+$(amk.require lua)
+bash.__version__ := $(lua.__version__)
+
+# Each target's program: bash runs the command, moved aside to name.sh.
+define bash.lua
+  local body = amk.var.raw["NAME.sh"]
+  local quoted = "'" .. (body:gsub("'", "'\\''")) .. "'"
+  local p = io.popen("bash -euo pipefail -c " .. quoted)
+  io.write(p:read("a"))
+  local ok, how, code = p:close()
+  if not ok then os.exit(how == "exit" and code or 128 + code) end
+endef
+
+@lua.exec
+define lua.bash
+  local function target(name, flags)
+    amk.var.raw[name .. ".sh"] = amk.var.raw[name]
+    local prog = amk.var.raw["bash.lua"]:gsub("NAME", name)
+    amk.call("lua.import.target", name, prog, flags or "")
+    return ""
+  end
+  amk.func("bash.import.target*", target)
+  amk.func("bash.target*", target)
+endef

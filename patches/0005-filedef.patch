@@ -1,0 +1,53 @@
+filedef.h: an imported target's fields on the file, the value a target keeps and the
+name it is the value of, and the goal reference type and its functions, which the
+file's fields name.
+
+--- a/src/filedef.h
++++ b/src/filedef.h
+@@ -113,7 +113,46 @@
+                                     --shuffle passes through the graph.  */
+     unsigned int snapped:1;     /* True if the deps of this file have been
+                                    secondary expanded.  */
++    /* An imported target's engine, the variable that holds its program, the flags its engine takes before the program, and the goals its body references; null for every other file.  */
++    const struct amk_engine *amk_engine;
++    const char *amk_program;
++    const char *amk_flags;
++    struct amk_goal_ref *amk_refs;
++    /* The value file of a target whose standard output is its value, on its name and on the file itself; null when no value is kept.  */
++    const char *amk_value;
++    /* On the value file of a recipe target, the name of the target whose recipe it runs; null elsewhere.  */
++    const char *amk_name;
+   };
++
++/* A goal reference in an imported body: the name as written, and the value file it resolved to once the makefiles were read.  */
++struct amk_goal_ref
++  {
++    struct amk_goal_ref *next;
++    const char *word;
++    const char *path;
++  };
++
++/* What a target's value is: the file it names, its standard output kept and reused like any other value, or its standard output kept for one run only.  */
++enum amk_value_kind
++  {
++    AMK_VALUE_FILE,
++    AMK_VALUE_STDOUT,
++    AMK_VALUE_STDOUT_NOCACHE
++  };
++
++struct amk_goal_ref *amk_goal_refs (const char *body);
++void amk_goal_refs_settle (void);
++char *amk_goal_splice (const struct file *file, const char *body);
++char *amk_goal_value (const char *path);
++char *amk_goal_dir (void);
++enum amk_value_kind amk_value_kind (const struct file *f);
++int amk_value_kept (const struct file *f);
++int amk_value_prints (const struct file *f);
++void amk_value_capture (const struct file *f);
++int amk_value_fd (void);
++void amk_value_release (void);
++void amk_value_recipe_start (const struct file *f);
++int amk_value_recipe_end (const struct file *f);
+
+
+ extern struct file *default_file;

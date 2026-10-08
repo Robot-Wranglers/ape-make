@@ -1,0 +1,38 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/wasm-zig.amk:
+#  zig as a stacked engine.
+#
+
+# Load the engine itself
+load zig
+
+# Now the engine's file extensions are supported by `load` too.
+load ./demos/data/my_functions.zig
+
+# Or, define functions inline.
+@zig.import
+define fib.zig
+  export fn fib(n: u32) u32 {
+      var a: u32 = 0;
+      var b: u32 = 1;
+      var i: u32 = 0;
+      while (i < n) : (i += 1) {
+          const t = a + b;
+          a = b;
+          b = t;
+      }
+      return a;
+  }
+endef
+
+# Use the imported functions wherever they came from; other guests see them too.
+results := $(fib 10) $(fib 20) $(fib 30)
+sums := $(add 2 3) $(square 7)
+
+# works at the recipe layer too.
+__main__:
+	echo "fib 10 20 30: $(results)"
+	echo "add 2 3, square 7: $(sums)"
+	test "$(fib 30)" = 832040
+	test "$(sums)" = "5 49"

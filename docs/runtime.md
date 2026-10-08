@@ -1,0 +1,430 @@
+<!-- header # runtime "`concept :: runtime`" | Pools #pools | Multiprocessing #multiprocessing | Reactor #tuplespace-reactor | Automata #automata | Plex #plex | Actors #actor-model | Deadlines #deadlines | Demos #demos | Refs #references -->
+<h1><a id="runtime"></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.title.dark.svg"><img src="img/hdr/docs-runtime.runtime.title.svg" alt="concept :: runtime"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.8.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.8.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.7.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.7.svg" alt="Demos"></picture></a><a href="#deadlines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.6.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.6.svg" alt="Deadlines"></picture></a><a href="#actor-model"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.5.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.5.svg" alt="Actors"></picture></a><a href="#plex"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.4.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.4.svg" alt="Plex"></picture></a><a href="#automata"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.3.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.3.svg" alt="Automata"></picture></a><a href="#tuplespace-reactor"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.2.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.2.svg" alt="Reactor"></picture></a><a href="#multiprocessing"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.1.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.1.svg" alt="Multiprocessing"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.0.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
+<!-- /header -->
+
+The `amk` runtime supports a bunch of different concurrency models.  [Jump to examples](#demos) if you insist, but it helps if we start with a taxonomy.  
+
+As with [engine kinds](../README.md#engines), concurrency breaks down into flavors.  Flavors are helpful to *organize*, but also aren't mutually exclusive.  **Concept:** *Concurrency Flavors* must choose a model for work and work management, whereas a *Engine Flavors* must choose a model for invocation and statefulness.  The main questions for runtime then are: what is the model, what is the unit, who schedules it, and what is available for coordination?
+
+<p align="center"><img src="img/runtime.png" width="640" alt="The runtime's concurrency flavors, each with its unit and scheduler, and how they build on each other"></p>
+
+<dl>
+<dt><strong><a href="dataflow.md">Task Graph</a></strong> (Default)</dt>
+<dd>
+<p><strong>Unit:</strong> Targets / Goals<br/></p>
+<p><strong>Scheduler:</strong> Classical <code>make</code> dependency graph, classic jobserver<sup><a href="#ref-jobserver">1</a></sup> optional.</p>
+<p><strong>Model:</strong> Bounded concurrency with a counting semaphore.  Fork-join over the graph; guests may contribute tasks, but are not leveraged in scheduling. Classic rule-form, i.e. <code>target: prereqs</code>, or amk's <a href="grammar.md#goal-substitution">goal substitution</a>, or decorator syntax for <a href="FFI.md#defining-a-target-in-an-engine">guest-as-target</a>.</p>
+<p><strong>Parameters:</strong> Classic arguments passed to <code>-j ..</code>, or amk's <a href="dataflow.md#modes">mode setting</a>.  <code>Dataflow style</code> has prerequisite as <a href="dataflow.md#values">values that change</a>, so that the same graph runs as incremental dataflow.</p>
+</dd>
+
+<dt><strong><a href="#multiprocessing">Multiprocessing</a></strong></dt>
+<dd>
+<p><strong>Unit:</strong> <a href="zygote.md#fork-and-the-fresh-copy">Zygote fork</a>. The <a href="FFI.md#host-handle">host handles</a> such as <code>amk.spawn</code> and <code>amk.wait</code> fork per job, the zygote per served request.<br/></p>
+<p><strong>Scheduler:</strong> OS kernel, preemptive; a guest only forks and reaps.</p>
+<p><strong>Model:</strong> Preemptive multiprocessing. Coordination is what the OS kernel gives a process <em>(exit status, signals)</em>, and <code>amk</code> contributes a mail pipe for recipes to use <em>(<code>$$AMK_MAIL</code>)</em>. A guest's <code>amk.acall</code> and <code>amk.exited</code> are one job as a future.  No notation of its own: calls on the guest handle.</p>
+<p><strong>Parameters:</strong> Configuration is mostly just the <a href="zygote.md">zygote config</a> that's available, but there's also <a href="#job-pools">related pool config</a>.</p>
+</dd>
+
+<dt><strong><a href="#control-multiplexer">Control Multiplexer</a></strong></dt>
+<dd>
+<p><strong>Unit:</strong> Coroutine, generator, or continuation.  Often written in a guest language and executing on a guest runtime, but by <a href="FFI.md#guest-handle">FFI with call or acall</a> and the <a href="FFI.md#host-handle">host handle</a> the units from <a href="#multiprocessing">Multiprocessing</a> and <a href="dataflow.md">Task Graph</a> paradigms are accessible too.  Tasks, goals, DAGs, or forks are fair game too.</p>
+<p><strong>Scheduler:</strong> One interface at <a href="plex.md"><code>amk.plex</code></a> with different backends but shared primitives <em>(deadline, fork, yield, ..)</em> and strategies <em>(race, any, all..)</em>.  See also: <a href="#layers">layers</a>.</p>
+<p><strong>Model:</strong> Control Multiplexing broadly, where many coroutines on one thread of the engine are handed over at yield, and building custom supervisors is easy with existing primitives.  For javascript, structured concurrency via Effection<sup><a href="#ref-effection">2</a></sup> provides scopes, cancellation, resources, timers, awaited futures.  For lisp, delimited and undelimited first-class continuations are available, shift, McCarthy's <code>amb</code> operator and backtracking, etc.  The <a href="#actor-model">Actor Model</a> below is this plus a charter. The library is <a href="plex.md">the plex module</a>.</p>
+<p><strong>Parameters:</strong> Choice of backends with different capabilities.</p>
+</dd>
+
+<dt><strong><a href="#actor-model">Actor Model</a></strong></dt>
+<dd>
+<p><strong>Unit:</strong> Actors themselves, basically a small mainloop with a mailbox.</p>
+<p><strong>Scheduler:</strong> One of the <code>amk.plex</code> backends, cooperative, with the group's charter as its <a href="actor.md#restart-kinds">restart policy</a>. The plex, <code>amk.plex</code>, multiplexes the members' control onto one thread of the engine, see <a href="#layers">layers</a>.</p>
+<p><strong>Model:</strong> Supervision trees inside one guest process. Coordination is <a href="actor.md#handle">the handle</a>, <a href="actor.md#events">events</a>, and restarts, with structured concurrency as the lifetime rule: a nested group's giving up is one exit to its parent. Written as <code>@actor.group</code> above a JSON charter, <code>@&lt;group&gt;.actor (&lt;engine&gt;) {opts}</code> above a member, <code>&lt;group&gt;.run</code> to start.</p>
+<p><strong>Parameters:</strong> the <a href="actor.md#backends">backend</a>, <code>effection</code> or <code>s7</code>: the supervisor and the plex it runs on. The library is <a href="actor.md">the actor module</a>.</p>
+</dd>
+<dt><strong><a href="#tuplespace-reactor">Tuplespace Reactor</a></strong></dt>
+<dd>
+<p><strong>Unit:</strong> a tuple or row in a <a href="data-engines.md#data-engines">workspace</a>, held by a data engine.</p>
+<p><strong>Scheduler:</strong> the workspace's owner, serialized: <a href="tspace.md#operations">blocking verbs</a>, <a href="data-engines.md#version-and-wait"><code>wait</code> on a version</a> as a condition variable, and handlers dispatched in commit order.</p>
+<p><strong>Model:</strong> The Reactor pattern: handlers registered against a pattern, one demultiplexer, synchronous dispatch. The data itself is the coordination, Linda's generative communication, and the owner is the demultiplexer. A <a href="tspace.md#routed-bound-workers">bound handler</a> makes the space a programmable tuple centre in TuCSoN's sense: a reaction fired by an <code>out</code> whose tuple matches the pattern, run on the owner after commit, in commit order, once per tuple, to one destination (<a href="#reactions">rules</a>). Written as <code>$(&lt;space&gt;.&lt;verb&gt; ...)</code> callforms, <code>@&lt;space&gt;.reflex &lt;engine&gt; (pattern)</code> above a define, and <code>${tspace.sh}</code> verbs in a recipe.</p>
+<p><strong>Parameters:</strong> the <a href="data-engines.md#backings">backing</a>, <code>sqlite</code> or <code>jq</code>: the owner that holds the data.</p>
+</dd>
+<dt><strong><a href="#automata">Automata &amp; DEDS</a></strong></dt>
+<dd>
+<p><strong>Unit:</strong> an event: a transition's firing, whose step is a target, a job, or a body in any guest.</p>
+<p><strong>Scheduler:</strong> the model's run, <code>&lt;name&gt;.__main__</code>, which steps until nothing can fire.</p>
+<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow</code> or <code>@kahn</code> above a JSON define.</p>
+<p><strong>Parameters:</strong> the model and its form; see <a href="dsys.md">dsys</a>.</p>
+</dd>
+</dl>
+
+| Flavor | Unit | Scheduler | Coordination | Model | Notation | Where |
+| --- | --- | --- | --- | --- | --- | --- |
+| Task-Graph | a target | make's graph under `-j` and the jobserver | prerequisites; in dataflow mode, a value that changed | task-graph parallelism, fork-join; incremental dataflow | rules, `target: prereqs`; `@<engine>.target` above a define; `$(amk.mode dataflow)` | `demos/dataflow-1.amk` |
+| Multiprocessing | A process forked from the [zygote](zygote.md#fork-and-the-fresh-copy) | OS kernel, driven by a guest | signals, exit status, and mail | Preemptive multiprocessing; Message passing over pipes; Futures (`amk.acall`, `amk.exited`) | None; calls on the guest handle, and `$$AMK_MAIL` in a recipe | [the host handle](FFI.md#host-handle), [the zygote](zygote.md) |
+| Actor Model | a program in a guest runtime | a backend, under a group's charter | the group handle, events, and restarts | actor model with supervision trees; cooperative multitasking; structured concurrency | `@actor.group` above a JSON charter; `@<group>.actor (<engine>) {opts}` above a define; `<group>.run` | this page |
+| Workspaces | a tuple or row held by a data engine | the engine's owner: blocking verbs, versions, and triggers | the data itself | generative communication (Linda), blackboard; bound handlers make it a programmable tuple centre; `wait` is a condition variable on a version | `$(<space>.<verb> ...)` callforms; `@<space>.reflex <engine> (pattern)` above a define; `${tspace.sh}` verbs in a recipe | [version and wait](data-engines.md#version-and-wait), [the tuple space](tspace.md) |
+| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
+
+Targets are make's own concurrency and need nothing from a guest. Jobs are the host handle's
+`amk.spawn`, `amk.wait` and the rest of job control, and a guest's `amk.acall` is one job
+that is one call. Actors are tasks a backend schedules inside one guest process, with a
+supervisor's policy for restarts. Workspaces coordinate through shared data instead of
+through a scheduler: a worker blocks on `in` or `wait`, or a bound handler runs when a
+matching tuple lands, so guests talk to each other without the host in the middle.
+
+The flavors nest. A target under `-j` may spawn jobs; an actor of kind `goal` is a job the backend awaits; a tuple-space worker is a target or an actor, and the space is what it waits on; an automaton is a target through `<name>.__main__`, so every flavor that runs a target runs one. [Deadlines](#deadlines) cut across them all.
+
+The rest of this page: the concurrency models available to guests, the [pools](#pools) every flavor draws on, the [multiprocessing](#multiprocessing) the host handle gives every guest, jobs and pools of them, the [tuplespace reactor](#tuplespace-reactor) a workspace's owner runs, the [automata](#automata) that step on events, the [control multiplexer](#control-multiplexer) a guest's coroutines run on, and the [actor model](#actor-model) built on it, a group declaring its members and their policy. See also [dataflow docs](dataflow.md) and the [reactor docs](tspace.md).
+
+<a id="layers"></a>
+
+| Layer | js | s7 | Model |
+| --- | --- | --- | --- |
+| Control the engine has | generators | `call/cc` | asymmetric coroutines; undelimited first-class continuations |
+| Delimited control | not needed, a generator is already delimited | [`load amb`](amb.md): `reset`, `shift`, `amb` | delimited continuations; `amb` is nondeterministic choice by backtracking |
+| Plex, `amk.plex` | Effection, bundled and republished as `amk.plex` | a cooperative ready list of continuations | a multiplexer of control: many tasks on one thread of the engine, handed over at the yield; on js, a coroutine scheduler with effects and scopes over the engine's loop |
+| Backend, `amk.actor` | `"backend": "effection"` | `"backend": "s7"` | a supervisor: restart policy over the plex's tasks |
+
+lua and micropy host no backend; their part is a member's body, bound by a decorator.
+
+<a id="pools"></a>
+
+## Pools
+
+Pools is a basic coordination primitive in `amk`.  They are a counting semaphore[^semaphore] initialized with a *(name, max_size)*, plus operators for *increment, decrement*.  
+
+Pools generalize the classic jobserver for `make`<sup><a href="#ref-jobserver">1</a></sup>, which is *already* an approach for handling bounded-concurrency with a token-pool, but which is also effectively singleton.
+
+You can have as many pools as you want.  Think of them more like building material than *solutions*, but they are concurrency-safe, and robust enough to use from the `amk` host, or from a guest runtime, or from a [forked zygote](zygote.md#fork-and-the-fresh-copy), etc.
+
+Pools can be used to be build other coordination primitives, like a [mutex](dsys.md#locks) or [horcrux](dsys.md#locks), but the usual thing is to attach them to a resource-manager.  Most [runtime flavors](runtime.md) can express some concept of "budget" or boundedness.. see [process pools](#job-pools) or [actor pools](actor.md#actor-pools) for more details.
+
+See [the pool module documentation](pool.md) for more details.
+
+runs at once: `goals` for make's own recipes, `__jobs__` for jobs, `actors` for an actor
+group's members. [Pools](pool.md) has the forms and the handles; [dsys](dsys.md) has the locks built
+on them and [where each flavor takes its tokens](dsys.md#pool-users).
+
+<!-- header multiprocessing "Multiprocessing" | Jobs #jobs | Job pools #job-pools -->
+<h2><a id="multiprocessing"></a>Multiprocessing<a href="#job-pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.multiprocessing.1.dark.svg"><img align=right src="img/hdr/docs-runtime.multiprocessing.1.svg" alt="Job pools"></picture></a><a href="#jobs"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.multiprocessing.0.dark.svg"><img align=right src="img/hdr/docs-runtime.multiprocessing.0.svg" alt="Jobs"></picture></a><br clear="all"></h2>
+<!-- /header -->
+
+A job is a fork of the parsed image running a goal list, and a pool of jobs bounds how
+many run at once. Jobs come from the host handle and need no library; the zygote page
+covers the fork itself.
+
+<a id="jobs"></a>
+
+### Jobs
+
+The make function `amk.spawn` forks this image to run a goal list as a process group and
+answers the pid; `amk.wait` collects a finished job as json with its code, signal, status,
+and the mail its recipes sent through `amk.send`; `amk.kill`, `amk.stop`, `amk.resume` and
+`amk.foreground` are job control over it. They are the same from a makefile and from every
+guest. In js, `amk.exited(pid)` is the same wait as a promise, so a plex
+task may await a job the way it awaits anything else. A job keeps the parent's parse and
+every guest state as they stood at the spawn, and a fatal signal at the parent ends it.
+The verbs are tabled under [the host handle](FFI.md#host-handle), and every call from
+every guest under [jobman](jobman.md#api); a served request is
+a fork of the same kind, see [the zygote](zygote.md#fork-and-the-fresh-copy).
+
+<a id="job-pools"></a>
+
+### Job pools
+
+`load dsys/jobman` brings pools of jobs: a [pool](pool.md) with a jobman, the handle
+that spawns under its bound. The jobman holds the token for the job's lifetime and gives it
+back on reap, so a job that dies frees its slot, and the default job pool is `__jobs__`. A
+guest that wants no pool uses the module's own verbs instead. The decorator, the jobmen and every
+call from every guest are in [jobman](jobman.md).
+
+<!-- header tuplespace-reactor "Tuplespace Reactor" | Owner #owner | Reactions #reactions | Workers #reactor-workers -->
+<h2><a id="tuplespace-reactor"></a>Tuplespace Reactor<a href="#reactor-workers"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.2.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.2.svg" alt="Workers"></picture></a><a href="#reactions"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.1.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.1.svg" alt="Reactions"></picture></a><a href="#owner"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.0.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.0.svg" alt="Owner"></picture></a><br clear="all"></h2>
+<!-- /header -->
+
+The reactor is the one flavor with no scheduler of its own: the data is the coordination.
+A [workspace](data-engines.md#data-engines) is held by one owner, and everything that
+touches it, a verb, a `wait` on its version, a bound handler, goes through that owner in
+turn. That is the Reactor pattern of Schmidt's catalogue[^reactor],
+handlers registered against a pattern, one demultiplexer, synchronous dispatch, laid over
+Linda's generative communication[^linda]. The library is brought in by `load tspace`, and
+[its page](tspace.md) has the verbs, formals and rules in full.
+
+<a id="owner"></a>
+
+### The Owner
+
+The owner is the demultiplexer. A worker that calls `in` or `rd` on a tuple that is not
+there blocks in the owner until one lands; a worker that calls
+[`wait`](data-engines.md#version-and-wait) blocks until the workspace's version moves, a
+condition variable on the data; and an `out` that matches a bound handler's pattern is
+routed to that handler instead of being stored. The owner answers one request at a time,
+in commit order, so there is no scheduler to configure and nothing to tune but the
+[backing](data-engines.md#backings), `sqlite` or `jq`.
+
+<a id="reactions"></a>
+
+### Reactions
+
+A [reflex](tspace.md#reflexes), `@<space>.reflex/<engine> (<pattern...>)`
+above a define, is a reaction in the sense of TuCSoN's ReSpecT[^respect]: fired by the communication
+event, an `out` whose tuple matches, and run on the owner after the commit. These rules make
+it a reaction and not a callback:
+
+| # | Rule | Consequence |
+| --- | --- | --- |
+| R1 | One destination, unless shared | On a space whose [strategy](tspace.md#strategy) is `exclusive`, the default, at most one handler matches any tuple: a registration whose pattern can match a tuple another handler's matches is refused, with an example tuple and the fields that meet. On a space whose reflexes are `shared`, handlers may overlap, and a matching tuple calls every one of them in registration order. To observe tuples without taking them, read the space from a loop instead. |
+| R2 | At most once | A handler that fails loses its tuple |
+| R3 | In order, on the owner | Calls run one at a time in commit order, so a slow handler delays every request the owner holds |
+| R4 | After commit | A request that fails or rolls back drops the calls it queued |
+| R5 | Routes again | A handler's own `out` may route to a handler, up to 100 deep; past that, the request fails |
+| R6 | One registry | A sub-make or spawned job that registers a handler registers it with the owner, which must define the function too |
+
+The owner dispatches a reaction in two steps:
+
+| Step | Where | Does |
+| --- | --- | --- |
+| `amk_route(name, tuple)` | SQL, in the space's trigger | queues the call; it runs once the request commits |
+| `<name>(field1, field2, ...)` | make | calls the handler with each field as text and a nested field as its JSON; the answer is dropped and an error goes to stderr |
+
+Where the lineage differs: a ReSpecT reaction is atomic with the operation and rolls back on
+failure, and this one runs after commit and does not, so a handler that cannot afford to
+lose a tuple takes it with `in` from a loop instead.
+
+<a id="reactor-workers"></a>
+
+### Workers
+
+A worker is whatever blocks on the space: a target under `-j`, a spawned job, an actor,
+or a plex task polling with a non-blocking `inp`. The flavors nest here: the space does
+not care what a worker is, only that it asks, and a bound on how many workers run belongs
+to the worker's own flavor, the `goals` slot or the `__jobs__` token. The space needs no
+[pool](pool.md) of its own because it is one, as [workspace pools](data-engines.md#workspace-pools) says: n identical tuples are a semaphore, `in` is
+acquire and `out` is release, and the parking and retry above are the jobserver's blocking
+read in another store. A pool is the same idea kept in a pipe, reachable with no owner and
+by any process holding the descriptor; a space's tokens are typed, patterned and
+inspectable, and need the owner. Choose by reach. Four workers in four guests sharing one
+space under `-j4`:
+
+```Makefile
+load tspace
+
+N ?= 60
+
+__main__: report
+
+# The master outs candidates, workers take them, the report reads the rest.
+@tuplespace.amk
+define candidates
+  for n in $$(seq 2 ${N}); do tspace out candidate $$n ; done
+endef
+
+workers: lua.loop micropy.loop js.loop s7.loop
+lua.loop micropy.loop js.loop s7.loop: candidates
+
+@tuplespace.amk: workers
+define report
+  p=$$(tspace read prime ?int ?str | jq.pipe -r '.t[1]' | sort -n | tr '\n' ' ')
+  printf 'primes: %s\n' "$$p"
+  tspace read prime ?int ?str | jq.pipe -r '.t[2]' | sort | uniq -c
+  printf 'left: %s\n' "$$(tspace read candidate ? | wc -l | tr -d ' ')"
+endef
+
+# Each engine worker takes and outs through its own binding, with no shell.
+@lua.target
+define lua.loop
+  local ts = amk.tspace
+  local function prime(n)
+    if n < 2 then return false end
+    for d = 2, math.floor(math.sqrt(n)) do
+      if n % d == 0 then return false end
+    end
+    return true
+  end
+  for t in function() return ts.inp("candidate", "integer") end do
+    if prime(t[2]) then ts.out("prime", t[2], "lua") end
+  end
+endef
+
+@micropy.target
+define micropy.loop
+  import amk
+  def prime(n):
+      return n > 1 and all(n % d for d in range(2, int(n ** 0.5) + 1))
+  while t := amk.tspace.inp("candidate", int):
+      if prime(t[1]):
+          amk.tspace.out("prime", t[1], "micropy")
+endef
+
+@js.target
+define js.loop
+  const ts = amk.tspace;
+  const prime = n => {
+    if (n < 2) return false;
+    for (let d = 2; d * d <= n; d++) if (n % d === 0) return false;
+    return true;
+  };
+  for (let t; (t = ts.inp("candidate", Number.isInteger)); )
+    if (prime(t[1])) ts.out("prime", t[1], "js");
+endef
+
+@s7.target
+define s7.loop
+  (define (prime? n)
+    (and (> n 1)
+         (let loop ((d 2))
+           (or (> (* d d) n) (and (not (= 0 (modulo n d))) (loop (+ d 1)))))))
+  (let loop ((t (amk-tspace-inp "candidate" integer?)))
+    (when t
+      (when (prime? (cadr t)) (amk-tspace-out "prime" (cadr t) "s7"))
+      (loop (amk-tspace-inp "candidate" integer?))))
+endef
+```
+
+<a id="automata"></a>
+
+## Automata & DEDS
+
+A discrete-event dynamic system (DEDS) is a wonderful thing, mostly because it's a *unifying abstraction* that works well for all kinds of workflow algebras and for different kinds of automata, at the same time.  When the same basic object can be used for modeling / simulation, workflows or dataflows, or other structured compute.. all that's missing is a compiler that makes it easy to move between forms.
+
+State is held in [pools](#pools), and an event is a firing whose step runs a target, a
+job, or a body in any guest. Each model is lowered to a backend; today that is a
+[Petri net](petri.md), with every place a pool. 
+
+The [dsys module](dsys.md) provides:
+
+| Form | Model |
+| --- | --- |
+| [`@petri`](petri.md) | a Petri net, written by hand |
+| [`@workflow`](workflow.md) | a task graph, each task's outcome a token's label |
+| [`@kahn`](kahn.md) | a Kahn network, its channels labeled places |
+| [`@fsm`](fsm.md) | a state machine, xstate config or scxml, its states places holding one token and its events open places |
+
+Every model's run is the target `<name>.__main__`, so the other flavors run one as they run
+any goal: a prerequisite, a spawned job, an awaited goal.
+
+<a id="multiplexed-automata"></a>
+
+### Multiplexed Automata
+
+Work in progress: many automata's runs as tasks on one [control multiplexer](#control-multiplexer),
+each scheduled by `amk.plex`.
+
+<a id="control-multiplexer"></a>
+<a id="plex"></a>
+
+## Control Multiplexer
+
+The plex is a multiplexer of control: many coroutines on one thread of an engine, each
+handed the thread at its yield and given it back when the next one yields. It is the layer
+the [actor model](#actor-model) schedules on, and it is usable alone. Its engines, its uses
+without a charter, and choice by `amb` on it are in [the plex module](plex.md).
+
+<a id="actor-model"></a>
+
+## Actor Model
+
+A group is a set of actors under a charter; the backend named by the charter is the
+supervisor that enforces it. Declaring a group, its kinds, backends, restarts, events and
+handle are in [the actor module](actor.md).
+
+<a id="backends"></a>
+
+## Backends
+
+A backend is the implementation that schedules a flavor's units. Each flavor at the top of this page names one model; its backends are the concrete schedulers that run it, and where a flavor
+has more than one, you pick it by name: `backend` in an actor charter, the
+[backing](data-engines.md#backings) of a workspace, the engine a plex task is written in.
+The table lists every backend once, with the page that covers it in full.
+
+| # | Backend | Flavor | Description | Model | Docs |
+| --- | --- | --- | --- | --- | --- |
+| K1 | the jobserver | [Task Graph](dataflow.md) | make's own: `-j` slots handed down a pipe, recipes as child shells, recursion sharing the slots | fork-join over a dependency graph; a counting semaphore for the slots | [dataflow modes](dataflow.md#modes), [pools](#pools) |
+| K2 | the host | [Multiprocessing](#multiprocessing) | a fork of the parsed image per spawn, the zygote per served request; the kernel schedules, the guest reaps | preemptive multiprocessing; process groups and signals | [jobs](#jobs), [the zygote](zygote.md#fork-and-the-fresh-copy), [the multiprocessing module](multiprocessing.md#api) |
+| K3 | Effection, js | [Control Multiplexer](#control-multiplexer) | `amk.plex` over the vendored Effection: tasks with scopes, cancellation and timers on the engine's loop | structured concurrency; asymmetric coroutines | [plex js](plex.md#api-js), [layers](#layers) |
+| K4 | ready list, s7 | [Control Multiplexer](#control-multiplexer) | `amk.plex` as a cooperative ready list of continuations, no clock | deterministic cooperative scheduling over first-class continuations | [plex s7](plex.md#api-s7), [layers](#layers) |
+| K5 | `effection` | [Actor Model](#actor-model) | a supervisor over K3, restarts windowed by `intensity` over `period` | structured concurrency with supervision trees | [actor backends](actor.md#backends) |
+| K6 | `s7` | [Actor Model](#actor-model) | a supervisor over K4, one plex per group, `intensity` as a restart budget | deterministic supervision trees | [actor backends](actor.md#backends) |
+| K7 | `sqlite` | [Tuplespace Reactor](#tuplespace-reactor) | one owner holds the database and answers every ask; `wait` is held until the version moves; triggers queue bound handlers to run on the owner after commit | serialized transactions; handlers as commit-time [reactions](#reactions) | [sqlite workspaces](data-engines.md#sqlite-workspaces), [the tuple space](tspace.md#operations) |
+| K8 | `jq` | [Tuplespace Reactor](#tuplespace-reactor) | one owner holds the value, replaced whole by each program; `version` and `wait` as for any workspace | a single-writer register with a version counter | [jq workspaces](data-engines.md#jq-workspaces), [version and wait](data-engines.md#version-and-wait) |
+| K9 | Petri net | [Automata & DEDS](#automata) | places as pools; an enabled transition fires in `transitions` order, consuming its inputs when it starts and producing its outputs when it lands | place/transition nets over a marking | [petri](petri.md), [strategy](petri.md#strategy) |
+
+K5 and K6 are the values `backend` takes in a charter; K7 and K8 are the backings a
+workspace or `@tspace` body names.
+
+<a id="deadlines"></a>
+
+## Deadlines
+
+`amk.deadline(ms, fn, ...)` calls fn with the arguments and answers its result. Once ms
+milliseconds of wall-clock time pass, the run stops and the call raises `deadline: <ms> ms`,
+which the caller can catch. A catch inside fn does not stop it, and a nested deadline keeps
+the tighter of the two. micropy raises `RuntimeError` and s7 raises the error type
+`deadline`. In js, a promise fn returns is not bounded after fn returns. s7 checks only at
+the start of a body of more than one form, so a loop whose body is a single form is not
+stopped.
+
+```Makefile
+# deadline: 100 ms
+r := $(lua.exec local ok, e = pcall(amk.deadline, 100, function() while true do end end) print(e))
+```
+
+The process has one deadline, shared by every guest. A deadline set in one guest also
+stops a function another guest defined with `amk.func` and fn reaches through `amk.call`,
+and that `amk.call` raises `deadline: <ms> ms` in the caller once the deadline has passed.
+awk and jq have no check, so a call into them ends only when they return.
+
+```Makefile
+seed := $(lua.exec amk.func("spin", function() while true do end end))
+# deadline: 100 ms
+r := $(js.exec try { amk.deadline(100, () => amk.spin()); } catch (e) { print(e.message); })
+```
+
+A wasm call is a line, not a closure, so `exec` takes `deadline ms` ahead of the call; a
+lifted export called from another guest's deadline ends the same way, since wasm3 asks the
+host before every call. The call reports `deadline: <ms> ms` on stderr and answers empty,
+and the runtime keeps its state. sqlite's `--deadline` is in
+[data engines](data-engines.md#deadlines).
+
+```Makefile
+loaded := $(wasm.import fib32.wasm)
+slow := $(wasm.exec deadline 100 fib 45)
+```
+
+<a id="demos"></a>
+
+## Demos
+
+| Demo | Shows |
+| --- | --- |
+| [`pool-basic.amk`](../demos/pool-basic.amk) | a pool of one token as a mutex: three spawned jobs, each a micropy worker taking and giving back the token through `amk.pool.door`; embedded in [the pool module](pool.md#demos) |
+| [`pool-locking.amk`](../demos/pool-locking.amk) | the same through the lock factories of [dsys](dsys.md#locks): workers on `amk.mutex.door`, readers sharing `amk.horcrux.book` while a writer waits for every piece |
+| [`tuplespace-1.amk`](../demos/tuplespace-1.amk) | a tuple space shared by workers in four guests under `-j4`, each taking typed candidates through one atomic match; embedded above |
+| [`supervise-3.amk`](../demos/supervise-3.amk) | the charter as data under `"backend": "effection"`, every kind, a nested group giving up |
+| [`actors-1.amk`](../demos/actors-1.amk) | the same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded in [the actor module](actor.md#syntax) |
+| [`actors-2.amk`](../demos/actors-2.amk) | goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
+| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
+| [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
+| [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
+| [`petri-csp.amk`](../demos/petri-csp.amk) | a rendezvous as a Petri net: two micropy senders and a slow js receiver, each send returning once its value is received |
+| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
+| [`kahn-parity.amk`](../demos/kahn-parity.amk) | a Kahn network: open labeled pools as channels, produced to from a step's fork |
+| [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
+
+<a id="references"></a>
+
+## References
+
+1. <a id="ref-jobserver"></a>The GNU make manual, "Job Slots", [gnu.org](https://www.gnu.org/software/make/manual/html_node/Job-Slots.html).
+2. <a id="ref-effection"></a>Effection, structured concurrency and effects for JavaScript, [frontside.com/effection](https://frontside.com/effection).
+
+- [Pool](pool.md) and [dsys](dsys.md), [jobman](jobman.md), [plex](plex.md), [actor](actor.md) and [tspace](tspace.md), one page per flavor's module.
+- [Dataflow](dataflow.md), the task graph's incremental mode.
+- [Engines](../README.md#engines), the guests each flavor runs.
+- [Data engines](data-engines.md#deadlines), for sqlite's own deadline.
+- [The Effection documentation](https://frontside.com/effection/docs).
+- [Actor model](https://en.wikipedia.org/wiki/Actor_model), [coroutines](https://en.wikipedia.org/wiki/Coroutine) and [tuple spaces](https://en.wikipedia.org/wiki/Tuple_space), on Wikipedia.
+
+[^semaphore]: Edsger W. Dijkstra, "Cooperating Sequential Processes", EWD123, 1965, where the semaphore is introduced, [transcription](https://www.cs.utexas.edu/~EWD/transcriptions/EWD01xx/EWD123.html).
+[^reactor]: Douglas C. Schmidt, "Reactor: An Object Behavioral Pattern for Demultiplexing and Dispatching Handles for Synchronous Events", in Pattern Languages of Program Design, Addison-Wesley, 1995, [pdf](https://www.dre.vanderbilt.edu/~schmidt/PDF/reactor-siemens.pdf).
+[^linda]: David Gelernter, "Generative Communication in Linda", ACM Transactions on Programming Languages and Systems 7(1), 1985, [doi:10.1145/2363.2433](https://doi.org/10.1145/2363.2433).
+[^respect]: Andrea Omicini and Enrico Denti, "From Tuple Spaces to Tuple Centres", Science of Computer Programming 41(3), 2001, [doi:10.1016/S0167-6423(01)00011-9](https://doi.org/10.1016/S0167-6423(01)00011-9).

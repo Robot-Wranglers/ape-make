@@ -1,0 +1,44 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/wasm-golang.amk:
+#  golang as a stacked engine.
+#
+
+# Load the engine itself
+load golang
+
+# Now the engine's file extensions are supported by `load` too.
+load ./demos/data/my_functions.go
+
+# Or, define functions inline.
+@golang.import
+define fib.go
+  package main
+
+  //export fib
+  func fib(n uint32) uint32 {
+      a, b := uint32(0), uint32(1)
+      for i := uint32(0); i < n; i++ {
+          a, b = b, a+b
+      }
+      return a
+  }
+
+  func main() {
+      println("hello from go")
+  }
+endef
+
+# Use the imported functions wherever they came from; other guests see them too.
+results := $(fib 10) $(fib 20) $(fib 30)
+started := $(golang fib.go)
+sums := $(add 2 3) $(square 7)
+
+# works at the recipe layer too.
+__main__:
+	echo "fib 10 20 30: $(results)"
+	echo "start: $(started)"
+	echo "add 2 3, square 7: $(sums)"
+	test "$(fib 30)" = 832040
+	test "$(started)" = "hello from go"
+	test "$(sums)" = "5 49"

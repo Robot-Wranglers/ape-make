@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// The engine an at line names, and the grammar its define body takes.
+// The engine a decorator names, and the grammar its define body takes: the engine word may follow a space or troupe and bind, and the stacked engines name only the forms whose body is shell.
 const ENGINES = {
   lua: { scope: 'source.lua', lang: 'lua' },
   micropy: { scope: 'source.python', lang: 'python' },
@@ -10,6 +10,11 @@ const ENGINES = {
   s7: { scope: 'source.scheme', lang: 'scheme' },
   jq: { scope: 'source.jq', lang: 'jq' },
   awk: { scope: 'source.awk', lang: 'awk' },
+  tinygo: { scope: 'source.go', lang: 'go' },
+  zig: { scope: 'source.zig', lang: 'zig' },
+  wat: { scope: 'source.wat', lang: 'wat' },
+  amk: { scope: 'source.shell', lang: 'shellscript', prefix: '(?:[\\w-]+\\.)?', ops: '(?:\\.target)?' },
+  bash: { scope: 'source.shell', lang: 'shellscript', prefix: '', ops: '(?:\\.import)?\\.target' },
 };
 
 const MODIFIERS = '(?:(?:override|export|private)\\s+)*';
@@ -19,15 +24,35 @@ const ENDEF = '^\\s*(endef)\\b';
 // Between the at line and its define only blank and comment lines may stand; anything else ends the block.
 const STRAY = `^(?!\\s*(?:#|$)|\\s*${MODIFIERS}define\\b)`;
 
-function engineBlock(name, { scope, lang }) {
+// A decorator's head: the at sign, the name, then the arguments, which an assignment to a variable of that name is not.
+const HEAD_END = '(?=[\\s({:]|$)(?!\\s*(?:=|:=|::=|\\+=|\\?=|!=))(.*)$';
+const BIND = '(?:[\\w-]+(?:\\.[\\w-]+)*\\.)?';
+
+// The arguments: positional words and quoted literals, a parens group, options in braces, the prerequisites after a colon, and the mark.
+const QUOTED = [
+  { match: `'[^']*'`, name: 'string.quoted.single.amk' },
+  { match: '"[^"]*"', name: 'string.quoted.double.amk' },
+];
+const KEYED = { match: '([\\w.-]+)(=)', captures: { 1: { name: 'variable.parameter.key.amk' }, 2: { name: 'punctuation.separator.key-value.amk' } } };
+const ARGS = [
+  { match: '(:::)\\s*(\\w+)\\s*$', captures: { 1: { name: 'punctuation.separator.mark.amk' }, 2: { name: 'keyword.other.mark.amk' } } },
+  { begin: '(?<!:)(:)(?!:)', beginCaptures: { 1: { name: 'punctuation.separator.prerequisites.amk' } }, end: '(?=:::)|$', patterns: [{ match: '[^\\s:]+', name: 'entity.name.function.target.makefile' }] },
+  { begin: '\\{', end: '\\}', name: 'meta.options.decorator.amk', beginCaptures: { 0: { name: 'punctuation.section.braces.begin.amk' } }, endCaptures: { 0: { name: 'punctuation.section.braces.end.amk' } }, patterns: [KEYED, ...QUOTED] },
+  { begin: '\\(', end: '\\)', name: 'meta.group.decorator.amk', beginCaptures: { 0: { name: 'punctuation.section.group.begin.amk' } }, endCaptures: { 0: { name: 'punctuation.section.group.end.amk' } }, patterns: [KEYED, ...QUOTED] },
+  KEYED,
+  ...QUOTED,
+];
+
+function engineBlock(name, { scope, lang, prefix = BIND, ops = '(?:\\.[\\w-]+)*\\*?' }) {
   return {
     name: `meta.engine.${name}.amk`,
-    begin: `^(@)(${name})((?:\\.[\\w-]+)*\\*?)(?=\\s|$)(.*)$`,
+    begin: `^(@)(${prefix})(${name})(${ops})${HEAD_END}`,
     beginCaptures: {
       1: { name: 'punctuation.definition.decorator.amk' },
-      2: { name: 'entity.name.function.decorator.engine.amk' },
-      3: { name: 'entity.name.function.decorator.amk' },
-      4: { name: 'meta.arguments.decorator.amk' },
+      2: { name: 'entity.name.function.decorator.amk' },
+      3: { name: 'entity.name.function.decorator.engine.amk' },
+      4: { name: 'entity.name.function.decorator.amk' },
+      5: { name: 'meta.arguments.decorator.amk', patterns: ARGS },
     },
     end: `${ENDEF}|${STRAY}`,
     endCaptures: { 1: { name: 'keyword.control.define.makefile' } },
@@ -49,12 +74,26 @@ function engineBlock(name, { scope, lang }) {
   };
 }
 
+// Any other decorator, a line on its own: the name and its arguments, the body plain make.
+function decoratorLine() {
+  return {
+    name: 'meta.decorator.amk',
+    match: `^(@)([\\w-]+(?:\\.[\\w-]+)*\\*?)${HEAD_END}`,
+    captures: {
+      1: { name: 'punctuation.definition.decorator.amk' },
+      2: { name: 'entity.name.function.decorator.amk' },
+      3: { name: 'meta.arguments.decorator.amk', patterns: ARGS },
+    },
+  };
+}
+
 function enginesGrammar() {
   const repository = {};
   for (const [name, engine] of Object.entries(ENGINES)) repository[`engine-${name}`] = engineBlock(name, engine);
+  repository.decorator = decoratorLine();
   return {
     scopeName: 'source.makefile.amk-engines',
-    injectionSelector: 'L:source.makefile -comment -meta.embedded',
+    injectionSelector: 'L:source.makefile -comment -meta.embedded -variable.other.makefile',
     patterns: Object.keys(repository).map((key) => ({ include: `#${key}` })),
     repository,
   };
@@ -74,7 +113,7 @@ function expansionsGrammar() {
         },
       },
       {
-        match: '(@)([\\w.-][\\w./-]*)(@)',
+        match: '(>>)([\\w.-][\\w./-]*)(<<)',
         captures: {
           1: { name: 'punctuation.definition.goal.amk' },
           2: { name: 'variable.other.goal.amk' },

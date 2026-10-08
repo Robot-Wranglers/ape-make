@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fsm",
+  "description": "a state machine in the shape of an xstate machine config, the subset dsys/fsm lowers: names, never expressions",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "initial": { "$ref": "#/$defs/targets" },
+    "states": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "additionalProperties": { "$ref": "#/$defs/state" }
+    }
+  },
+  "required": ["initial", "states"],
+  "additionalProperties": false,
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+    "target": { "type": "string", "pattern": "^[#.]?[A-Za-z0-9_.-]+$" },
+    "targets": {
+      "oneOf": [
+        { "$ref": "#/$defs/target" },
+        { "type": "array", "items": { "$ref": "#/$defs/target" }, "minItems": 1 }
+      ]
+    },
+    "names": {
+      "oneOf": [
+        { "$ref": "#/$defs/name" },
+        { "type": "array", "items": { "$ref": "#/$defs/name" } }
+      ]
+    },
+    "transition": {
+      "oneOf": [
+        { "$ref": "#/$defs/target" },
+        {
+          "type": "object",
+          "properties": {
+            "target": { "$ref": "#/$defs/targets" },
+            "guard": { "type": "string", "pattern": "^@?[A-Za-z0-9_.-]+$" },
+            "actions": { "$ref": "#/$defs/names" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "transitions": {
+      "oneOf": [
+        { "$ref": "#/$defs/transition" },
+        { "type": "array", "items": { "$ref": "#/$defs/transition" }, "minItems": 1 }
+      ]
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["atomic", "compound", "parallel", "final"] },
+        "initial": { "$ref": "#/$defs/targets" },
+        "states": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+          "additionalProperties": { "$ref": "#/$defs/state" }
+        },
+        "on": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Za-z0-9_.*-]+$" },
+          "additionalProperties": { "$ref": "#/$defs/transitions" }
+        },
+        "always": { "$ref": "#/$defs/transitions" },
+        "onDone": { "$ref": "#/$defs/transitions" },
+        "entry": { "$ref": "#/$defs/names" },
+        "exit": { "$ref": "#/$defs/names" },
+        "invoke": {
+          "type": "object",
+          "properties": {
+            "id": { "$ref": "#/$defs/name" },
+            "src": { "$ref": "#/$defs/name" },
+            "onDone": { "$ref": "#/$defs/transitions" },
+            "onError": { "$ref": "#/$defs/transitions" }
+          },
+          "required": ["src"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

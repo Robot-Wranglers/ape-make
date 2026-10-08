@@ -1,0 +1,24 @@
+#
+# payload/lib/amk/zig.amk:
+#  zig as a user-defined engine over wasm: the compiler in an alpine image,
+#  a freestanding module with every exported function exported, registered
+#  so that @zig.import over a define and load of a .zig file both work.
+#
+load wasm
+
+define Dockerfile.zig
+  FROM alpine:3.21
+  RUN apk add -q zig
+endef
+
+define zig.build
+  zig build-exe $< -target wasm32-freestanding -O ReleaseSmall \
+    -fno-entry -rdynamic -femit-bin=$@
+endef
+
+# The row as a spec, the decorator form of the registration.
+@amk.engine.spec
+define zig
+  {"guest": "wasm",
+   "language": "Zig", "implementation": "zig", "version": "0.13.0"}
+endef

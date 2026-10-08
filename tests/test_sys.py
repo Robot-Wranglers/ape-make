@@ -61,6 +61,12 @@ def test_uuid_is_v4_and_fresh(amk, tmp_path):
   assert a != b
 
 
+def test_the_name_is_trimmed(amk, tmp_path):
+  r = run(amk, tmp_path, "$(info [$(amk.sys pid )])")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert re.search(r"\[\d+\]", r.stdout), r.stdout
+
+
 def test_an_unknown_name_is_fatal(amk, tmp_path):
   r = run(amk, tmp_path, "$(info [$(amk.sys nope)])")
   assert r.returncode != 0, r.stdout

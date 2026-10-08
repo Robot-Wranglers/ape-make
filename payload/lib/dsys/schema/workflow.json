@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow.json",
+  "title": "@workflow",
+  "description": "a task graph under @workflow, compiled by workflow.jq to a net; that each need names a task, and that needs hold no cycle, are checked by the compile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tasks"],
+  "properties": {
+    "tasks": {
+      "description": "each task by name, in declaration order",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z0-9_-]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "run": { "description": "the target the task runs; without it, the task only passes its outcome on", "type": "string", "minLength": 1 },
+          "needs": {
+            "description": "the tasks that must end before this one starts",
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          },
+          "when": {
+            "description": "which outcomes of its needs let it run: success when all succeeded, failed when any failed, done either way; otherwise it is skipped",
+            "enum": ["success", "failed", "done"],
+            "default": "success"
+          },
+          "over": {
+            "description": "items the task runs once per, each a label",
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^\\S{1,31}$" }
+          },
+          "pool": { "description": "an open pool whose tokens bound the task's runs in flight", "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

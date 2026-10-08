@@ -1,0 +1,51 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tuplespace-sailors.amk:
+#  a world ticking the sky through a day, and two sailors watching the same
+#  sky. every actor is a reflex; the space shares its reflexes, so every sky
+#  reaches both sailors, and each keeps a feeling of its own: a red morning
+#  makes a sailor alert, a red night relaxed.
+#
+
+load tspace
+
+@tspace
+define SKY
+  { "strategy": { "reflexes": "shared" }, "seed": [["tick", 1]] }
+endef
+
+__main__: SKY.__main__
+
+# The world: each tick puts its sky, then the next tick, until nightfall.
+@SKY.reflex/js (tick, t=int)
+define world
+  const days = [["blue", "morning"], ["red", "morning"], ["grey", "noon"],
+                ["red", "night"], ["blue", "night"]];
+  if (t > days.length) return;
+  const [colour, when] = days[t - 1];
+  print(`tick ${t}: a ${colour} sky at ${when}`);
+  SKY.out("sky", t, colour, when);
+  SKY.out("tick", t + 1);
+endef
+
+# A sailor who starts out alert, in lua.
+@SKY.reflex/lua (sky, t=int, colour=str, when=str)
+define sailor1
+  mood1 = mood1 or "alert"
+  if colour == "red" and when == "morning" then mood1 = "alert" end
+  if colour == "red" and when == "night" then mood1 = "relaxed" end
+  print("  sailor1 is feeling " .. mood1)
+endef
+
+# A sailor who starts out relaxed, in micropy.
+@SKY.reflex/micropy (sky, t=int, colour=str, when=str)
+define sailor2
+  global mood2
+  try:
+    mood2
+  except NameError:
+    mood2 = "relaxed"
+  if colour == "red":
+    mood2 = {"morning": "alert", "night": "relaxed"}.get(when, mood2)
+  print("  sailor2 is feeling " + mood2)
+endef

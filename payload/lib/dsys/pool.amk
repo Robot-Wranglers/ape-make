@@ -1,0 +1,32 @@
+#
+# payload/lib/dsys/pool.amk:
+#  the @pool decorator: above a JSON define, it opens a pool by name over
+#  the baseline. load dsys/pool brings it alone, without the locks; the
+#  callform $(amk.pool name, size) needs none of this. pool._ is private.
+#
+$(amk.require jq)
+
+pool._baseline := /zip/lib/dsys/pool.default.json
+pool.__schema__ := dsys/schema/pool.json
+
+# The body over the baseline as size, label_gen, strategy, labels; - for none.
+define pool._merge
+  ($$base[0] * .) as $$m
+  | [ (if ($$m.labels | length) > 0 then (.size // "-") else $$m.size end),
+      ($$m.label_gen // "-"), ($$m.strategy // "-") ]
+    + ($$m.labels | map(tostring))
+  | map(tostring) | join(" ")
+endef
+pool._merged = $(jq.argv -r --slurpfile base $(pool._baseline), \
+  $(strip $(pool._merge)), $(amk.val.json5 $(1)))
+$(amk.fxn! pool._merged)
+
+# The at line @pool: the keys from the merge, the ledger from C.
+@amk.fxn!
+define pool_star
+$(amk.pool $(1), \
+  size=$(filter-out -,$(word 1,$(pool._merged $(1)))), \
+  labels=$(wordlist 4,259,$(pool._merged $(1))), \
+  label_gen=$(filter-out -,$(word 2,$(pool._merged $(1)))), \
+  strategy=$(filter-out -,$(word 3,$(pool._merged $(1)))))
+endef

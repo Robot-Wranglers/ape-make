@@ -5,19 +5,10 @@ on:
 permissions:
   contents: read
 jobs:
-  # One build per engine set: the default, and the default with the opt-in engine added.
+  # One build of the default engine set; its artifacts keep the default name test.yml and release.yml download.
   build:
-    name: Build amk (${{ matrix.name }})
+    name: Build amk
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        name: [ default, wasm3 ]
-        include:
-          - name: default
-            with: ''
-          - name: wasm3
-            with: wasm3
     steps:
       # The Makefile reads the version from the nearest v-tag, so the checkout needs the tags and the history behind them.
       - name: Checkout
@@ -25,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-      # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across engine sets.
+      # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across Makefile edits.
       - name: Cache downloads and toolchain
         uses: actions/cache@v6
         with:
@@ -34,29 +25,29 @@ jobs:
             *.tar.xz
             *.zip
             cosmocc
-          key: deps-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('Makefile') }}
+          key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
           restore-keys: |
             deps-${{ runner.os }}-
       - name: Fetch and verify inputs
-        run: make deps with=${{ matrix.with }}
+        run: make deps
       - name: Unpack and patch
-        run: make patch with=${{ matrix.with }}
+        run: make patch
       - name: Build
-        run: make build with=${{ matrix.with }}
+        run: make build
       - name: Smoke
-        run: make smoke with=${{ matrix.with }}
+        run: make smoke
       # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.
       - name: Docker image
-        run: make build.docker with=${{ matrix.with }}
+        run: make build.docker
       - name: Smoke the image
-        run: make smoke.docker with=${{ matrix.with }}
+        run: make smoke.docker
       # A tarball, since upload-artifact drops the alias symlinks and the exec bits the context needs.
       - name: Pack the image context
         run: tar -C build/docker -cf docker-context.tar amd64 arm64
       - name: Upload the image context
         uses: actions/upload-artifact@v7
         with:
-          name: docker-context-${{ matrix.name }}
+          name: docker-context-default
           path: docker-context.tar
           if-no-files-found: error
           retention-days: 14
@@ -66,14 +57,13 @@ jobs:
           install -m 0755 out/bin/amk dist/amk
       # The portable job runs the wasm checks against the modules wasm3 ships, so they travel with the binary.
       - name: Add the wasm test modules
-        if: matrix.with == 'wasm3'
         run: |
           install -m 0644 src/wasm3-*/test/wasi/simple/test.wasm dist/test.wasm
           install -m 0644 src/wasm3-*/test/lang/fib32.wasm dist/fib32.wasm
       - name: Upload amk
         uses: actions/upload-artifact@v7
         with:
-          name: amk-${{ matrix.name }}
+          name: amk-default
           path: dist/*
           if-no-files-found: error
           retention-days: 14

@@ -1,0 +1,190 @@
+Hooks in read.c. The payload's prelude is read before any makefile. A makefile's at lines
+and an evaluated text's are rewritten before the parse. The goal make picks from
+the first rule is remembered, so a __main__ target can still take its place. The rule
+behind an imported target stays here, since it evaluates text through this file's reader.
+A load line keeps a leading ./ on its names, since amk's load reads it as the working directory.
+
+--- a/src/read.c
++++ b/src/read.c
+@@ -15,6 +15,7 @@
+ this program.  If not, see <https://www.gnu.org/licenses/>.  */
+
+ #include "makeint.h"
++#include "amk.h"
+
+ #include <assert.h>
+
+@@ -54,6 +55,7 @@
+     size_t size;        /* Malloc'd size of buffer. */
+     FILE *fp;           /* File, or NULL if this is an internal buffer.  */
+     floc floc;          /* Info on the file in fp (if any).  */
++    int amk_lines;      /* The buffer stands in for a file, so its lines count.  */
+   };
+
+ /* Track the modifiers we can have on variable assignments */
+@@ -208,6 +210,13 @@
+     free (value);
+   }
+
++  /* The payload's prelude, read like an entry of the list above, then taken back out of the list so the first word still names the entry makefile.  */
++  if (!getenv ("AMK_NO_PRELUDE"))
++    {
++      eval_makefile (strcache_add (AMK_PRELUDE_MK), RM_NO_DEFAULT_GOAL|RM_INCLUDED|RM_DONTCARE);
++      define_variable_cname ("MAKEFILE_LIST", "", o_file, 0);
++    }
++
+   /* Read makefiles specified with -f switches.  */
+
+   if (makefiles != 0)
+@@ -307,6 +316,7 @@
+   struct ebuffer ebuf;
+   const floc *curfile;
+   char *expanded = 0;
++  char *rewritten;
+
+   /* Create a new goaldep entry.  */
+   deps = alloc_goaldep ();
+@@ -425,10 +435,23 @@
+   do_variable_definition (&ebuf.floc, "MAKEFILE_LIST", filename, o_file,
+                           f_append_value, 0);
+
+-  /* Evaluate the makefile */
++  /* Evaluate the makefile, from its text when the at lines in it were rewritten.  */
+
+-  ebuf.size = 200;
+-  ebuf.buffer = ebuf.bufnext = ebuf.bufstart = xmalloc (ebuf.size);
++  rewritten = amk_preprocess_file (ebuf.fp, filename);
++  if (rewritten)
++    {
++      fclose (ebuf.fp);
++      ebuf.fp = NULL;
++      ebuf.amk_lines = 1;
++      ebuf.size = strlen (rewritten);
++      ebuf.buffer = ebuf.bufnext = ebuf.bufstart = rewritten;
++    }
++  else
++    {
++      ebuf.amk_lines = 0;
++      ebuf.size = 200;
++      ebuf.buffer = ebuf.bufnext = ebuf.bufstart = xmalloc (ebuf.size);
++    }
+
+   curfile = reading_file;
+   reading_file = &ebuf.floc;
+@@ -437,7 +460,8 @@
+
+   reading_file = curfile;
+
+-  fclose (ebuf.fp);
++  if (ebuf.fp)
++    fclose (ebuf.fp);
+
+   free (ebuf.bufstart);
+   free_alloca ();
+@@ -453,12 +477,14 @@
+   struct conditionals *saved;
+   struct conditionals new;
+   const floc *curfile;
++  char *rewritten;
+
+   /* Evaluate the buffer */
+
+   ebuf.size = strlen (buffer);
+   ebuf.buffer = ebuf.bufnext = ebuf.bufstart = buffer;
+   ebuf.fp = NULL;
++  ebuf.amk_lines = 0;
+
+   if (flocp)
+     ebuf.floc = *flocp;
+@@ -469,6 +495,14 @@
+       ebuf.floc.filenm = NULL;
+       ebuf.floc.lineno = 1;
+       ebuf.floc.offset = 0;
++    }
++
++  /* An at line in evaluated text is rewritten as one in a file is.  */
++  rewritten = amk_preprocess_text (buffer, &ebuf.floc);
++  if (rewritten)
++    {
++      ebuf.size = strlen (rewritten);
++      ebuf.buffer = ebuf.bufnext = ebuf.bufstart = rewritten;
+     }
+
+   curfile = reading_file;
+@@ -483,4 +517,5 @@
+   reading_file = curfile;
+
++  free (rewritten);
+   free_alloca ();
+ }
+@@ -943,7 +978,7 @@
+              Don't expand archive references or strip "./"  */
+           p2 = p;
+           files = PARSE_FILE_SEQ (&p2, struct nameseq, MAP_NUL, NULL,
+-                                  PARSEFS_NOAR);
++                                  PARSEFS_NOAR | PARSEFS_NOSTRIP);
+           free (p);
+
+           /* Load each file.  */
+@@ -1975,8 +2010,12 @@
+             }
+
+           if (!reject)
+-            define_variable_global (".DEFAULT_GOAL", 13, t->name,
+-                                    o_file, 0, NILF);
++            {
++              define_variable_global (".DEFAULT_GOAL", 13, t->name,
++                                      o_file, 0, NILF);
++              free (amk_goal_autofill);
++              amk_goal_autofill = xstrdup (t->name);
++            }
+         }
+     }
+ }
+@@ -2644,6 +2683,16 @@
+   *eol = '\0';
+   ebuf->bufnext = eol+1;
+
++  /* A buffer standing in for a file counts its lines, continuation lines included.  */
++  if (ebuf->amk_lines)
++    {
++      long n = 1;
++      const char *p;
++      for (p = ebuf->buffer; p < eol; ++p)
++        n += *p == '\n';
++      return n;
++    }
++
+   return 0;
+ }
+
+@@ -3547,3 +3596,29 @@
+   *stringp = p;
+   return new;
+ }
++
++/* The rule behind an imported target, never the default goal: a phony target of the name, with its prerequisites, that records its engine, its program, the flags its engine takes before the program, and the goals its body references. The job launcher runs the program in a fork of make, so the recipe line only names it, and nothing of the value directory is touched here.  */
++void
++amk_import_target (const char *name, const char *engine, const char *body,
++                   const char *flags, const char *prereqs, const floc *flocp)
++{
++  static const char shape[] = ".PHONY: %s\n%s: %s; @: %s %s\n";
++  int no_goal_yet = default_goal_var->value[0] == '\0';
++  const char *deps = prereqs != NULL ? prereqs : "";
++  char *text = xmalloc (sizeof shape + 3 * strlen (name) + strlen (engine) + strlen (deps));
++  struct file *f;
++
++  sprintf (text, shape, name, name, deps, engine, name);
++  eval_buffer (text, flocp);
++  free (text);
++  f = lookup_file (name);
++  if (f == NULL)
++    OS (fatal, flocp, _("%s: the imported target left no rule"), name);
++  f->amk_engine = amk_engine_by_name (engine);
++  f->amk_program = strcache_add (name);
++  f->amk_flags = flags != NULL && *flags != '\0' ? strcache_add (flags) : NULL;
++  f->amk_refs = amk_goal_refs (body);
++
++  if (no_goal_yet)
++    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
++}

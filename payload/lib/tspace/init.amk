@@ -1,0 +1,521 @@
+#
+# payload/lib/tspace/init.amk:
+#  Linda tuple spaces over sqlite workspaces, for make, recipes and engines.
+#  the default space is tuplespace; tspace.create makes more.
+#
+$(amk.require sqlite)
+
+# The schema makes a workspace a space; idempotent, so a file keeps its tuples.
+define tspace.schema
+  CREATE TABLE IF NOT EXISTS tspace(t TEXT);
+  CREATE TABLE IF NOT EXISTS formal(name TEXT PRIMARY KEY, a TEXT, b TEXT);
+  INSERT OR IGNORE INTO formal VALUES
+    ('?', NULL, NULL), ('?str', 'text', NULL), ('?int', 'integer', NULL),
+    ('?float', 'real', NULL), ('?bool', 'true', 'false'),
+    ('?null', 'null', NULL), ('?list', 'array', NULL),
+    ('?dict', 'object', NULL), ('?number', 'integer', 'real'),
+    ('?table', 'array', 'object'), ('?any', NULL, NULL);
+  CREATE TABLE IF NOT EXISTS reaction(name TEXT PRIMARY KEY, p TEXT,
+    origin TEXT, spelled TEXT, words TEXT);
+  CREATE TABLE IF NOT EXISTS strategy(axis TEXT PRIMARY KEY, value TEXT);
+  DROP TRIGGER IF EXISTS route;
+  CREATE TRIGGER route BEFORE INSERT ON tspace
+    WHEN EXISTS (SELECT 1 FROM reaction AS r WHERE $(tspace.matches NEW.t, r.p))
+  BEGIN
+    SELECT amk_route(r.name, NEW.t) FROM reaction AS r
+      WHERE $(tspace.matches NEW.t, r.p) ORDER BY r.rowid;
+    SELECT RAISE(IGNORE);
+  END;
+endef
+
+# Whether a workspace has the schema, so opening one takes no write lock.
+tspace.made = SELECT 1 FROM sqlite_master WHERE name = 'strategy'
+
+# The request's fields as one tuple; a field that parses as json keeps its type.
+define tspace.typed
+  SELECT json_group_array(
+    CASE WHEN json_valid(trim(value))
+      THEN json(trim(value)) ELSE trim(value) END
+    ORDER BY key) AS p FROM json_each(:p)
+endef
+
+# Whether a tuple matches a pattern: actuals by type and value, formals by type.
+define tspace.matches
+  json_array_length($(1)) = json_array_length($(2))
+  AND NOT EXISTS (SELECT 1 FROM json_each($(2)) AS p, json_each($(1)) AS v
+    LEFT JOIN formal AS f ON p.type = 'text' AND f.name = p.atom
+    WHERE p.key = v.key AND CASE
+      WHEN f.name IS NULL
+        THEN p.type IS NOT v.type OR p.value IS NOT v.value
+      WHEN f.a IS NULL THEN 0
+      ELSE v.type NOT IN (f.a, coalesce(f.b, f.a)) END)
+endef
+$(amk.fxn! tspace.matches)
+tspace.match = $(tspace.matches t, q.p)
+
+define tspace.refuse.formal
+  SELECT amk_sqlite_error('unknown formal') FROM json_each(($(tspace.typed)))
+    WHERE type = 'text' AND atom LIKE '?%'
+      AND atom NOT IN (SELECT name FROM formal);
+endef
+
+# Each verb is one statement after its check; read only reads, so runs as get.
+define tspace.sql.out
+  SELECT amk_sqlite_error('out takes actuals only')
+    FROM json_each(($(tspace.typed))) WHERE type = 'text' AND atom LIKE '?%';
+  INSERT INTO tspace SELECT p FROM ($(tspace.typed))
+endef
+define tspace.sql.read
+  $(tspace.refuse.formal)
+  SELECT json(t) AS t FROM tspace, ($(tspace.typed)) AS q
+    WHERE $(tspace.match) ORDER BY tspace.rowid
+endef
+define tspace.sql.inp
+  $(tspace.refuse.formal)
+  $(tspace.first);
+  DELETE FROM tspace WHERE rowid = ($(tspace.oldest))
+endef
+define tspace.oldest
+  SELECT min(tspace.rowid) FROM tspace, ($(tspace.typed)) AS q
+    WHERE $(tspace.match)
+endef
+tspace.first = SELECT json(t) AS t FROM tspace WHERE rowid = ($(tspace.oldest))
+
+# The blocking verbs park when their condition fails; the owner reruns them.
+define tspace.sql.in
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_park() WHERE ($(tspace.oldest)) IS NULL;
+  $(tspace.sql.inp)
+endef
+define tspace.sql.rd
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_park() WHERE ($(tspace.oldest)) IS NULL;
+  $(tspace.first)
+endef
+define tspace.sql.no
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_park() WHERE ($(tspace.oldest)) IS NOT NULL
+endef
+# The one-shot copies and absence test, the whole space, and the bulk forms.
+define tspace.sql.rdp
+  $(tspace.refuse.formal)
+  $(tspace.first)
+endef
+define tspace.sql.nop
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_error('a match exists') WHERE ($(tspace.oldest)) IS NOT NULL
+endef
+tspace.sql.all = SELECT json(t) AS t FROM tspace ORDER BY rowid
+define tspace.sql.set
+  DELETE FROM tspace;
+  $(tspace.sql.out_all)
+endef
+define tspace.sql.out_all
+  INSERT INTO tspace SELECT json(value) FROM json_each(($(tspace.typed)))
+    WHERE type = 'array'
+endef
+define tspace.sql.in_all
+  $(tspace.sql.read);
+  DELETE FROM tspace WHERE rowid IN (SELECT tspace.rowid
+    FROM tspace, ($(tspace.typed)) AS q WHERE $(tspace.match))
+endef
+
+# The uniform forms take a random match rather than the oldest.
+define tspace.any
+  SELECT tspace.rowid FROM tspace, ($(tspace.typed)) AS q
+    WHERE $(tspace.match) ORDER BY random() LIMIT 1
+endef
+define tspace.sql.urdp
+  $(tspace.refuse.formal)
+  SELECT json(t) AS t FROM tspace WHERE rowid = ($(tspace.any))
+endef
+# A take picks its row once, in a temp table, so copy and delete agree.
+define tspace.pick
+  CREATE TEMP TABLE IF NOT EXISTS pick(id INTEGER);
+  DELETE FROM pick;
+  INSERT INTO pick SELECT ($(tspace.any));
+  SELECT json(t) AS t FROM tspace WHERE rowid = (SELECT id FROM pick);
+  DELETE FROM tspace WHERE rowid = (SELECT id FROM pick)
+endef
+define tspace.sql.uinp
+  $(tspace.refuse.formal)
+  $(tspace.pick)
+endef
+define tspace.sql.urd
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_park() WHERE ($(tspace.oldest)) IS NULL;
+  SELECT json(t) AS t FROM tspace WHERE rowid = ($(tspace.any))
+endef
+define tspace.sql.uin
+  $(tspace.refuse.formal)
+  SELECT amk_sqlite_park() WHERE ($(tspace.oldest)) IS NULL;
+  $(tspace.pick)
+endef
+# A handler: the make function a matching out is routed to, then its pattern.
+define tspace.sql.out_s
+  SELECT amk_sqlite_error(x) FROM (SELECT group_concat(m, char(10)) AS x
+    FROM ($(tspace.sql.overlap))) WHERE x IS NOT NULL;
+  INSERT OR REPLACE INTO reaction SELECT n.name, n.p,
+    substr(:d, 1, instr(:d, ': @') - 1), substr(:d, instr(:d, ': @') + 2), :w
+    FROM ($(tspace.overlap.new)) AS n
+endef
+
+# A registration's name and pattern, and each field of it beside another's.
+define tspace.overlap.new
+  SELECT q.p ->> 0 AS name, (SELECT json_group_array(CASE
+      WHEN type IN ('array', 'object') THEN json(value) ELSE value END
+      ORDER BY key) FROM json_each(q.p) WHERE key > 0) AS p
+    FROM ($(tspace.typed)) AS q
+endef
+define tspace.overlap.fields
+  SELECT r.name, a.key AS k,
+    a.type AS at, a.value AS av, fa.name AS fan, fa.a AS fa1,
+    coalesce(fa.b, fa.a) AS fa2, b.type AS bt, b.value AS bv, fb.name AS fbn,
+    fb.a AS fb1, coalesce(fb.b, fb.a) AS fb2,
+    coalesce(:w ->> a.key, a.atom, a.value) AS aw,
+    coalesce(r.words ->> b.key, b.atom, b.value) AS bw
+  FROM n, reaction AS r, json_each(n.p) AS a
+    JOIN json_each(r.p) AS b ON a.key = b.key
+    LEFT JOIN formal AS fa ON a.type = 'text' AND fa.name = a.atom
+    LEFT JOIN formal AS fb ON b.type = 'text' AND fb.name = b.atom
+  WHERE r.name IS NOT n.name
+    AND json_array_length(r.p) = json_array_length(n.p)
+    AND (SELECT value FROM strategy WHERE axis = 'reflexes') IS NOT 'shared'
+endef
+
+# A field rules a shared tuple out when its two sides can hold no common value.
+define tspace.overlap.clash
+  CASE WHEN fan IS NULL AND fbn IS NULL THEN at IS NOT bt OR av IS NOT bv
+    WHEN fan IS NULL THEN fb1 IS NOT NULL AND at NOT IN (fb1, fb2)
+    WHEN fbn IS NULL THEN fa1 IS NOT NULL AND bt NOT IN (fa1, fa2)
+    WHEN fa1 IS NULL OR fb1 IS NULL THEN 0
+    ELSE fa1 NOT IN (fb1, fb2) AND fa2 NOT IN (fb1, fb2) END
+endef
+define tspace.overlap.type
+  CASE WHEN fa1 IS NULL THEN coalesce(fb1, 'text') WHEN fb1 IS NULL THEN fa1
+    WHEN fa1 IN (fb1, fb2) THEN fa1 ELSE fa2 END
+endef
+tspace.overlap.json = CASE $(1)t WHEN 'text' THEN json_quote($(1)v) \
+  WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN 'null' \
+  ELSE $(1)v END
+$(amk.fxn! tspace.overlap.json)
+
+# One value both fields hold, and how the two fields meet, for the error.
+define tspace.overlap.witness
+  CASE WHEN fan IS NULL THEN $(tspace.overlap.json a)
+    WHEN fbn IS NULL THEN $(tspace.overlap.json b)
+    ELSE CASE $(tspace.overlap.type) WHEN 'integer' THEN '1'
+      WHEN 'real' THEN '0.5' WHEN 'text' THEN json_quote('a')
+      WHEN 'true' THEN 'true'
+      WHEN 'false' THEN 'false' WHEN 'null' THEN 'null' WHEN 'array' THEN '[]'
+      ELSE '{}' END END
+endef
+define tspace.overlap.meet
+  CASE WHEN fan IS NULL THEN bw || ' matches ' || $(tspace.overlap.json a)
+    WHEN fbn IS NULL THEN aw || ' matches ' || $(tspace.overlap.json b)
+    WHEN fa1 IS NULL AND fb1 IS NULL THEN aw || ' and ' || bw
+      || ' both match anything'
+    ELSE aw || ' and ' || bw || ' share ' || CASE $(tspace.overlap.type)
+      WHEN 'integer' THEN 'integers' WHEN 'real' THEN 'floats'
+      WHEN 'text' THEN 'strings' WHEN 'true' THEN 'true'
+      WHEN 'false' THEN 'false'
+      WHEN 'null' THEN 'null' WHEN 'array' THEN 'lists' ELSE 'dicts' END END
+endef
+
+# The refusal, one line a row, when another handler's pattern meets this one.
+define tspace.sql.overlap
+  WITH n AS ($(tspace.overlap.new)), f AS ($(tspace.overlap.fields)),
+    hit AS (SELECT name FROM f GROUP BY name
+      HAVING sum($(tspace.overlap.clash)) = 0 ORDER BY name LIMIT 1),
+    h AS (SELECT r.* FROM reaction AS r JOIN hit USING (name)),
+    w AS (SELECT json_group_array(json($(tspace.overlap.witness)) ORDER BY k)
+      AS t FROM f JOIN hit USING (name))
+  SELECT m FROM (
+    SELECT -1 AS i, 'a handler is refused: its pattern overlaps another' AS m
+    UNION ALL SELECT 0, coalesce(:d, 'out_s ' || n.name || ' ' || n.p) FROM n
+    UNION ALL SELECT 1, '  overlaps ' || coalesce(h.origin || ': ' || h.spelled,
+      'the handler ' || h.name || ', registered by out_s') FROM h
+    UNION ALL SELECT 2, '  on the space ' || coalesce(:sp, 'this space')
+      || ': both patterns match ' || w.t || '.' FROM w
+    UNION ALL SELECT 3, '  patterns: ' || n.p || ' and ' || h.p FROM n, h
+    UNION ALL SELECT 4 + k, '  field ' || (k + 1) || ': '
+      || $(tspace.overlap.meet) FROM f JOIN hit USING (name)
+      WHERE fan IS NOT NULL OR fbn IS NOT NULL
+    UNION ALL SELECT 1000, '  A handler is the only destination of the tuples'
+      || ' it matches, so no two may match the same tuple.' FROM hit
+    UNION ALL SELECT 1001, '  Narrow one pattern so they are disjoint, make'
+      || ' the space''s reflexes shared, or read with an actor' FROM hit)
+  WHERE EXISTS (SELECT 1 FROM hit) ORDER BY i
+endef
+# Each stored tuple a reflex matches, taken and put again in order to route.
+define tspace.sql.react
+  CREATE TEMP TABLE IF NOT EXISTS pending(r INTEGER, t TEXT);
+  DELETE FROM pending;
+  INSERT INTO pending SELECT rowid, t FROM tspace
+    WHERE EXISTS (SELECT 1 FROM reaction AS r WHERE $(tspace.matches t, r.p));
+  DELETE FROM tspace WHERE rowid IN (SELECT r FROM pending);
+  INSERT INTO tspace SELECT t FROM pending ORDER BY r;
+  DELETE FROM pending
+endef
+define tspace.sql.rd_s
+  SELECT json_array(name, json(p)) AS t FROM reaction ORDER BY rowid
+endef
+define tspace.sql.in_s
+  SELECT json_array(name, json(p)) AS t FROM reaction
+    WHERE name = ($(tspace.typed)) ->> 0;
+  DELETE FROM reaction WHERE name = ($(tspace.typed)) ->> 0
+endef
+tspace.verbs.all := out read inp in rd no rdp nop all set \
+  out_all in_all urdp uinp urd uin out_s rd_s in_s react
+tspace.verbs.get := read rd no rdp nop all urdp urd rd_s
+tspace.sql = $(tspace.sql.$(1))
+tspace.op = $(if $(filter $(tspace.verbs.get),$(1)),get,update)
+$(amk.fxn! tspace.sql)
+$(amk.fxn! tspace.op)
+
+# One verb in one space; its one-line program is what a guest's ask sends too.
+tspace.prog = --arg p '$(amk.args 3:)' --arg sp '$(1)' \
+  $(strip $(tspace.sql $(2)))
+tspace.verb = $(sqlite.ns $(1), $(tspace.op $(2)), $(tspace.prog))
+$(amk.fxn! tspace.prog)
+
+# A space is a workspace with the schema, a backing if given, and its verbs.
+tspace.spaces :=
+tspace.ws = $(if $(value 2), \
+  $(sqlite.ns.create $(1), $(2)), \
+  $(sqlite.ns.create $(1)))
+
+# The options are the backing's, but for reflexes=exclusive or shared.
+tspace.opts = $(strip $(subst $(tspace.comma), ,$(1)))
+tspace.backing = $(subst $(tspace.space),$(tspace.comma) ,$(strip \
+  $(filter-out reflexes=%,$(tspace.opts $(1)))))
+tspace.reflexes = $(or $(patsubst reflexes=%,%, \
+  $(filter reflexes=%,$(tspace.opts $(1)))),exclusive)
+tspace.strategy = $(call tspace.strategy.set,$(1),$(tspace.reflexes $(2)))
+tspace.strategy.set = $(if $(filter exclusive shared,$(2)), \
+  $(if $(sqlite.ns $(1), get, --arg v '$(2)' SELECT 1 WHERE coalesce((SELECT \
+    value FROM strategy WHERE axis = 'reflexes'), 'exclusive') = :v),, \
+  $(sqlite.ns $(1), update, --arg v '$(2)' \
+    INSERT OR REPLACE INTO strategy VALUES ('reflexes', :v))), \
+  $(error $(1): reflexes is exclusive or shared, not $(2)))
+$(foreach f,opts backing reflexes strategy,$(amk.fxn! tspace.$(f)))
+tspace.verbs = $(foreach v,$(tspace.verbs.all), \
+  $(amk.fxn! $(1).$(v), tspace.verb, $(1), $(v)))
+$(amk.fxn! tspace.ws)
+$(amk.fxn! tspace.verbs)
+
+# A seed is json tuples, written only by the create that makes the space.
+define tspace.sql.seed
+  INSERT INTO tspace SELECT json(value) FROM json_each((SELECT
+    group_concat(value, ',') FROM json_each(:p))) WHERE type = 'array'
+endef
+
+@amk.fxn!
+define tspace.create
+$(strip
+  $(tspace.ws $(1), $(tspace.backing $(value 2)))
+  $(if $(sqlite.ns $(1), get, $(tspace.made)),,
+    $(sqlite.ns $(1), update, $(strip $(tspace.schema)))
+    $(if $(strip $(value 3)),
+      $(sqlite.ns $(1), update, --arg p '$(amk.args 3:)' \
+        $(strip $(tspace.sql.seed)))))
+  $(tspace.strategy $(1), $(value 2))
+  $(eval tspace.spaces += $(1))
+  $(eval $(1).reflex_star = $(tspace.reflex.at $(1)))
+  $(foreach e,$(tspace.guests),
+    $(eval $(1).$(e)_star = $(tspace.guest.at $(1), $(e), import))
+    $(eval $(1).$(e).target_star = $(tspace.guest.at $(1), $(e), target)))
+  $(eval $(1).amk_star = $(value tspace.amk.via))
+  $(tspace.verbs $(1)))
+endef
+
+# A space's __main__ target runs it: its stored tuples through its reflexes.
+%.__main__:
+	$(if $(call tspace.verb,$*,react),)
+
+# A space's amk decorator above a define opens its target with the shell side.
+tspace.amk.via = $(eval $(1).preamble = $(value tspace.sh))
+
+# A handler is a make function registered by name with the pattern it takes.
+tspace.comma := ,
+tspace.space := $(subst ,, )
+tspace.json = [$(subst $(tspace.space),$(tspace.comma),$(patsubst %,"%",$(1)))]
+tspace.register = $(sqlite.ns $(1), update, $(strip \
+  $(tspace.register.args $(1), $(2), $(3), $(4)) $(tspace.sql out_s)))
+tspace.register.args = --arg p '$(3)' \
+  --arg w '$(tspace.json $(4))' --arg sp '$(1)' --arg d '$(value amk.decorator)'
+
+# The refusal a registration would meet, as text, or nothing when it is clear.
+tspace.overlap = $(subst \",",$(subst "},,$(subst {"m":",,$(sqlite.ns $(1), \
+  get, $(strip $(tspace.register.args $(1), $(2), $(3), $(4)) \
+  $(tspace.sql.overlap))))))
+$(foreach f,json register register.args overlap,$(amk.fxn! tspace.$(f)))
+
+# A reflex's fields follow its engine: a literal, _, or name=type.
+tspace.types := any str int float bool null list dict number table
+tspace.idx := 1 2 3 4 5 6 7 8 9 10 11 12 13
+tspace.reflex.idx = $(wordlist 2,$(amk.decorator.argc),$(tspace.idx))
+tspace.reflex.keyed = $(foreach i,$(tspace.reflex.idx), \
+  $(if $(amk.decorator.$(i).key),$(i)))
+tspace.reflex.names = $(foreach i,$(tspace.reflex.keyed), \
+  $(amk.decorator.$(i).key))
+tspace.reflex.type = $(or $(amk.decorator.$(1)),any)
+tspace.reflex.formal = $(strip $(if $(amk.decorator.$(1).key), \
+  ?$(tspace.reflex.type $(1)),$(patsubst _,?,$(amk.decorator.$(1)))))
+tspace.reflex.field = $(strip $(if $(amk.decorator.$(1).key), \
+  $(amk.decorator.$(1).key):$(tspace.reflex.type $(1)),-:-))
+tspace.reflex.pattern = ["$(1)"$(foreach i,$(tspace.reflex.idx), \
+  $(tspace.comma)"$(tspace.reflex.formal $(i))")]
+tspace.reflex.spec = $(foreach i,$(tspace.reflex.idx), \
+  $(tspace.reflex.field $(i)))
+tspace.reflex.words = $(foreach i,$(tspace.reflex.idx), \
+  $(patsubst =%,%,$(amk.decorator.$(i).key)=$(amk.decorator.$(i))))
+$(foreach f,type formal field pattern,$(amk.fxn! tspace.reflex.$(f)))
+
+# What each name runs to compile a body: a space, a name, then the fields.
+tspace.compile.lua = $(lua.exec amk.tspace.bind("$(1)", "$(2)", "$(3)"))
+tspace.compile.js = $(js.exec amk.tspace.bind("$(1)", "$(2)", "$(3)"))
+tspace.compile.micropy = $(micropy.exec import amk; \
+  amk.tspace.bind("$(1)", "$(2)", "$(3)"))
+tspace.compile.s7 = $(s7.exec (amk-tspace-bind "$(1)" "$(2)" "$(3)"))
+tspace.compile.lisp = $(call tspace.compile.s7,$(1),$(2),$(3))
+tspace.compile.amk = $(amk.fxn! $(2))
+
+# Every name with a version is an engine; a reflex's has a compile slot too.
+tspace.named = $(filter-out tspace,$(patsubst %.__version__,%, \
+  $(filter %.__version__,$(.VARIABLES))))
+tspace.reflexes = $(foreach n,$(tspace.named), \
+  $(if $(filter undefined,$(origin tspace.compile.$(n))),,$(n)))
+
+# The decorator refuses an engine that cannot compile, a type, or a field name.
+define tspace.reflex.check
+$(strip
+  $(if $(filter undefined,$(origin tspace.compile.$(word 1,$(2)))),
+    $(error $(1): $(word 1,$(2)) cannot compile a reflex; \
+      $(tspace.reflexes) can))
+  $(foreach t,$(filter-out $(tspace.types),$(foreach i, \
+    $(tspace.reflex.keyed),$(tspace.reflex.type $(i)))),
+    $(error $(1): $(t) is not a type; $(tspace.types) are))
+  $(if $(filter $(word 2,$(2)),$(tspace.reflex.names)),
+    $(error $(1): a field cannot be named after its space, $(word 2,$(2))))
+  $(if $(filter-out $(words $(sort $(tspace.reflex.names))), \
+    $(words $(tspace.reflex.names))),
+    $(error $(1): a field name is used twice)))
+endef
+$(amk.fxn! tspace.reflex.check)
+
+# The decorator: the body compiled in its engine, then registered.
+define tspace.reflex_star
+$(strip
+  $(tspace.reflex.check $(1), $(2))
+  $(call tspace.reflex.refuse,$(call tspace.reflex.refusal,$(1),$(2)))
+  $(call tspace.compile.$(word 1,$(2)),$(word 2,$(2)),$(1), \
+    $(strip $(tspace.reflex.spec)))
+  $(tspace.register $(word 2,$(2)), $(1), $(tspace.reflex.pattern $(1)), \
+    $(tspace.reflex.words)))
+endef
+tspace.reflex.refusal = $(tspace.overlap $(word 2,$(2)), $(1), \
+  $(tspace.reflex.pattern $(1)), $(tspace.reflex.words))
+tspace.reflex.refuse = $(if $(1),$(error $(1)))
+
+# The at line @<space>.reflex <engine> (<field...>), one per space.
+tspace.reflex.engine = $(if $(filter-out 0,$(amk.decorator.argc)), \
+  $(amk.decorator.1))
+tspace.reflex.via = $(call tspace.reflex_star,$(1), \
+  $(or $(tspace.reflex.engine), \
+  $(error $(1): @<space>.reflex needs an engine; $(tspace.reflexes))) <space>)
+tspace.reflex.at = $(subst <space>,$(1),$(value tspace.reflex.via))
+$(amk.fxn! tspace.reflex.at)
+
+# A guest form over a space: the define after a line binding the space by name.
+define tspace.nl
+
+
+endef
+tspace.pre.lua = local $(1) = amk.tspace["$(1)"]
+tspace.pre.micropy = import amk$(tspace.nl)$(1) = amk.tspace["$(1)"]
+tspace.pre.js = Object.defineProperty(globalThis, "$(1)", \
+  { value: amk.tspace["$(1)"], configurable: true });
+tspace.pre.s7 = (define $(1) (amk-tspace-on "$(1)"))
+tspace.pre.lisp = $(call tspace.pre.s7,$(1))
+tspace.guests = $(filter $(patsubst tspace.pre.%,%,$(filter tspace.pre.%, \
+  $(.VARIABLES))),$(tspace.named))
+tspace.guest.prog = $(call tspace.pre.$(1),$(2))$(tspace.nl)$(amk.dedent \
+  $(value $(3)))
+tspace.guest.idx = $(wordlist 1,$(amk.decorator.argc),$(tspace.idx))
+tspace.guest.flags = $(strip $(foreach i,$(tspace.guest.idx), \
+  $(amk.decorator.$(i))) $(if $(amk.decorator.deps),: $(amk.decorator.deps)))
+
+# One decorator per space, engine and form, which tspace.create makes.
+tspace.guest.import = $(if $(<engine>.import \
+  $(call tspace.guest.prog,<engine>,<space>,$(1))),)
+tspace.guest.target = $(if $(tspace.guest.flags), \
+  $(<engine>.target $(1),$(call tspace.guest.prog,<engine>,<space>,$(1)), \
+  $(tspace.guest.flags)), \
+  $(<engine>.target $(1),$(call tspace.guest.prog,<engine>,<space>,$(1))))
+tspace.guest.at = $(subst <engine>,$(2),$(subst <space>,$(1), \
+  $(value tspace.guest.$(3))))
+$(amk.fxn! tspace.guest.at)
+
+# The default space, with tspace as its verbs.
+$(tspace.create tuplespace)
+$(amk.fxn! tspace, tspace.verb, tuplespace)
+
+# The space's change count, and a wait on it moving, for a caller's own test.
+tspace.version = $(sqlite.ns $(1), version)
+tspace.wait = $(sqlite.ns $(1), wait, $(2))
+$(amk.fxn! tspace.version)
+$(amk.fxn! tspace.wait)
+
+# SQL against a space's store, its commas rejoined from the arguments.
+tspace.exec = $(sqlite.ns $(1), update, $(2)$(foreach i,3 4 5 6 7 8 9, \
+  $(if $(filter undefined,$(origin $(i))),,$(tspace.comma)$($(i)))))
+$(amk.fxn! tspace.exec)
+
+# The recipe side: a shell function per space and verb, the same ask make sends.
+define tspace.sh
+  source amk.sh ; \
+  tspace.ask() { \
+    local p= a op s ; \
+    for a in "$${@:3}" ; do p="$$p,$$(amk.words "$$a")" ; done ; \
+    case "$$2" in $(tspace.sh.arms) \
+    esac ; \
+    amk.ns "$$op" "$$1" --arg p "[$${p:1}]" --arg sp "$$1" -- "$$s" ; } ; \
+  tspace() { tspace.ask tuplespace "$$@" ; } $(tspace.sh.handles)
+endef
+tspace.sh.arm = $(1)) op=$(tspace.op $(1)) ; s="$(strip $(tspace.sql $(1)))" ;;
+tspace.sh.handle = ; $(1).$(2)() { tspace.ask $(1) $(2) "$$@" ; }
+$(amk.fxn! tspace.sh.arm)
+$(amk.fxn! tspace.sh.handle)
+tspace.sh.arms = $(foreach v,$(tspace.verbs.all),$(tspace.sh.arm $(v)))
+tspace.sh.handles = $(foreach s,$(tspace.spaces), \
+  $(foreach v,$(tspace.verbs.all),$(tspace.sh.handle $(s), $(v))))
+
+# The at line @tspace: the define's json, expanded, is backing, seed, strategy.
+tspace.__schema__ := tspace/schema/tspace.json
+tspace.cfg.argv := -r
+tspace.cfg.backing := [(del(.seed, .strategy) | to_entries \
+    | map(if .value == true then .key else "\(.key)=\(.value)" end))[], \
+    (.strategy.reflexes // empty | "reflexes=\(.)")] | join(", ")
+tspace.cfg.seed := .seed // empty | tojson
+tspace.cfg = $(if $(filter sqlite,$(.FEATURES)),$(amk.json5 $($(1))),$($(1)))
+define tspace_star
+$(strip
+  $(if $(strip $(value $(1))),
+    $(tspace.create $(1), \
+      $(jq.argv $(tspace.cfg.argv),$(tspace.cfg.backing), \
+        $(call tspace.cfg,$(1))), \
+      $(jq.argv $(tspace.cfg.argv),$(tspace.cfg.seed),$(call tspace.cfg,$(1)))),
+    $(tspace.create $(1))))
+endef
+
+# The at line @tspace.target: a phony target running the define as SQL.
+tspace.target.rule = $(1):; $$(info $$(tspace.exec tuplespace, $$(value $(1))))
+tspace.target_star = $(eval tspace.goal := $(.DEFAULT_GOAL)) \
+  $(eval .PHONY: $(1))$(eval $(call tspace.target.rule,$(1))) \
+  $(eval .DEFAULT_GOAL := $(tspace.goal))
+
+# Import is owed.
+$(amk.fxn! tspace.import, amk.stacked.missing, tspace, tspace.import)
+
+$(amk.engine tspace, guest=sqlite)

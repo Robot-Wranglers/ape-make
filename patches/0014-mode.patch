@@ -1,0 +1,62 @@
+The event sites a mode listens on, each one call to amk_hook_fire with no mode logic: the
+makefiles are read and the goal references settled, in main.c; a target failed, before the
+deletion that a failed recipe and a fatal signal share, in job.c and commands.c; and an
+imported target's job started, inside its fork before its output lands, in job.c.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -2523,6 +2523,11 @@
+      depended on.  Also do magic for special targets.  */
+
+   amk_goal_refs_settle ();
++  /* Every hook hears that the makefiles are read and the goal references resolved.  */
++  {
++    struct amk_event_info info = { 0, "settled", 0, 0, 0 };
++    amk_hook_fire (AMK_EVENT_SETTLED, &info);
++  }
+   snap_deps ();
+
+   /* Define the file rules for the built-in suffix rules.  These will later
+--- a/src/job.c
++++ b/src/job.c
+@@ -1014,6 +1014,11 @@
+             child_error (c, exit_code, exit_sig, coredump, 0);
+
+           c->file->update_status = child_failed == MAKE_FAILURE ? us_failed : us_question;
++          /* Every hook hears the failure before make's own deletion.  */
++          {
++            struct amk_event_info info = { c->file->name, "failed", exit_code, exit_sig, c->pid };
++            amk_hook_fire (AMK_EVENT_TARGET_FAILED, &info);
++          }
+           if (delete_on_error == -1)
+             {
+               struct file *f = lookup_file (".DELETE_ON_ERROR");
+@@ -1200,6 +1205,11 @@
+     _exit ((program = amk_goal_value (file->amk_value)) == NULL || puts (program) < 0 || fflush (stdout) != 0);
+   v = lookup_variable (file->amk_program, strlen (file->amk_program));
+   program = amk_goal_splice (file, v != NULL ? v->value : "");
++  /* Every hook hears the job start, inside its fork, before its output lands.  */
++  {
++    struct amk_event_info info = { file->name, "running", 0, 0, getpid () };
++    amk_hook_fire (AMK_EVENT_JOB_START, &info);
++  }
+   if (file->amk_value != NULL && freopen (file->name, "w", stdout) == NULL)
+     {
+       fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
+--- a/src/commands.c
++++ b/src/commands.c
+@@ -568,8 +568,13 @@
+         if (c->remote && c->pid > 0)
+           (void) remote_kill (c->pid, sig);
+
++      /* Every hook hears a target fail by the signal before its deletion.  */
+       for (c = children; c != 0; c = c->next)
+-        delete_child_targets (c);
++        {
++          struct amk_event_info info = { c->file->name, "failed", 0, sig, c->pid };
++          amk_hook_fire (AMK_EVENT_TARGET_FAILED, &info);
++          delete_child_targets (c);
++        }
+
+       /* Clean up the children.  We don't just use the call below because
+          we don't want to print the "Waiting for children" message.  */

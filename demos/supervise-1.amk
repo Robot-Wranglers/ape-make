@@ -1,0 +1,98 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/supervise-1.amk:
+#  three actors in lua, micropy and js hold a relay conversation
+#  through the tuple space under a one-for-one supervisor written
+#  in js on Effection; bob crashes once and is restarted while the
+#  others are stopped, then resumed.
+#
+
+load tspace
+load dsys/jobman
+
+__main__: supervise
+
+N ?= 3
+
+# A message: msg, next hop, sender, final addressee, sequence, text.
+@lua.target
+define alice
+  local ts, N = amk.tspace, tonumber(amk.var.N)
+  for n = 1, N do ts.out("msg", "bob", "alice", "charles", n, "hello " .. n) end
+  for _ = 1, 2 * N do
+    local t = ts.in_("msg", "alice", "string", "string", "integer", "string")
+    if t[4] == "alice" then print(("alice got %q from %s"):format(t[6], t[3]))
+    else ts.out("msg", "bob", t[3], t[4], t[5], t[6]) end
+  end
+endef
+
+@micropy.target
+define bob
+  import amk
+  from amk import tspace
+  if not tspace.read("sent", "bob"):
+      tspace.out("sent", "bob")
+      for n in range(1, int(amk.var.N) + 1):
+          tspace.out("msg", "charles", "bob", "alice", n, "bonjour %d" % n)
+  while True:
+      t = tspace.in_("msg", "bob", str, str, int, str)
+      if t[3] == "bob":
+          print('bob got "%s" from %s' % (t[5], t[2]))
+      else:
+          tspace.out("msg", "charles", t[2], t[3], t[4], t[5])
+          if t[4] == 2 and not tspace.read("crashed", "bob"):
+              tspace.out("crashed", "bob")
+              raise SystemExit(1)
+endef
+
+@js.target
+define charles
+  const ts = amk.tspace;
+  for (;;) {
+    const t = await ts.in("msg", "charles", String, String, Number, String);
+    if (t[3] === "charles") {
+      print(`charles got "${t[5]}" from ${t[2]}`);
+      ts.out("msg", "alice", "charles", "alice", t[4], `hola ${t[4]}`);
+    } else ts.out("msg", "alice", t[2], t[3], t[4], t[5]);
+  }
+endef
+
+# One-for-one with Erlang's restart kinds; survivors stop during a restart.
+@js.target
+define supervise
+  const { run, scoped, sleep, spawn, until } = amk.plex;
+  const live = new Map(), jobman = amk.jobman.__jobs__;
+
+  function* supervise(goal, opts = {}) {
+    const { restart = "permanent", intensity = 3, period = 10000 } = opts;
+    let crashes = [];
+    for (;;) {
+      const exit = yield* scoped(function* () {
+        const pid = jobman.spawn.goal(goal);
+        live.set(goal, pid);
+        try { return yield* until(jobman.exited(pid)); }
+        finally { live.delete(goal); jobman.kill(pid, 15); }
+      });
+      const clean = exit.code === 0 && !exit.signal;
+      if (restart === "temporary") return exit;
+      if (restart === "transient" && clean) return exit;
+      const now = Date.now();
+      crashes = crashes.filter((t) => now - t < period).concat(now);
+      const n = crashes.length;
+      if (n > intensity) throw new Error(`${goal}: too many restarts`);
+      print(`supervise: ${goal} exited ${exit.code}, restart ${n}`);
+      for (const pid of live.values()) jobman.stop(pid);
+      yield* sleep(100 * 2 ** (n - 1));
+      for (const pid of live.values()) jobman.resume(pid);
+    }
+  }
+
+  await run(function* () {
+    yield* spawn(() => supervise("charles"));
+    yield* spawn(() => supervise("bob"));
+    yield* supervise("alice", { restart: "transient" });
+    const ts = amk.tspace, any = undefined;
+    const left = ts.in_all("msg", any, any, any, any, any).length;
+    print(`left: ${left} messages, ${ts.all().length} tuples`);
+  });
+endef

@@ -1,0 +1,53 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/actors-mailbox.amk:
+#  siblings messaging through mailboxes: a charter with mailbox pool gives
+#  each member an inbox, and a member with ask a reply pool too. client, in
+#  micropy, asks square, in lua, for three squares and waits on each
+#  answer, then casts bye; every inbox and reply ends empty.
+#
+
+load actor
+
+__main__: table.__main__ show.after
+
+@actor.group
+define table
+  {
+    // an inbox per member, which its siblings cast to
+    "mailbox": "pool",
+    "kind": "goal", "restart": "never",
+    "children": {
+      // the client asks, so it also gets a pool for its replies
+      "client": {  "ask": true },
+      // square only answers what lands in its inbox
+      "square": { },
+    },
+  }
+endef
+
+# Asks for each square, waiting on its answer, then says goodbye.
+@micropy.target
+define client
+  import amk
+  for n in (2, 3, 4):
+    got = amk.table.ask("client", "square", str(n))
+    print("client: %d squared is %s" % (n, got))
+  amk.table.cast("square", "bye")
+endef
+
+# Answers each request until a bye; a request is the asker, a colon, the number.
+@lua.target
+define square
+  while true do
+    local m = amk.table.recv("square")
+    if m == "bye" then print("square: bye") break end
+    local n = tonumber(m:match(":(%d+)$"))
+    amk.table.reply(m, tostring(n * n))
+  end
+endef
+
+show.after:
+	@echo "client inbox: $(amk.pool.size table.client.inbox)"
+	@echo "square inbox: $(amk.pool.size table.square.inbox)"
+	@echo "reply: $(amk.pool.size table.client.reply)"

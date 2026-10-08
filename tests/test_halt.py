@@ -1,6 +1,6 @@
 """Pins the halt request.
 
-A recipe sends `halt` on the call channel and its own make stops: the recipe's remaining
+A recipe sends `halt` on the ask channel and its own make stops: the recipe's remaining
 lines and the command line's remaining goals never run, nothing is printed on stderr,
 and the process leaves with status 112. A sub-make that halts halts its parent the same
 way, so a chain ends at every level; a spawned job that halts reports that status to its
@@ -16,20 +16,20 @@ HALT = 112
 program = "\n".join([
   "SHELL := bash",
   "stop:",
-  "\t@echo before; source amk.sh; amk.call halt; echo \"st=$$?\"",
+  "\t@echo before; source amk.sh; amk.ask halt; echo \"st=$$?\"",
   "\t@echo not-this-line",
   "after:",
   "\t@echo not-this-goal",
   "outer:",
   "\t@echo outer; $(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) stop; echo not-after-inner",
   "quiet:",
-  "\t@source amk.sh; amk.call halt",
+  "\t@source amk.sh; amk.ask halt",
   "killed:",
-  "\t@echo before; ( source amk.sh; amk.call halt; kill -KILL $$$$ ); echo not-this-command",
+  "\t@echo before; ( source amk.sh; amk.ask halt; kill -KILL $$$$ ); echo not-this-command",
   "spawned:",
-  "\t@echo job=[$(lua.exec local p = amk.spawn({'quiet', 'after'}) local r = amk.wait(p) print(r.code))]",
+  "\t@echo job=[$(lua.exec local p = amk.spawn('quiet after') local r = require('dkjson').decode(amk.wait(p)) print(r.code))]",
   "marked:",
-  "\t@echo m=[$(lua.exec amk.exit_code(7))]; source amk.sh; amk.call halt",
+  "\t@echo m=[$(lua.exec amk.exit_code(7))]; source amk.sh; amk.ask halt",
   "",
 ])
 

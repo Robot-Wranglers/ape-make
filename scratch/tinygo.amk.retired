@@ -1,0 +1,22 @@
+#
+# payload/lib/amk/tinygo.amk:
+#  go as a user-defined engine over wasm: tinygo's own image, a wasi module
+#  whose main is the start, registered with go as its extension so that
+#  @tinygo.import over a define and load of a .go file both work.
+#
+load wasm
+
+define Dockerfile.tinygo
+  FROM tinygo/tinygo:0.39.0
+endef
+
+define tinygo.build
+  tinygo build -o $@ -target wasip1 -no-debug $<
+endef
+
+# The row as a spec, the decorator form of the registration.
+@amk.engine.spec
+define tinygo
+  {"guest": "wasm", "aliases": "go",
+   "language": "Go", "implementation": "tinygo", "version": "0.39.0"}
+endef

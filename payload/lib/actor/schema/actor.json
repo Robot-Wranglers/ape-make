@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "actor.json",
+  "title": "actor",
+  "description": "one member of a group: an entry in the charter's children, or the options of @<group>.actor (<engine>) {..} above its define",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "description": "how the backend runs the member; a member in children defaults to goal, one joined by its at line to call",
+      "enum": ["goal", "call", "block", "scoped", "group"],
+      "default": "goal"
+    },
+    "engine": {
+      "description": "the engine a call, block or scoped member runs in; a block runs by its engine's star builtin",
+      "type": "string",
+      "default": "micropy"
+    },
+    "restart": {
+      "description": "whether the member's exit restarts it; overrides the charter",
+      "enum": ["always", "on-failure", "never"],
+      "default": "always"
+    },
+    "intensity": {
+      "description": "restarts allowed before the group gives up; overrides the charter",
+      "type": "integer",
+      "minimum": 0
+    },
+    "period": {
+      "description": "milliseconds intensity counts over, under effection; overrides the charter",
+      "type": "integer",
+      "minimum": 1
+    },
+    "ask": {
+      "description": "under mailbox pool, the member asks and gets a reply pool <group>.<member>.reply",
+      "enum": [true, false, "true", "false"],
+      "default": false
+    },
+    "start_count": {
+      "description": "how many times the member has started, written by the backend",
+      "type": "integer",
+      "readOnly": true
+    }
+  }
+}

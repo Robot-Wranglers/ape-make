@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tspace.json",
+  "title": "@tspace",
+  "description": "a space under @tspace: its seed, its strategy, and at most one backing; the body is expanded first, and an empty body is the default space's shape",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seed": {
+      "description": "tuples written by the create that makes the space; a space that already exists keeps its own",
+      "type": "array",
+      "items": {
+        "description": "a tuple: an ordered list of json values, its first the tuple's type",
+        "type": "array",
+        "minItems": 1
+      },
+      "default": []
+    },
+    "strategy": {
+      "description": "how the space's reflexes route",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reflexes": {
+          "description": "exclusive: a reflex is the only destination of the tuples it matches, and an overlapping one is refused; shared: every matching reflex is called, in the order declared",
+          "enum": ["exclusive", "shared"],
+          "default": "exclusive"
+        }
+      }
+    },
+    "run": {
+      "description": "the backing: in memory, in the host process",
+      "const": true
+    },
+    "owned": {
+      "description": "the backing: a file the space is, held by this process alone",
+      "type": "string"
+    },
+    "shared": {
+      "description": "the backing: a file the space is, owners on one host taking turns",
+      "type": "string"
+    }
+  },
+  "not": {
+    "anyOf": [
+      { "required": ["run", "owned"] },
+      { "required": ["run", "shared"] },
+      { "required": ["owned", "shared"] }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+Makefile.in: amk's own sources, copied in from src/amk before this series, join make's
+object list, each with the dirstamp rule an out-of-tree build needs.
+
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -165,7 +165,7 @@
+ 	src/w32/subproc/sub_proc.c src/w32/subproc/w32err.c \
+ 	src/posixos.c src/remote-cstms.c src/remote-stub.c
+ am__dirstamp = $(am__leading_dot)dirstamp
+-am__objects_1 = src/ar.$(OBJEXT) src/arscan.$(OBJEXT) \
++am__objects_1 = src/amk_chan.$(OBJEXT) src/amk_spawn.$(OBJEXT) src/amk_pool.$(OBJEXT) src/amk_serve.$(OBJEXT) src/amk_profile.$(OBJEXT) src/amk_builtins.$(OBJEXT) src/amk_guest.$(OBJEXT) src/amk_ns.$(OBJEXT) src/amk_workspace.$(OBJEXT) src/amk_engine.$(OBJEXT) src/amk_payload.$(OBJEXT) src/amk_goal.$(OBJEXT) src/amk_mode.$(OBJEXT) src/amk_dataflow.$(OBJEXT) src/amk_preprocess.$(OBJEXT) src/ar.$(OBJEXT) src/arscan.$(OBJEXT) \
+ 	src/commands.$(OBJEXT) src/default.$(OBJEXT) src/dir.$(OBJEXT) \
+ 	src/expand.$(OBJEXT) src/file.$(OBJEXT) src/function.$(OBJEXT) \
+ 	src/getopt.$(OBJEXT) src/getopt1.$(OBJEXT) src/guile.$(OBJEXT) \
+@@ -763,6 +763,21 @@
+ src/loadapi.$(OBJEXT): src/$(am__dirstamp) \
+ 	src/$(DEPDIR)/$(am__dirstamp)
+ src/main.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_preprocess.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_mode.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_pool.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_dataflow.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_chan.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_spawn.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_serve.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_profile.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_builtins.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_guest.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_ns.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_workspace.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_engine.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_payload.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
++src/amk_goal.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
+ src/misc.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
+ src/output.$(OBJEXT): src/$(am__dirstamp) \
+ 	src/$(DEPDIR)/$(am__dirstamp)

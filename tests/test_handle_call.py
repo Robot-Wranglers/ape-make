@@ -74,7 +74,7 @@ def test_amk_call_passes_values_whole(amk, tmp_path, engine, values, want):
 
 errors = {
   "too few arguments": (["subst", "a"], "'subst' takes at least 3 arguments, and got 1"),
-  "an unknown name": (["nope.fn"], "no function or variable named 'nope.fn'"),
+  "an unknown name": (["nope.fn"], "no function or macro named 'nope.fn'"),
 }
 
 

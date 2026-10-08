@@ -1,0 +1,78 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/json-rpc.amk:
+#  a json-rpc server on microdot through mip, publishing methods
+#  written in lua, js and s7, plus one composed on the host.
+#
+
+PORT ?= 18090
+
+load mip
+
+@lua.import
+define lua_namespace
+  function title(s) return (s:gsub("%f[%w]%l", string.upper)) end
+  function flip(s) return s:reverse() end
+endef
+
+@js.import
+define js_namespace
+  function report(sorted, title, loud) {
+    return JSON.stringify({ sorted: sorted.split(" "), title, loud }); }
+endef
+
+@s7.import
+define s7_namespace
+  (define (shout s) (string-append (string-upcase s) "!"))
+  (define (quiet s) (string-downcase s))
+endef
+
+# Another method, composed on host, made up of different guests
+describe = $(report $(sort $1),$(title $1),$(shout $1))
+
+# Register the host-method directly, all the guests via reflection
+rpc.methods = describe $(amk.fxns? lua, js, s7)
+
+# HTTP server deps (caching after first run)
+@mip.install
+define deps
+  { "microdot": {
+      // no sha256, so the run names the digest to pin
+      "version": "v2.7.0",
+      "spec": "github:miguelgrinberg/microdot/src/microdot/microdot.py" } }
+endef
+
+@micropy.import
+define rpc.server
+  import amk, json, sys
+
+  # Read-from-host: published methods from top-level registry
+  methods = amk.var["rpc.methods"].split()
+
+  def _val(s):
+    try: return json.loads(s)
+    except ValueError: return s
+
+  def serve(port):
+    from microdot import Microdot
+    app = Microdot()
+
+    @app.post("/")
+    async def rpc(req):
+      q, reply = req.json, dict(jsonrpc="2.0", id=req.json["id"])
+      if q["method"] not in methods:
+        return dict(reply, error=dict(code=-32601, message="No Such Method"))
+      # Async-call dispatch back into other guests: `amk.acall`
+      reply["result"] = _val(await amk.acall(q["method"], *q["params"]))
+      return reply
+
+    print(f"http://127.0.0.1:{port}/ {' '.join(methods)}", file=sys.stderr)
+    app.run(port=int(port))
+endef
+
+__main__:
+	echo "json-rpc: methods $(rpc.methods)"
+	echo "run it with: $(amk) serve PORT=$(PORT)"
+
+serve: deps
+	$(serve $(PORT))

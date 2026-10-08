@@ -1,0 +1,66 @@
+#
+# payload/lib/dsys/kahn.amk:
+#  Kahn networks: processes and channels as JSON under @kahn, compiled by
+#  kahn.jq to an open net that dsys/petri runs, a step writing its channels
+#  itself. a process may also join by at line, @name.proc above its define,
+#  its body a target of the engine it names. <name>.net reads the net.
+#
+kahn._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+$(amk.require jq)
+load dsys/petri
+
+kahn._main := include "kahn"; kahn
+kahn.__schema__ := dsys/schema/kahn.json
+
+# The network as it stands, a jq workspace beside the net, compiled in one call.
+kahn.compile = $(jq.argv -c -L $(kahn._lib),$(kahn._main), \
+  $(jq.ns $(1).kahn, get, -c .))
+$(amk.fxn! kahn.compile)
+
+# A process joining: the channels it reads, then those it writes after a lone >.
+define kahn.join
+--arg p '$(1)' --arg a '$(2)'
+  [$$a | splits("[[:space:]]+") | select(. != "")] as $$t
+  | ($$t | index(">")) as $$i
+  | .processes[$$p] = { run: $$p,
+      reads: (if $$i then $$t[:$$i] else $$t end),
+      writes: (if $$i then $$t[$$i + 1:] else [] end) }
+endef
+
+# The at line @<kahn>.proc (<engine> reads > writes): a target, the net again.
+kahn.engine = $(or $(firstword $(1)),$(error $(2): a .proc needs an engine))
+kahn.target = $(if $(filter undefined,$(origin $(1).target_star)), \
+  $(error $(2): $(1) has no @$(1).target for a process body), \
+  $(call $(1).target_star,$(2)))
+define kahn.proc
+$(strip
+  $(call kahn.target,$(call kahn.engine,$(3),$(2)),$(2))
+  $(call petri.update,$(1),
+    $(call kahn.join,$(2),$(wordlist 2,$(words $(3)),$(3))),$(2)))
+endef
+kahn.proc.via = $(call kahn.proc,<kahn>,$(1),$(value 2))
+kahn.proc.at = $(subst <kahn>,$(1),$(value kahn.proc.via))
+$(amk.fxn! kahn.proc.at)
+
+# @kahn and @kahn.import: the source kept, the net loaded, @<name>.proc opened.
+kahn.from = $(jq.import $(1).kahn, $(2)) \
+  $(eval $(1).source := $(1).kahn) \
+  $(call petri.load,$(1),$(kahn.compile $(1)),kahn) \
+  $(amk.fxn! $(1).net, petri._q, $(1), -c .) \
+  $(eval $(1).proc_star = $(kahn.proc.at $(1)))
+kahn.at = $(call kahn.from,$(1),$(amk.val.json5 $(2)))
+kahn_star = $(call kahn.at,$(call petri.named,$(1),kahn),$(1))
+kahn.import_star = $(call kahn_star,$(1))
+kahn.target_star = $(call kahn_star,$(1)) \
+  $(call petri.target,$(call petri.named,$(1),kahn))
+kahn.exec_star = $(call petri.exec_star,$(1),$(2),kahn)
+$(amk.fxn! kahn.exec, petri.exec)
+
+# The data variety: a network from text or empty, its version, and a wait.
+kahn.empty := {"channels":{},"processes":{}}
+kahn.create = $(call kahn.from,$(1), \
+  $(if $(filter undefined,$(origin 2)),$(kahn.empty),$(2)))
+$(amk.fxn! kahn.create)
+$(amk.fxn! kahn.version, petri.version)
+$(amk.fxn! kahn.wait, petri.wait)
+$(amk.engine kahn, guest=jq)

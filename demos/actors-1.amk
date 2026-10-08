@@ -1,0 +1,65 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/actors-1.amk:
+#  the charter of supervise-3 under the s7 backend: one cooperative
+#  plex, every member a task on it, a scoped s7 body yielding at its
+#  waits, a micropy call restarted until its third start answers, and a
+#  nested group whose giving up is one member's exit. No timers and no
+#  processes, so the run is the same every time.
+#
+
+load actor
+
+__main__: g1.__main__
+
+@actor.group
+define g1
+  {
+    // one cooperative plex in s7, every member a task on it
+    "backend": "s7",
+    // three restarts in the period, then the group gives up
+    "intensity": 3,
+    "children": {
+      /* members declared as data; the rest join by at line */
+      "noisy": { "kind": "group", "restart": "never" },
+      "echo": { "kind": "block", "engine": "micropy", "restart": "on-failure" },
+    },
+  }
+endef
+
+@actor.group
+define noisy { "backend": "s7" } endef
+
+# Always restarted, the charter's default: a crash on every start escalates.
+@noisy.actor/micropy
+define bravo
+  raise ValueError("bravo: down on start %s" % noisy.bravo.start_count)
+endef
+
+# A call member in micropy: restarted until its third start answers.
+@g1.actor/micropy {restart=on-failure}
+define delta
+  if g1.delta.start_count < 3:
+      raise ValueError("not yet on start %s" % g1.delta.start_count)
+  return "done on start %s" % g1.delta.start_count
+endef
+
+define echo
+  print("ran as a block")
+endef
+
+# A scoped member: an s7 body on the plex, yielding between its steps.
+@g1.actor/s7 {kind=scoped restart=never}
+define foxtrot
+  (do ((n 1 (+ n 1))) ((> n 3))
+    (format #t "foxtrot: step ~A~%" n)
+    (g1 'yield))
+endef
+
+# A second scoped member interleaves with the first.
+@g1.actor/s7 {kind=scoped restart=never}
+define golf
+  (do ((n 1 (+ n 1))) ((> n 2))
+    (format #t "golf: step ~A, siblings ~A~%" n (g1 'siblings))
+    (g1 'yield))
+endef

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "group.json",
+  "title": "@actor.group",
+  "description": "a group under @actor.group: the charter, every key but children, and its members; merged over the backend's baseline, lib/actor/<backend>.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "description": "the supervisor that enforces the charter",
+      "enum": ["effection", "s7"],
+      "default": "effection"
+    },
+    "strategy": {
+      "description": "which members restart when one exits: only that one",
+      "enum": ["one_for_one"],
+      "default": "one_for_one"
+    },
+    "restart": {
+      "description": "whether a member's exit restarts it, for every member that sets none",
+      "enum": ["always", "on-failure", "never"],
+      "default": "always"
+    },
+    "intensity": {
+      "description": "restarts allowed before the group gives up",
+      "type": "integer",
+      "minimum": 0,
+      "default": 3
+    },
+    "period": {
+      "description": "milliseconds intensity counts over, under effection only; s7 counts over the whole run and refuses it",
+      "type": "integer",
+      "minimum": 1
+    },
+    "pool": {
+      "description": "an open pool whose tokens leaf members take to start",
+      "type": "string",
+      "default": "actors"
+    },
+    "mailbox": {
+      "description": "how members message each other: none opens no pool, pool an inbox per member",
+      "enum": ["none", "pool"],
+      "default": "none"
+    },
+    "kind": {
+      "description": "the kind of every member that sets none; without it, goal for children and call for a member joined by its at line",
+      "enum": ["goal", "call", "block", "scoped", "group"]
+    },
+    "ask": {
+      "description": "under mailbox pool, whether a member that sets no ask gets a reply pool",
+      "enum": [true, false, "true", "false"],
+      "default": false
+    },
+    "kinds": {
+      "description": "the kinds the backend hosts, each with the defaults a member of that kind starts from; from the baseline, and a kind it lacks is refused",
+      "type": "object",
+      "propertyNames": { "enum": ["goal", "call", "block", "scoped", "group"] },
+      "additionalProperties": { "$ref": "actor.json" },
+      "default": {
+        "goal": {}, "call": {}, "block": { "engine": "micropy" }, "scoped": {}, "group": {}
+      }
+    },
+    "children": {
+      "description": "the members by id; a member of kind goal is the target of its id, of kind group the group of its id",
+      "type": "object",
+      "additionalProperties": { "$ref": "actor.json" },
+      "default": {}
+    }
+  },
+  "if": { "properties": { "backend": { "const": "s7" } }, "required": ["backend"] },
+  "then": { "properties": { "period": false } },
+  "else": { "properties": { "period": { "default": 10000 } } }
+}

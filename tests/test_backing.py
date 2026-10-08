@@ -1,6 +1,7 @@
 """Pins the backing modes of a named value.
 
-A store namespace may declare a backing at creation, a mode word then a path: `run` keeps
+A store namespace may declare a backing at creation, `run` or a mode and its path joined by
+`=`, and the channel carries it as a mode word then a path: `run` keeps
 the value in the store alone, `owned` loads the file once and writes every update through,
 `shared` also reloads when the file changed since the last load. Pinned: each mode's
 file behavior, a conflicting second declaration, a sub-make's repeat, and the channel form.
@@ -12,7 +13,7 @@ import pytest
 
 from conftest import sh
 
-ask = "printf '%s\\n' \"$(1)\" >&$$AMK_CALL && read -r st n <&$$AMK_REPLY && { [ \"$$n\" = 0 ] || IFS= read -r $(2) <&$$AMK_REPLY; }"
+ask = "printf '%s\\n' \"$(1)\" >&$$AMK_ASK && read -r st n <&$$AMK_REPLY && { [ \"$$n\" = 0 ] || IFS= read -r $(2) <&$$AMK_REPLY; }"
 
 program = "\n".join([
   "SHELL := bash",
@@ -20,8 +21,8 @@ program = "\n".join([
   ask,
   "endef",
   "$(jq.ns R, create, run)",
-  "$(jq.ns O, create, owned $(dir)/o.json)",
-  "$(jq.ns H, create, shared $(dir)/h.json)",
+  "$(jq.ns O, create, owned=$(dir)/o.json)",
+  "$(jq.ns H, create, shared=$(dir)/h.json)",
   "run:",
   "\t@$(call ask,update R [1],r); [ -e $(dir)/r.json ] && echo run=file || echo run=nofile",
   "owned:",
@@ -32,8 +33,8 @@ program = "\n".join([
   "\t@$(call ask,get H length,n); echo \"shared=$$n\"; $(call ask,get H length,n); echo \"again=$$n\"",
   "\t@$(call ask,update H . + [3],r); echo \"file=$$(cat $(dir)/h.json)\"",
   "conflict:",
-  "\t@source amk.sh; st=0; amk.call 'create O shared $(dir)/o.json' || st=$$?; echo \"st=$$st\"; same=0; amk.call 'create O owned $(dir)/o.json' || same=$$?; echo \"same=$$same\"",
-  "\t@source amk.sh; amk.call 'create N owned $(dir)/n.json' && $(call ask,update N 7,r) && echo \"n=$$(cat $(dir)/n.json)\"",
+  "\t@source amk.sh; st=0; amk.ask 'create O shared $(dir)/o.json' || st=$$?; echo \"st=$$st\"; same=0; amk.ask 'create O owned $(dir)/o.json' || same=$$?; echo \"same=$$same\"",
+  "\t@source amk.sh; amk.ask 'create N owned $(dir)/n.json' && $(call ask,update N 7,r) && echo \"n=$$(cat $(dir)/n.json)\"",
   "sub:",
   "\t@$(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) dir=$(dir) grow && $(call ask,get O length,n) && echo \"sub=$$n\"",
   "grow:",
@@ -78,7 +79,7 @@ def test_shared_sees_an_outside_write_and_writes_through(amk, prog):
 def test_shared_does_not_reload_an_unchanged_file(amk, prog):
   r = _run(amk, prog, "shared", env={"AMK_DEBUG": "1"})
   assert r.returncode == 0, r.stdout + r.stderr
-  assert r.stderr.count("amk: store: H loaded from") == 1, r.stdout + r.stderr
+  assert r.stderr.count("amk: workspace: H loaded from") == 1, r.stdout + r.stderr
 
 
 @pytest.mark.engines("jq")

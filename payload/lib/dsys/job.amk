@@ -1,0 +1,84 @@
+#
+# payload/lib/dsys/job.amk:
+#  jobs of this image: what runs in one is spawned by its noun,
+#  amk.goal.spawn and amk.goals.spawn, or by kind with amk.job.spawn
+#  goal=x; then amk.job.<verb>: amk.wait on a pid or a set, which holds
+#  a peeked record and never reaps outside the set, signals, a job table,
+#  the pids of a job and its spawner, and mail. amk.job._ is private.
+#
+amk.job._, := ,
+
+# The table: pids spawned here and not yet finished.
+amk.job._live :=
+amk.job._spawner :=
+
+# A record's pid, and whether it reports only a stop.
+amk.job._pid = $(word 2,$(subst $(amk.job._,), ,$(1)))
+amk.job._stopped = $(findstring "stopped",$(1))
+
+# A finished job leaves the table, a stopped one stays; answers the record.
+amk.job._seen = $(if $(1),$(if $(call amk.job._stopped,$(1)),,$(eval \
+  amk.job._live := $(filter-out $(call amk.job._pid,$(1)),$(amk.job._live)))))$(1)
+
+# A job finished and reaped outside the table, as by amk.exited, leaves it.
+amk.job.reaped = $(eval amk.job._live := $(filter-out $(1),$(amk.job._live)))
+
+# This process, and the one that spawned it, empty at the top.
+amk.job.self = $(amk.sys pid)
+amk.job.parent = $(amk.job._spawner)
+
+# A goal list spawned as amk.spawn does; the fork sees this pid as its spawner.
+amk.goals.spawn = $(let was,$(amk.job._spawner),$(eval amk.job._spawner := $(amk.job.self))$(let \
+  p,$(amk.spawn $(1),$(value 2),$(value 3),$(value 4)),$(eval amk.job._spawner := $(was))$(eval \
+  amk.job._live += $(p))$(p)))
+
+# One goal spawned, its record naming the kind; more than one word is refused.
+amk.goal.spawn = $(if $(word 2,$(1)),$(error amk.goal.spawn: one goal, got '$(m5[1])'; \
+  use amk.goals.spawn for a list),$(call amk.goals.spawn,$(1),$(value 2),$(value 3),kind=goal))
+
+# A call spawned by its name; the table holds it like any job, and its value is amk.job.value.
+amk.job._call = $(let p,$(amk.call.spawn $(1),$(value 2),$(value 3)),$(eval amk.job._live += $(p))$(p))
+
+# The goal list run in a job and waited on, its record answered.
+amk.goals = $(amk.job.wait $(call amk.goals.spawn,$(1),$(value 2),$(value 3)))
+
+# A spawn by kind, kind=name: goal=x, goals=x y or call=fn, each the noun's own spawn.
+amk.job._kinds := goal goals call
+amk.job._to = $(if $(filter call,$(1)),amk.job._call,amk.$(1).spawn)
+amk.job._kind = $(firstword $(subst =, ,$(firstword $(1))))
+amk.job.spawn = $(let k,$(call amk.job._kind,$(1)),$(if $(and $(findstring =,$(firstword \
+  $(1))),$(filter $(k),$(amk.job._kinds))),$(call $(call amk.job._to,$(k)),$(patsubst $(k)=%,%,$(1)),$(value \
+  2),$(value 3)),$(error amk.job.spawn: give kind=name, one of $(amk.job._kinds:%=%=..); got '$(m5[1])')))
+
+# The live pids, in spawn order; amk.job itself answers them, so guests reach its fields.
+amk.job.list = $(strip $(amk.job._live))
+amk.job = $(amk.job.list)
+
+# Wait as amk.wait does: a pid, a set of them, or any job.
+amk.job.wait = $(call amk.job._seen,$(if $(value 2),$(amk.wait $(value 1),$(value \
+  2)),$(amk.wait $(value 1))))
+
+# A job's record without consuming it; amk.wait holds it for the wait that takes it.
+amk.job.peek = $(call amk.job._seen,$(amk.wait $(1),peek))
+
+# The first of a set to report; amk.wait never reaps a job outside it.
+amk.job.any = $(if $(m5[1]),$(call amk.job.wait,$(1),$(value 2)))
+
+# Every record of a set, in its order, as a json array.
+amk.job._join = $(if $(1),$(amk.job.wait $(firstword $(1)))$(if $(word \
+  2,$(1)),$(amk.job._,) $(call amk.job._join,$(wordlist 2,999,$(1)))))
+amk.job.all = [$(call amk.job._join,$(1))]
+
+# Signals, as the host handle has them.
+amk.job.kill = $(if $(value 2),$(amk.kill $(1),$(2)),$(amk.kill $(1)))
+amk.job.stop = $(amk.stop $(1))
+amk.job.resume = $(amk.resume $(1))
+amk.job.foreground = $(amk.foreground $(1))
+
+# From inside a job, text to the parent's mail; empty outside a job. A guest sends with amk.send.
+amk.job.send = $(if $(value AMK_MAIL),$(shell printf '%s' '$(subst ','\'',$(1))' >&$$AMK_MAIL)1)
+
+$(foreach f,self parent spawn list wait peek any all reaped kill stop resume foreground send, \
+  $(amk.fxn! amk.job.$(f)))
+$(amk.fxn! amk.job)
+$(foreach f,goal.spawn goals.spawn goals,$(amk.fxn! amk.$(f)))

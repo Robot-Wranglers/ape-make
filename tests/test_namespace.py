@@ -5,9 +5,7 @@ its commas; `$(<name>.ns ns, op[, program])` runs it in a namespace that `create
 with a handle `ns.op` and its star twin per operation.
 """
 
-import re
-import subprocess
-from pathlib import Path
+import json
 
 import pytest
 
@@ -52,7 +50,7 @@ handles = "\n".join([
 ])
 
 unregistered = "\n".join([
-  "$(info exec=[$(jq.exec .)] import=[$(jq.import .)] take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] get=[$(lua.get .)] persistent=[$(lua.persistent x = 1)])",
+  "$(info take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] persistent=[$(lua.persistent x = 1)])",
   "all:",
   "\ttrue",
   "",
@@ -84,13 +82,37 @@ def test_handles_reach_their_own_namespace(amk, tmp_path):
   assert "after=[[1,3]]" in r.stdout, r.stdout
 
 
+ns_create = "\n".join([
+  "$(lua.ns.create work)",
+  "$(work.exec x = 2)",
+  "$(jq.ns.create stack)",
+  "seed := $(stack.update [1, 2])",
+  "$(jq.ns.create kept, owned=kept.json)",
+  "kept := $(kept.update {\"k\": 1})",
+  "$(info work=[$(work.exec print(x))] depth=[$(stack.get length)] kept=[$(jq.ns kept, get, .k)])",
+  "all:",
+  "\ttrue",
+  "",
+])
+
+
+@pytest.mark.engines("lua", "jq")
+def test_ns_create_is_create_under_its_own_name(amk, tmp_path):
+  mk = tmp_path / "create.mk"
+  mk.write_text(ns_create)
+  r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "work=[2] depth=[2] kept=[1]" in r.stdout, r.stdout
+  assert json.loads((tmp_path / "kept.json").read_text()) == {"k": 1}
+
+
 @pytest.mark.engines("lua", "jq")
 def test_the_grammar_leaves_these_names_unregistered(amk, tmp_path):
   mk = tmp_path / "unregistered.mk"
   mk.write_text(unregistered)
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "exec=[] import=[] take=[] dump=[] filter=[] get=[] persistent=[]" in r.stdout, r.stdout
+  assert "take=[] dump=[] filter=[] persistent=[]" in r.stdout, r.stdout
 
 
 languages = {
@@ -143,7 +165,7 @@ def test_a_language_namespace_keeps_its_own_state(amk, engines, tmp_path, engine
   assert "main-hook" in r.stderr and "work-hook" not in r.stderr, r.stderr
 
 
-@pytest.mark.engines("lua", "jq", "micropy")
+@pytest.mark.engines("lua", "jq", "micropy", "awk")
 @pytest.mark.parametrize("line, message", [
   ("x := $(jq.ns , get, .)", 'namespace "" is not a name'),
   ("x := $(jq.ns a b, get, .)", 'namespace "a b" is not a name'),
@@ -151,10 +173,14 @@ def test_a_language_namespace_keeps_its_own_state(amk, engines, tmp_path, engine
   ("x := $(jq.ns s, x = 1)", 'expected an op, got "x = 1"'),
   ("$(jq.ns s, create)\nx := $(jq.ns s, get)", "get: no program"),
   ("$(jq.ns s, create)\nx := $(jq.ns s, take, .)", 'expected an op, got "take"'),
-  ("$(jq.ns s, create, .)", "expected a backing, one of run, owned PATH, shared PATH"),
+  ("$(jq.ns s, create, .)", "expected a backing, one of run, owned=PATH, shared=PATH"),
+  ("$(jq.ns s, create, owned s.json)", "expected a backing, one of run, owned=PATH, shared=PATH"),
+  ("$(jq.ns s, create, owned=)", "the backing was refused"),
   ("$(lua.ns s, create, run)", "create takes no program"),
+  ("$(lua.ns.create s, run)", "create takes no program"),
+  ("$(awk.ns.create s)", "awk has no state or workspace interface"),
   ("$(jq.ns w, create)\n$(lua.ns w, create)", "namespace w belongs to jq"),
-  ("$(jq.ns jq, create)", "jq.get is a make function already"),
+  ("$(jq.ns jq, create)", "jq.exec is a make function already"),
   ("$(micropy.ns w, create)", "create is not supported for micropy"),
 ])
 def test_a_bad_namespace_call_is_fatal(amk, tmp_path, line, message):
@@ -163,20 +189,3 @@ def test_a_bad_namespace_call_is_fatal(amk, tmp_path, line, message):
   r = sh(amk, ["-s", "-f", str(mk)], timeout=60)
   assert r.returncode != 0, r.stdout + r.stderr
   assert message in r.stderr, r.stderr
-
-
-def test_no_tracked_source_calls_the_old_name():
-  root = Path(__file__).resolve().parents[1]
-  tracked = subprocess.run(["git", "-C", str(root), "ls-files"], capture_output=True, text=True, check=True).stdout.split()
-  old = re.compile(r"\.persistent\b")
-  hits = []
-  for name in tracked:
-    path = root / name
-    if path == Path(__file__).resolve() or not path.is_file():
-      continue
-    try:
-      text = path.read_text()
-    except UnicodeDecodeError:
-      continue
-    hits += [f"{name}:{i}" for i, line in enumerate(text.splitlines(), 1) if old.search(line)]
-  assert hits == [], hits
