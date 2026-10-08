@@ -10,11 +10,12 @@
 | `$(eng.argv argv, prog[, input])` | yes | yes | - | - | - | - | yes |
 | `$(eng.exec prog)` | - | - | yes | yes | yes | yes | - |
 | `$(eng.import prog)` | - | - | yes | yes | yes | yes | - |
-| `$(eng.import.target prog)` | yes | yes | yes | yes | yes | yes | - |
+| `$(eng.import.target target, prog[, flags])` | yes | yes | yes | yes | yes | yes | - |
 | `$(eng.ns workspace, op[, prog])` | - | yes | yes | yes | yes | yes | - |
 | `$(workspace.<op> prog)` | - | yes | yes | yes | yes | yes | - |
 | `$(jq.get prog)`, `$(jq.update prog)` | - | yes | - | - | - | - | - |
 | `$(jq.load text)` | - | yes | - | - | - | - | - |
+| `$(jq.import name, text)` | - | yes | - | - | - | - | - |
 
 ### Pass by Reference
 
@@ -23,8 +24,8 @@
 | `$(eng* program_var[, input_var])` | yes | yes | yes | yes | yes | yes | yes |
 | `$(eng.argv* argv, program_var[, input_var])` | yes | yes | - | - | - | - | yes |
 | `$(eng.exec* program_var)` | - | - | yes | yes | yes | yes | - |
-| `$(eng.import* program_var)` | - | - | yes | yes | yes | yes | - |
-| `$(eng.import.target* program_var)` | yes | yes | yes | yes | yes | yes | - |
+| `$(eng.import* program_var)` | - | workspace | yes | yes | yes | yes | - |
+| `$(eng.import.target* program_var[, flags])` | yes | yes | yes | yes | yes | yes | - |
 | `$(eng.ns* workspace, op, program_var)` | - | yes | yes | yes | yes | yes | - |
 | `$(workspace.<op>* program_var)` | - | yes | yes | yes | yes | yes | - |
 | `$(jq.get* program_var)`, `$(jq.update* program_var)` | - | yes | - | - | - | - | - |
@@ -32,16 +33,17 @@
 
 ### Persistent state
 
-### The jq store
+### jq workspaces
 
 | call | runs | stores | returns |
 | --- | --- | --- | --- |
 | `$(workspace.get prog)` | prog over the value | nothing | every output |
 | `$(workspace.update prog)` | prog over the value | the first output | the rest |
 | `$(workspace.load text)` | | the one JSON text | nothing |
+| `$(jq.import name, text)`, `@jq.import` above `define name` | | the one JSON text, in the namespace name with its handles | nothing |
 
 ```Makefile
-# a stack in the store: push, then pop the top and keep the rest
+# a stack in a workspace: push, then pop the top and keep the rest
 $(jq.ns stack, create)
 seed  := $(stack.update [1] + [2])
 push  := $(stack.update --argjson v 3 . + [$$v])
@@ -104,7 +106,7 @@ swapped := $(lua print(amk.call("subst", ",", ";", "a,b")))
 | engine | [`$(name ...)`](#builtins) | [`.argv`](#builtins) | [`.import.target`](#defining-a-target-in-an-engine) | [`.exec`](#persistent-state) | [init](#init) | [hooks](#hooks) | [handle reads](#the-guest-handle) | [handle writes](#the-guest-handle) | [`amk.func`](#registering-make-functions) | [`.import`](#registering-make-functions) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [awk](../README.md#awk-jq) | yes | yes | yes | - | - | - | - | - | - | - |
-| [jq](../README.md#awk-jq) | yes | yes | yes | store | yes | - | - | - | - | - |
+| [jq](../README.md#awk-jq) | yes | yes | yes | workspace | yes | - | - | - | - | workspace |
 | [lua](../README.md#lua) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [s7](../README.md#s7) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [micropy](../README.md#micropy) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
@@ -152,6 +154,7 @@ methods := $(amk.fxns? lua js)
 | `$(<engine_name>.exec prog)`, `$(<engine_name>.ns workspace, op[, prog])`, `$(workspace.<op> prog)` | make to guest | lua, s7, micropy, js | [0018], [0028], [0030], [0031], [0063] |
 | `$(jq.<op> prog)`, `$(jq.ns workspace, op[, prog])`, `$(workspace.<op> prog)` | make to guest | jq: `get`, `update`, `load` | [0046], [0063] |
 | `$(<engine_name>.import prog)` | guest to make | lua, s7, micropy, js | [0029] |
+| `$(jq.import name, text)`, `@jq.import` above `define` | make to guest | jq | [0073] |
 | `$(goal name)` | make | any | [0032] |
 | `$(amk.stdin text)` | make to recipe | any | [0033] |
 | `$(amk.require names...)` | make | any | [0036] |
@@ -165,7 +168,7 @@ methods := $(amk.fxns? lua js)
 
 | form | direction | engines | patch |
 | --- | --- | --- | --- |
-| `@<engine_name>.import.target` above `define` | make to guest | all | [0039], [0042], [0044] |
+| `@<builtin> [args]` above `define`, for any `<builtin>` in [Pass by Reference](#pass-by-reference) | make to guest | all | [0039], [0042], [0044] |
 | `@name@` in an imported body | goal to guest | all | [0043] |
 | `__main__` target | make | any | [0035] |
 
@@ -199,8 +202,8 @@ methods := $(amk.fxns? lua js)
 | form | direction | engines | patch |
 | --- | --- | --- | --- |
 | `AMK_MAIL` | job to parent | any | [0024] |
-| `AMK_CALL`, `AMK_REPLY`, `amk.call`, `amk.words`, `jq.pipe` | recipe to make | jq store | [0047] |
-| a pair per recipe child; a served request forwards up its caller's pair | recipe to make | jq store | [0062], [0065] |
+| `AMK_CALL`, `AMK_REPLY`, `amk.call`, `amk.words`, `jq.pipe` | recipe to make | jq workspaces | [0047] |
+| a pair per recipe child; a served request forwards up its caller's pair | recipe to make | jq workspaces | [0062], [0065] |
 | `halt` on the call channel: no more recipe lines or goals, status 112, taken up by a parent make | recipe to make | any | [0064] |
 | `AMK_<ENGINE_NAME>_INIT`, `__init__.<engine_name>` | make to guest | jq, lua, s7, micropy, js | [0022] |
 | `__init__.mk`, `AMK_NO_PRELUDE` | make | any | [0034] |
@@ -261,3 +264,4 @@ methods := $(amk.fxns? lua js)
 [0067]: ../patches/0067-api-cksum.patch
 [0068]: ../patches/0068-api-sys.patch
 [0069]: ../patches/0069-api-match.patch
+[0073]: ../patches/0073-jq-import.patch

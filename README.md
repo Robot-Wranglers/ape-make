@@ -290,7 +290,7 @@ Special guests are the embedded engines that are linked into `amk` directly.
 
 Besides the choice of guest, two other concepts that relate to the engine API are **Interface Style** and **Access Mode**.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 
-<!-- Each guest backend has a more or less unified interface, so there's not a demo in every language for every mode.  Just switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `lua`, `s7`, `js`, etc).  That said.. backend implementation details can differ, and so details for FFI support can also differ.  In particular `wasm` and `jq` are misfits: `wasm` takes a [module](#wasm) rather than program text, and `jq` keeps its state in a [store](docs/FFI.md#the-jq-store).  The [capabilities table](docs/FFI.md#capabilities-by-engine) has the per-engine breakdown. -->
+<!-- Each guest backend has a more or less unified interface, so there's not a demo in every language for every mode.  Just switch out the engine name (i.e. `eng` below) for whatever you're interested in (e.g. `micropy`, `lua`, `s7`, `js`, etc).  That said.. backend implementation details can differ, and so details for FFI support can also differ.  In particular `wasm` and `jq` are misfits: `wasm` takes a [module](#wasm) rather than program text, and `jq` keeps its state in [workspaces](docs/FFI.md#jq-workspaces).  The [capabilities table](docs/FFI.md#capabilities-by-engine) has the per-engine breakdown. -->
 
 **Interface Style:**
 
@@ -697,8 +697,8 @@ The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 | topic | what it gives |
 | --- | --- |
 | [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
-| [The jq store](docs/FFI.md#the-jq-store) | named JSON values, updated in the make process with no fork |
-| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | the jq store from a running recipe's shell |
+| [jq workspaces](docs/FFI.md#jq-workspaces) | named JSON values, updated in the make process with no fork |
+| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | jq workspaces from a running recipe's shell |
 | [Init](docs/FFI.md#init) | a chunk run in each persistent state before the parse |
 | [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
 | [The guest handle](docs/FFI.md#the-guest-handle) | variable reads and writes, expansion, and eval from a guest |

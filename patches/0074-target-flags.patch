@@ -1,0 +1,162 @@
+Target flags: $(<name>.import.target target,program,flags) and its star form
+$(<name>.import.target* var,flags) take the engine's flags for the target, so an at line
+above a define passes them as @jq.import.target --null-input. The target records the
+flags, a kept value's reader copies them, and the job puts them ahead of the program on
+the engine's command line. jq no longer gets -n behind the user's back: a jq target reads
+its standard input as any jq does, and one that generates its value without input says
+--null-input. The star form dereferences only the variable, so the flags pass as written.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -62,11 +62,11 @@
+ int amk_profile_enter (struct amk_prof_frame *f);
+ void amk_profile_leave (struct amk_prof_frame *f, const char *kind, const char *name);
+ void amk_profile_report (void);
+-void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
++void amk_import_target (const char *name, const char *engine, const char *body, const char *flags, const floc *flocp);
+ struct child;
+ struct amk_engine;
+ void amk_fork_settle (void);
+-void amk_engine_program (const struct amk_engine *e, const char *program);
++void amk_engine_program (const struct amk_engine *e, const char *flags, const char *program);
+ char *amk_func_stdin (char *o, char **argv, const char *funcname);
+ char *amk_func_sys (char *o, char **argv, const char *funcname);
+ void amk_stdin_pending (struct child *child);
+--- a/src/file.c
++++ b/src/file.c
+@@ -1438,6 +1438,7 @@
+           struct file *kept = lookup_file (reader);
+           kept->amk_engine = f->amk_engine;
+           kept->amk_program = f->amk_program;
++          kept->amk_flags = f->amk_flags;
+           kept->amk_refs = f->amk_refs;
+           kept->amk_value = kept->name;
+         }
+--- a/src/filedef.h
++++ b/src/filedef.h
+@@ -113,9 +113,10 @@
+                                     --shuffle passes through the graph.  */
+     unsigned int snapped:1;     /* True if the deps of this file have been
+                                    secondary expanded.  */
+-    /* An imported target's engine, the variable that holds its program, and the goals its body references; null for every other file.  */
++    /* An imported target's engine, the variable that holds its program, the flags its engine takes before the program, and the goals its body references; null for every other file.  */
+     const struct amk_engine *amk_engine;
+     const char *amk_program;
++    const char *amk_flags;
+     struct amk_goal_ref *amk_refs;
+     /* The value file of an imported target some body references, on its name and on the file itself; null when no value is kept.  */
+     const char *amk_value;
+--- a/src/function.c
++++ b/src/function.c
+@@ -2805,16 +2805,16 @@
+   return o;
+ }
+
+-/* An imported target's job, inside its fork: the engine's main over the program as the builtin would pass it, jq with the null input it needs to run without data; handle writes have no queue, so they end with the job.  */
++/* An imported target's job, inside its fork: the engine's main over the target's flags and then the program as the builtin would pass it; handle writes have no queue, so they end with the job.  */
+ void
+-amk_engine_program (const struct amk_engine *e, const char *program)
++amk_engine_program (const struct amk_engine *e, const char *flags, const char *program)
+ {
+   char *av[64];
+   char *args = NULL;
+   int ac = 1;
+   av[0] = (char *) e->name;
+-  if (strcmp (e->name, "jq") == 0)
+-    av[ac++] = (char *) "-n";
++  if (flags != NULL)
++    ac += amk_split_argv (xstrdup (flags), av + ac, 30);
+   if (e->dashdash)
+     av[ac++] = (char *) "--";
+   if (e->cmdline)
+@@ -3579,14 +3579,15 @@
+
+   for (n = 0; n < 3 && argv[n] != NULL; ++n)
+     held[n] = NULL;
+-  /* An import target or a store import named by one variable takes that name and that body.  */
+-  if (n == 1 && ((strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
+-                 || amk_is_store_import (base))
++  /* An import target or a store import named by a variable takes that name and that body; an import target's flags after it pass as written.  */
++  if (((n <= 2 && strlen (base) > 14 && strcmp (base + strlen (base) - 14, ".import.target") == 0)
++       || (n == 1 && amk_is_store_import (base)))
+       && (held[0] = star_arg (funcname, argv[0], &name)) != NULL)
+     {
+       args[0] = name;
+       args[1] = held[0];
+-      args[2] = NULL;
++      args[2] = n == 2 ? argv[1] : NULL;
++      args[3] = NULL;
+     }
+   else if (n == 1 && amk_is_store_import (base))
+     OSS (fatal, reading_file, _("%s: %s names no variable"), funcname, amk_trim (argv[0]));
+@@ -3610,23 +3611,19 @@
+   return o;
+ }
+
+-/* $(name.import.target target,program): the program stored as the variable target, and the rules that run it into a cached value and print it under the target's name.  */
++/* $(name.import.target target,program[,flags]): the program stored as the variable target, and the rules that run it, with the engine's flags ahead of the program, into a cached value and print it under the target's name.  */
+ static char *
+ func_import_target (char *o, char **argv, const char *funcname)
+ {
+   const struct amk_engine *e = amk_engine_by_name (funcname);
+-  char *name = argv[0];
+-  char *end = name + strlen (name);
++  char *name = amk_trim (argv[0]);
+   const char *body = argv[1] != NULL ? argv[1] : "";
++  const char *flags = argv[1] != NULL && argv[2] != NULL ? amk_trim (argv[2]) : NULL;
+
+-  while (ISSPACE (*name))
+-    name++;
+-  while (end > name && ISSPACE (end[-1]))
+-    *--end = '\0';
+   if (*name == '\0')
+     OS (fatal, reading_file, _("%s: no target named"), funcname);
+   define_variable_global (name, strlen (name), body, o_file, 1, reading_file);
+-  amk_import_target (name, e->name, body, reading_file);
++  amk_import_target (name, e->name, body, flags, reading_file);
+   return o;
+ }
+
+@@ -4106,7 +4103,7 @@
+             f = amk_entry_add (f, amk_entry_name (e, w, wlen), func_op, 1, 1);
+           f = amk_entry_add (f, amk_entry_name (e, "ns", 2), func_ns, 2, 3);
+         }
+-      f = amk_entry_add (f, amk_entry_name (e, "import.target", 13), func_import_target, 1, 2);
++      f = amk_entry_add (f, amk_entry_name (e, "import.target", 13), func_import_target, 1, 3);
+       /* The store's import makes a namespace from a name and its JSON, so the at line above a define gives that define's name a store.  */
+       if (e->run && streq (e->name, AMK_STORE_ENGINE))
+         f = amk_entry_add (f, amk_entry_name (e, "import", 6), func_store_import, 1, 2);
+--- a/src/job.c
++++ b/src/job.c
+@@ -1199,7 +1199,7 @@
+       fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
+       _exit (127);
+     }
+-  amk_engine_program (file->amk_engine, program);
++  amk_engine_program (file->amk_engine, file->amk_flags, program);
+   _exit (127);
+ }
+
+--- a/src/read.c
++++ b/src/read.c
+@@ -3609,10 +3609,10 @@
+   return new;
+ }
+
+-/* The rule behind an imported target, never the default goal: a phony target of the name that records its engine, its program and the goals its body references. The job launcher runs the program in a fork of make, so the recipe line only names it, and nothing of the value directory is touched here.  */
++/* The rule behind an imported target, never the default goal: a phony target of the name that records its engine, its program, the flags its engine takes before the program, and the goals its body references. The job launcher runs the program in a fork of make, so the recipe line only names it, and nothing of the value directory is touched here.  */
+ void
+ amk_import_target (const char *name, const char *engine, const char *body,
+-                   const floc *flocp)
++                   const char *flags, const floc *flocp)
+ {
+   static const char shape[] = ".PHONY: %s\n%s:; @: %s %s\n";
+   int no_goal_yet = default_goal_var->value[0] == '\0';
+@@ -3627,6 +3627,7 @@
+     OS (fatal, flocp, _("%s: the imported target left no rule"), name);
+   f->amk_engine = amk_engine_by_name (engine);
+   f->amk_program = strcache_add (name);
++  f->amk_flags = flags != NULL && *flags != '\0' ? strcache_add (flags) : NULL;
+   f->amk_refs = amk_goal_refs (body);
+
+   if (no_goal_yet)

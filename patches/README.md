@@ -75,6 +75,9 @@ patch that adds that guest.
 | `0070-profile.patch` | `AMK_PROFILE=<file>` or `-`: every builtin, every macro reached through `call` and every recursive variable expansion timed under its name, the table of self and total milliseconds and count per name appended when the process dies, by self time descending |
 | `0071-profile-flag.patch` | `--profile` and `--profile=FILE` anywhere on the line set `AMK_PROFILE` and leave argv before any engine, request or option sees them; the flag joins `--help` |
 | `0072-ape-list.patch` | `--ape-list`: every payload member, one per line, sorted, in the spelling `--ape-unpack` takes; no argument, no short form; a build without a payload says so and fails |
+| `0073-jq-import.patch` | `$(jq.import name,text)` and `@jq.import` above a define: the store namespace and its handles made as create makes them, the text loaded as its value; a second import replaces the value; one routine for a namespace operation and its backing, one for an engine builtin's registration |
+| `0074-target-flags.patch` | `$(<name>.import.target target,program,flags)`, `$(<name>.import.target* var,flags)` and `@<name>.import.target flags`: the engine's flags ahead of the program; jq no longer gets `-n` implicitly, so a jq target filters its standard input unless it says `--null-input` |
+| `0075-workspace-messages.patch` | the errors from a jq namespace's backing, owner and the call channel say workspace, as the docs do; the names in the code are unchanged |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

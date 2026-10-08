@@ -71,7 +71,7 @@ def test_a_backgrounded_client_whose_recipe_ended_fails_loudly(amk, tmp_path, se
   r = sh(amk, ["--client", str(sock), "bg"], cwd=tmp_path, timeout=60)
   assert r.returncode == 0, r.stdout + r.stderr
   assert "later=[2 0]" in r.stdout, r.stdout + r.stderr
-  assert "no reply from the store's owner" in r.stderr, r.stdout + r.stderr
+  assert "no reply from the workspaces' owner" in r.stderr, r.stdout + r.stderr
 
 
 @pytest.mark.engines("jq")

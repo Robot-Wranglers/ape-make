@@ -22,7 +22,7 @@ endef
 
 @jq.import.target
 define jq.add
-  input + {jq: env.jq_version}
+  . + {jq: env.jq_version}
 endef
 
 @lua.import.target
@@ -51,5 +51,5 @@ endef
 # The last stage fails unless every stage left a key.
 @jq.import.target
 define jq.check
-  input | if (keys | length) == 6 then . else error("expected 6 stages, got \(keys)") end
+  if (keys | length) == 6 then . else error("expected 6 stages, got \(keys)") end
 endef

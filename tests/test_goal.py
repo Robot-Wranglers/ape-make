@@ -313,7 +313,7 @@ def test_awk_and_jq_imported_targets_take_their_program_their_own_way(amk, tmp_p
     "define words",
     'BEGIN { print "a b c" }',
     "endef",
-    "@jq.import.target",
+    "@jq.import.target --null-input",
     "define count",
     '"@words@" | split(" ") | length',
     "endef",

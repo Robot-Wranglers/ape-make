@@ -78,7 +78,7 @@ def test_shared_sees_an_outside_write_and_writes_through(amk, prog):
 def test_shared_does_not_reload_an_unchanged_file(amk, prog):
   r = _run(amk, prog, "shared", env={"AMK_DEBUG": "1"})
   assert r.returncode == 0, r.stdout + r.stderr
-  assert r.stderr.count("amk: store: H loaded from") == 1, r.stdout + r.stderr
+  assert r.stderr.count("amk: workspace: H loaded from") == 1, r.stdout + r.stderr
 
 
 @pytest.mark.engines("jq")

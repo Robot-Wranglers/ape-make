@@ -1,0 +1,98 @@
+Workspace messages: the errors a jq namespace raises, from its backing, its owner and
+the call channel, name it a workspace, as the docs do. Only the text changes; the names
+in the code are left for the refactor that decouples the call channel from jq.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -3223,11 +3223,11 @@
+   text = amk_ns_slurp (row->path);
+   if (text == NULL)
+     {
+-      fprintf (stderr, "amk: store: %s: cannot read %s\n", row->name, row->path);
++      fprintf (stderr, "amk: workspace: %s: cannot read %s\n", row->name, row->path);
+       return 2;
+     }
+   if (getenv ("AMK_DEBUG") != 0)
+-    fprintf (stderr, "amk: store: %s loaded from %s\n", row->name, row->path);
++    fprintf (stderr, "amk: workspace: %s loaded from %s\n", row->name, row->path);
+   rc = amk_state_run (e, row->state, &sink.base, "load", text);
+   free (text);
+   free (sink.buf);
+@@ -3263,7 +3263,7 @@
+   if (f == NULL || (sink.len > 0 && fwrite (sink.buf, 1, sink.len, f) != sink.len) || fclose (f) != 0
+       || rename (tmp, row->path) < 0)
+     {
+-      fprintf (stderr, "amk: store: %s: cannot write %s\n", row->name, row->path);
++      fprintf (stderr, "amk: workspace: %s: cannot write %s\n", row->name, row->path);
+       unlink (tmp);
+       free (tmp);
+       free (sink.buf);
+@@ -3292,18 +3292,18 @@
+
+   if (e == NULL || e->run == NULL)
+     {
+-      fprintf (stderr, "amk: store: this build has no %s store\n", AMK_STORE_ENGINE);
++      fprintf (stderr, "amk: workspace: this build has no %s workspaces\n", AMK_STORE_ENGINE);
+       return 2;
+     }
+   if (!amk_ns_valid (ns))
+     {
+-      fprintf (stderr, "amk: store: namespace \"%s\" is not a name\n", ns);
++      fprintf (stderr, "amk: workspace: namespace \"%s\" is not a name\n", ns);
+       return 2;
+     }
+   owner = amk_ns_owner (ns);
+   if (owner != NULL && owner != e)
+     {
+-      fprintf (stderr, "amk: store: namespace %s belongs to %s\n", ns, owner->name);
++      fprintf (stderr, "amk: workspace: namespace %s belongs to %s\n", ns, owner->name);
+       return 2;
+     }
+   copy = xstrdup (spec);
+@@ -3315,7 +3315,7 @@
+   if (word == NULL || mode > AMK_BACK_SHARED || (mode >= AMK_BACK_OWNED && path == NULL)
+       || (path != NULL && strtok (NULL, " \t") != NULL))
+     {
+-      fprintf (stderr, "amk: store: %s: expected a backing, one of run, owned PATH, shared PATH; got: %s\n", ns, spec);
++      fprintf (stderr, "amk: workspace: %s: expected a backing, one of run, owned PATH, shared PATH; got: %s\n", ns, spec);
+       free (copy);
+       return 2;
+     }
+@@ -3329,7 +3329,7 @@
+       free (copy);
+       if (same)
+         return 0;
+-      fprintf (stderr, "amk: store: %s is backed as %s%s%s already\n", ns, amk_back_names[row->mode],
++      fprintf (stderr, "amk: workspace: %s is backed as %s%s%s already\n", ns, amk_back_names[row->mode],
+                row->path != NULL ? " " : "", row->path != NULL ? row->path : "");
+       return 2;
+     }
+@@ -3391,7 +3391,7 @@
+
+   if (e == NULL || e->run == NULL)
+     {
+-      fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
++      fprintf (stderr, "amk: call: this build has no %s workspaces\n", AMK_STORE_ENGINE);
+       return 2;
+     }
+   if (!amk_engine_has_op (e, op))
+@@ -3430,7 +3430,7 @@
+   const struct amk_engine *e = amk_engine_by_name (AMK_STORE_ENGINE);
+   if (e == NULL || e->filter == NULL)
+     {
+-      fprintf (stderr, "amk: call: this build has no %s store\n", AMK_STORE_ENGINE);
++      fprintf (stderr, "amk: call: this build has no %s workspaces\n", AMK_STORE_ENGINE);
+       return 2;
+     }
+   return e->filter (out, prog, input != NULL ? input : "");
+--- a/src/main.c
++++ b/src/main.c
+@@ -6055,7 +6055,7 @@
+   }
+   reply = amk_up_req >= 0 ? amk_call_up (line, input) : amk_call_answer (line, input);
+   if (reply == NULL) {
+-    fprintf (stderr, "amk: call: no reply from the store's owner\n");
++    fprintf (stderr, "amk: call: no reply from the workspaces' owner\n");
+     reply = xstrdup ("2 0\n");
+   }
+   return reply;

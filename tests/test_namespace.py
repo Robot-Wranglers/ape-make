@@ -52,7 +52,7 @@ handles = "\n".join([
 ])
 
 unregistered = "\n".join([
-  "$(info exec=[$(jq.exec .)] import=[$(jq.import .)] take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] get=[$(lua.get .)] persistent=[$(lua.persistent x = 1)])",
+  "$(info exec=[$(jq.exec .)] take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] get=[$(lua.get .)] persistent=[$(lua.persistent x = 1)])",
   "all:",
   "\ttrue",
   "",
@@ -90,7 +90,7 @@ def test_the_grammar_leaves_these_names_unregistered(amk, tmp_path):
   mk.write_text(unregistered)
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "exec=[] import=[] take=[] dump=[] filter=[] get=[] persistent=[]" in r.stdout, r.stdout
+  assert "exec=[] take=[] dump=[] filter=[] get=[] persistent=[]" in r.stdout, r.stdout
 
 
 languages = {
