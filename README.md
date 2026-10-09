@@ -191,7 +191,7 @@ docker run --rm -v "$PWD:/work" \
   ghcr.io/robot-wranglers/amk:latest <target>
 ```
 
-Use the `wasm3` tag for the build with the [wasm](#wasm) engine.  Also of interest, `amk` on your host is typically usable from from *any* container if you want to bind-mount the binary.
+Also of interest, `amk` on your host is typically usable from from *any* container if you want to bind-mount the binary.
 
 <a id="bundling"></a><br/>
 <a id="payloads"></a><br/>
@@ -286,7 +286,10 @@ Special guests are the embedded engines that are linked into `amk` directly.
 | [s7](#s7) | 11.9 | [ccrma.stanford.edu](https://ccrma.stanford.edu/software/s7/) | 4.1 MB | on |
 | [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | 0.8 MB | on |
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | 2.0 MB | on |
-| [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | off |
+| [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | on |
+| kv | 1.0 | `guest/kv_main.c` | - | off |
+
+kv is a workspace of key=value lines with no library behind it, built `with=kv`: `$(kv.ns K, create)`, then `$(K.update color red)`, `$(K.get color)`, and `$(K.load text)`; a recipe reaches it over the call channel like a jq workspace. See the [workspace rows](docs/FFI.md#workspace-rows) in the FFI documentation.
 
 Besides the choice of guest, two other concepts that relate to the engine API are **Interface Style** and **Access Mode**.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 
@@ -609,22 +612,22 @@ big := $(s7 ${s7.fact})
 <a id="micropy"></a>
 #### micropy
 
-MicroPython: Python 3 with `sys`, `os`, `io`, `json`, `re`, `time`, `math`, `random`,
+MicroPython is Python 3 with `asyncio`, `sys`, `os`, `io`, `json`, `re`, `time`, `math`, `random`,
 `struct`, `collections`, `hashlib`, `binascii`, `deflate`, `select` and `errno`. The input
-is `sys.stdin`. There is no `input`, `asyncio`, threads or `machine`.
+is `sys.stdin`.
 
 ```Makefile
-# inline, a comma inside ( ): 7
-answer.py := $(micropy print(max(3, 7)))
+# pass program by value, capture result
+answer := $(micropy print(max(3, 7))
 
-# multiline chunk from a define, dedented by the star form, JSON input from a variable: bob
+# pass program and data by reference
 define py.top
   import json, sys
   d = json.load(sys.stdin)
   print(max(d, key=d.get))
 endef
 scores := {"ada": 3, "bob": 7, "cy": 5}
-top := $(micropy* py.top,scores)
+top := $(micropy* py.top, scores)
 ```
 
 <a id="js"></a>
@@ -652,7 +655,7 @@ newest := $(js ${js.newest},$(pkgs))
 <a id="wasm"></a>
 #### wasm
 
-Off by default; build `with=wasm3`. The first argument is a module path and its
+On by default; leave it out with `without=wasm3`. The first argument is a module path and its
 arguments, not program text. What the module's `_start` writes to stdout is the result.
 
 ```Makefile

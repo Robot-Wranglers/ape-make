@@ -109,7 +109,7 @@ wasm.test ?= src/wasm3-0.9.0/test/wasi/simple/test.wasm
 
 builtins:
 	test "$(filter $(engines),$(.FEATURES))" = "$(engines)"
-	test -z "$(filter-out $(engines),$(filter awk jq lua s7 micropy wasm js,$(.FEATURES)))"
+	test -z "$(filter-out $(engines),$(filter awk jq lua s7 micropy wasm js kv,$(.FEATURES)))"
 	test "$(.ENGINES)" = "$(engines)"
 	echo "features: $(filter $(engines),$(.FEATURES))"
 	echo "engines: $(.ENGINES)"

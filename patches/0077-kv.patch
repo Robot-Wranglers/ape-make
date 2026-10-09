@@ -1,0 +1,42 @@
+kv: a second workspace row, shaped like a table rather than a language, so the channel,
+the backings and the import are pinned against the row's contract and not against jq.
+Its state is a text of key=value lines; get takes a key, or the whole program, update
+takes a key and a value, load replaces the text. The guest is guest/kv_main.c, with no
+tarball behind it, opt-in through with=kv.
+
+--- a/src/amk.h
++++ b/src/amk.h
+@@ -146,6 +146,9 @@
+ extern void *jq_open (void);
+ extern int jq_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+ extern int jq_filter (struct amk_sink *out, const char *prog, const char *input);
++extern int kv_main (int argc, char **argv);
++extern void *kv_open (void);
++extern int kv_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+ extern int lua_run_main (int argc, char **argv);
+ extern void *lua_open (void);
+ extern int lua_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+--- a/src/function.c
++++ b/src/function.c
+@@ -2516,6 +2516,9 @@
+ #ifdef AMK_ENGINE_QUICKJS
+     { "js", 0, js_run_main, 0, 0, 0, js_open, js_run, js_hook, 0, "exec import" },
+ #endif
++#ifdef AMK_ENGINE_KV
++    { "kv", "kv", kv_main, 0, 0, 1, kv_open, kv_run, 0, 0, "get update load", "*" },
++#endif
+     { 0, 0, 0, 0, 0, 0 }
+   };
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -2536,6 +2536,9 @@
+ #ifdef AMK_ENGINE_QUICKJS
+     define_variable_cname ("js.__version__", AMK_STR(AMK_ENGINE_QUICKJS), o_default, 0);
+ #endif
++#ifdef AMK_ENGINE_KV
++    define_variable_cname ("kv.__version__", AMK_STR(AMK_ENGINE_KV), o_default, 0);
++#endif
+     define_variable_cname ("amk.__fxns__", "$(amk.fxns? $(.ENGINES))", o_default, 1);
+     define_variable_cname ("amk.__vars__", "$(amk.vars? $(.ENGINES))", o_default, 1);
+     free (all);

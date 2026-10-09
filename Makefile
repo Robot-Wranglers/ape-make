@@ -53,6 +53,9 @@ quickjs.tarball := quickjs-$(quickjs.version).tar.xz
 quickjs.url     := https://bellard.org/quickjs/$(quickjs.tarball)
 quickjs.sha256  := b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a
 
+# kv is amk's own guest, one file under guest/ with no tarball: a workspace row shaped like a table, for the channel's second row.
+kv.version := 1.0
+
 cosmocc.version := 4.0.2
 cosmocc.zip     := cosmocc-$(cosmocc.version).zip
 cosmocc.url     := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
@@ -98,8 +101,8 @@ dkjson.files   := dkjson.lua
 libs.all     := gmsl dkjson
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
-engines.all   := gawk jq lua s7 micropython wasm3 quickjs
-engines.optin := wasm3
+engines.all   := gawk jq lua s7 micropython wasm3 quickjs kv
+engines.optin := kv
 with          ?=
 without       ?=
 ifneq ($(filter-out $(engines.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))),)
@@ -121,6 +124,7 @@ s7.define   := AMK_ENGINE_S7
 micropython.define := AMK_ENGINE_MICROPY
 wasm3.define := AMK_ENGINE_WASM3
 quickjs.define := AMK_ENGINE_QUICKJS
+kv.define := AMK_ENGINE_KV
 gawk.feature := awk
 jq.feature   := jq
 lua.feature  := lua
@@ -128,6 +132,7 @@ s7.feature   := s7
 micropython.feature := micropy
 wasm3.feature := wasm
 quickjs.feature := js
+kv.feature := kv
 # Only the ones that carry a cli answer to a name of their own; the binary holds the others as libraries.
 gawk.alias := awk
 jq.alias   := jq
@@ -201,6 +206,7 @@ wasm3.cflags   := -fno-strict-aliasing -fomit-frame-pointer -fno-stack-check -fn
                   -Dd_m3PreferStaticAlloc -Dd_m3HasTypedRefs=1 -Dd_m3HasWASI
 # quickjs ships a Makefile that only builds its cli, so its rule compiles the engine and its std library by hand, less the programs with a main.
 quickjs.objdirs := .
+kv.objdirs     := .
 quickjs.cflags  := -D_GNU_SOURCE -DCONFIG_VERSION=\"$(quickjs.version)\" -fwrapv
 quickjs.exclude := qjs.c qjsc.c run-test262.c unicode_gen.c
 # cosmocc refuses an argument with a space, and jq passes its package string on the command line.
@@ -213,6 +219,7 @@ s7.objcheck   := *.o
 micropython.objcheck := py/*.o
 wasm3.objcheck := *.o
 quickjs.objcheck := *.o
+kv.objcheck    := *.o
 # Per-guest hooks on the partial link and the guest compile: extra ld flags, compile flags in place of the shared ones, objcopy renames, and objects to leave out as alternatives appended to the conftest filter.
 gawk.ldflags   :=
 jq.ldflags     :=
@@ -221,6 +228,7 @@ s7.ldflags     :=
 micropython.ldflags :=
 wasm3.ldflags  :=
 quickjs.ldflags :=
+kv.ldflags     :=
 gawk.guestflags :=
 jq.guestflags   :=
 lua.guestflags  :=
@@ -228,6 +236,7 @@ s7.guestflags   :=
 micropython.guestflags :=
 wasm3.guestflags :=
 quickjs.guestflags :=
+kv.guestflags  :=
 gawk.objrename :=
 jq.objrename   :=
 lua.objrename  :=
@@ -235,6 +244,7 @@ s7.objrename   :=
 micropython.objrename :=
 wasm3.objrename :=
 quickjs.objrename :=
+kv.objrename   :=
 gawk.objskip   :=
 jq.objskip     :=
 lua.objskip    :=
@@ -242,6 +252,7 @@ s7.objskip     :=
 micropython.objskip :=
 wasm3.objskip  :=
 quickjs.objskip :=
+kv.objskip     :=
 # A file of amk's own compiled beside a configured guest's objects, so the partial link takes it; the compiler is the argument.
 gawk.extra  =
 jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -c $(HERE)guest/jq_main.c -o src/jq_main.o
@@ -250,6 +261,7 @@ s7.extra    =
 micropython.extra =
 wasm3.extra =
 quickjs.extra =
+kv.extra    =
 
 # out/bin and out/bin-native each hold one artifact beside its argv[0] aliases; everything rebuildable stays under build/.
 guests.ape    := build/guests/ape
@@ -550,6 +562,21 @@ build/quickjs-ape/.built: $(quickjs.src) guest/js_main.c guest/amk_guest.h $(cos
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call quickjs.compile,cosmocc)' >build.log 2>&1 \
 	  || $(call die, guest, quickjs did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+
+# kv is the one file, with no main of its own to rename.
+kv.compile = $(1) $(call guest.cflags,kv) -c $(HERE)guest/kv_main.c -o kv_main.o
+build/kv-native/.built: guest/kv_main.c
+	$(call log, guest, compiling kv for the host compiler -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && $(call kv.compile,$${CC:-cc}) >build.log 2>&1 \
+	  || $(call die, guest, kv did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+build/kv-ape/.built: guest/kv_main.c $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling kv for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) sh -c '$(call kv.compile,cosmocc)' >build.log 2>&1 \
+	  || $(call die, guest, kv did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
 # Apple ld -r localizes hidden symbols on its own; the cosmo pair needs objcopy, once per architecture.

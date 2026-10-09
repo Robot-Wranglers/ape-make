@@ -1,5 +1,4 @@
 #!/usr/bin/env -S amk -f
-
 #
 # via/amk/demos/dataflow-1.mk: 
 #  5 imported targets in 5 langs, using incremental computing, 
@@ -13,13 +12,19 @@ goal.dir := build/dataflow-1
 
 $(amk.require awk, lua, s7, micropy, js)
 
-# The input is a file under the value directory, written by the run below; an empty rule names it as a target a reference can resolve.
+# The input is a file under the value directory, written by the run below; 
+# an empty rule names it as a target a reference can resolve.
 $(goal.dir)/numbers.txt: ;
 
-# Each imported target names the values it reads, and that is its dependency list: a diamond, so two of these run at once under -j.
+# Each imported target names the values it reads, 
+# and that is its dependency list: a diamond, 
+#so two of these run at once under -j.
 @awk.import.target
 define sorted
-  BEGIN { n = split("@numbers.txt@", a, " "); asort(a); for (i = 1; i <= n; i++) printf "%s%s", a[i], (i < n ? " " : "\n") }
+  BEGIN { 
+    n = split("@numbers.txt@", a, " "); 
+    asort(a); for (i = 1; i <= n; i++) printf "%s%s", a[i], (i < n ? " " : "\n") 
+  }
 endef
 
 @lua.import.target
@@ -54,7 +59,8 @@ __main__:
 	${amk} check expect="3 numbers, sum 60, median 20"
 	echo "five languages, one dataflow, incremental"
 
-# A recipe is expanded whole before it runs, so a value read after a change belongs in its own target.
+# A recipe is expanded whole before it runs, 
+# so a value read after a change belongs in its own target.
 expect ?=
 check:
 	test "$(goal report)" = "$(expect)"

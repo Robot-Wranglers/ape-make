@@ -18,8 +18,8 @@ make
 Opting in and out:
 
 ```bash
-# the default engines plus $(wasm)
-make amk with=wasm3
+# the default engines plus kv
+make amk with=kv
 
 # no $(s7), and no s7 download
 make amk without=s7

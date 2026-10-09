@@ -1,5 +1,7 @@
 #!/usr/bin/env -S amk -f
 
+$(amk.require lua js s7 micropy)
+
 PORT ?= 18090
 
 include /zip/lib/mip.mk

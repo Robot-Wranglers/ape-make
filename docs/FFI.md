@@ -33,6 +33,24 @@
 
 ### Persistent state
 
+### Workspace rows
+
+A workspace is a namespace whose engine row meets the call channel's contract, so
+recipes reach it through `AMK_CALL`, a backing can keep it in a file, and
+`<engine>.import` can seed it. jq is the one such row in the default build; kv, built
+`with=kv`, is a second one whose value is key=value lines, with `*` as its whole program.
+The contract:
+
+| the row | means |
+| --- | --- |
+| `ops` holds `get`, `update`, `load` | `get prog` prints, `update prog` keeps the first output, `load text` replaces the whole value |
+| `whole` names a program | `get whole` prints the whole value; `dump` on the channel and a backing's write use it |
+| every output is lines | the reply counts lines, so a value is a sequence of lines with no framing of its own |
+| `filter`, when present | the stateless run behind `filter` on the channel; a build whose workspace rows have none answers status 2 |
+
+A request names its workspace, and the row that answers is the namespace's owner, or the
+first workspace row when the name is new.
+
 ### jq workspaces
 
 | call | runs | stores | returns |
@@ -107,6 +125,7 @@ swapped := $(lua print(amk.call("subst", ",", ";", "a,b")))
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [awk](../README.md#awk-jq) | yes | yes | yes | - | - | - | - | - | - | - |
 | [jq](../README.md#awk-jq) | yes | yes | yes | workspace | yes | - | - | - | - | workspace |
+| kv | yes | yes | yes | workspace | - | - | - | - | - | workspace |
 | [lua](../README.md#lua) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [s7](../README.md#s7) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [micropy](../README.md#micropy) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
@@ -202,8 +221,9 @@ methods := $(amk.fxns? lua js)
 | form | direction | engines | patch |
 | --- | --- | --- | --- |
 | `AMK_MAIL` | job to parent | any | [0024] |
-| `AMK_CALL`, `AMK_REPLY`, `amk.call`, `amk.words`, `jq.pipe` | recipe to make | jq workspaces | [0047] |
-| a pair per recipe child; a served request forwards up its caller's pair | recipe to make | jq workspaces | [0062], [0065] |
+| `AMK_CALL`, `AMK_REPLY`, `amk.call`, `amk.words`, `jq.pipe` | recipe to make | workspace rows | [0047], [0076] |
+| `amk.ns op name [options] -- program`: one workspace operation as a request, a bound value quoted for the line | recipe to make | workspace rows | [0076] |
+| a pair per recipe child; a served request forwards up its caller's pair | recipe to make | workspace rows | [0062], [0065] |
 | `halt` on the call channel: no more recipe lines or goals, status 112, taken up by a parent make | recipe to make | any | [0064] |
 | `AMK_<ENGINE_NAME>_INIT`, `__init__.<engine_name>` | make to guest | jq, lua, s7, micropy, js | [0022] |
 | `__init__.mk`, `AMK_NO_PRELUDE` | make | any | [0034] |
@@ -265,3 +285,4 @@ methods := $(amk.fxns? lua js)
 [0068]: ../patches/0068-api-sys.patch
 [0069]: ../patches/0069-api-match.patch
 [0073]: ../patches/0073-jq-import.patch
+[0076]: ../patches/0076-workspace-row.patch
