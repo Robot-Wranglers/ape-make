@@ -25,11 +25,11 @@ def run(*args):
 def test_a_run_fills_the_block_and_writes_both_themes(repo):
   assert run("README.md") == 0
   text = (repo / "README.md").read_text()
-  assert text.startswith("# Title\n\nIntro.\n\n" + OPEN + "\n<p align=\"right\"><a id=\"engine-api\"></a>")
-  assert text.endswith(CLOSE + "\n\nBody.\n")
-  assert '<a href="docs/FFI.md#init">' in text and 'alt="Engine API"' in text
+  assert text.startswith("# Title\n\nIntro.\n\n" + OPEN + "\n<h2>Engine API<a href=")
+  assert text.endswith('<br clear="all"></h2>\n' + CLOSE + "\n\nBody.\n")
+  assert '<a href="docs/FFI.md#init">' in text and 'alt="FFI"' in text
   names = sorted(p.name for p in (repo / "img").iterdir())
-  assert names == sorted(["_rule.svg", "_rule.dark.svg", "readme.engine-api.title.svg", "readme.engine-api.title.dark.svg",
+  assert names == sorted(["_rule.svg", "_rule.dark.svg",
                           "readme.engine-api.0.svg", "readme.engine-api.0.dark.svg",
                           "readme.engine-api.1.svg", "readme.engine-api.1.dark.svg"])
 
@@ -76,8 +76,8 @@ def test_a_nested_page_points_at_the_images_relative_to_itself(repo):
   (repo / "docs" / "FFI.md").write_text(PAGE)
   run("README.md", "docs/FFI.md")
   text = (repo / "docs" / "FFI.md").read_text()
-  assert 'src="../img/docs-ffi.engine-api.title.svg"' in text
-  assert (repo / "img" / "docs-ffi.engine-api.title.svg").is_file()
+  assert 'src="../img/docs-ffi.engine-api.0.svg"' in text
+  assert (repo / "img" / "docs-ffi.engine-api.0.svg").is_file()
 
 
 def test_a_removed_header_prunes_only_its_own_signed_images(repo):
@@ -89,15 +89,15 @@ def test_a_removed_header_prunes_only_its_own_signed_images(repo):
   names = {p.name for p in (repo / "img").iterdir()}
   assert not any(n.startswith("readme.engine-api") for n in names)
   assert "readme.handmade.svg" in names
-  assert "other.engine-api.title.svg" in names
+  assert "other.engine-api.0.svg" in names
 
 
 cases = {
   "never closed": (f"{OPEN}\n", "README.md:1: header 'engine-api' is never closed"),
   "opened twice": (f"{OPEN}\n{OPEN}\n{CLOSE}\n", "README.md:2: header opened while 'engine-api' from line 1 is still open"),
   "stray close": (f"text\n{CLOSE}\n", "README.md:2: closing marker with no open header"),
-  "no title": ("<!-- header engine-api -->\n<!-- /header -->\n", "README.md:1: expected <!-- header ID"),
-  "bad id": ('<!-- header Engine_API "Engine API" -->\n<!-- /header -->\n', "README.md:1: expected <!-- header ID"),
+  "no title": ("<!-- header engine-api -->\n<!-- /header -->\n", "README.md:1: expected <!-- header [##] ID"),
+  "bad id": ('<!-- header Engine_API "Engine API" -->\n<!-- /header -->\n', "README.md:1: expected <!-- header [##] ID"),
   "link with no target": ('<!-- header a "A" | Lonely -->\n<!-- /header -->\n', "README.md:1: link 'Lonely' needs a label and a target"),
   "duplicate id": (f"{OPEN}\n{CLOSE}\n\n{OPEN}\n{CLOSE}\n", "README.md:4: header 'engine-api' is already declared at line 1"),
 }
@@ -121,7 +121,32 @@ def test_a_missing_page_is_an_error(repo, capsys):
 def test_a_header_with_no_links_is_just_a_title(repo):
   (repo / "README.md").write_text('<!-- header solo "Solo" -->\n<!-- /header -->\n')
   assert run("README.md") == 0
-  assert (repo / "README.md").read_text().count("<picture>") == 2
+  assert '<h2>Solo<br clear="all"></h2>' in (repo / "README.md").read_text()
+
+
+def test_the_title_is_heading_text_and_buttons_float_right_in_reverse(repo):
+  run("README.md")
+  text = (repo / "README.md").read_text()
+  assert text.index('href="docs/FFI.md#init"') < text.index('href="#engine-literals"')
+  assert text.count(" align=right ") == 2
+
+
+def test_hashes_set_the_level_and_only_level_three_and_deeper_get_the_rule(repo):
+  (repo / "README.md").write_text('<!-- header # top "Top" -->\n<!-- /header -->\n\n'
+                                  '<!-- header ### deep "Deep" -->\n<!-- /header -->\n')
+  run("README.md")
+  text = (repo / "README.md").read_text()
+  assert '<h1>Top<br clear="all"></h1>' in text
+  assert '<h3>Deep<br clear="all"><picture>' in text and "_rule.svg" in text
+
+
+def test_the_anchor_is_kept_only_when_github_slugs_the_title_elsewhere(repo):
+  (repo / "README.md").write_text('<!-- header api "Engine API" -->\n<!-- /header -->\n')
+  run("README.md")
+  assert '<h2><a id="api"></a>Engine API' in (repo / "README.md").read_text()
+  (repo / "README.md").write_text(PAGE)
+  run("README.md")
+  assert "<a id=" not in (repo / "README.md").read_text()
 
 
 def test_warnings_name_the_line(repo, capsys):

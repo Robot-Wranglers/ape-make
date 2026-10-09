@@ -18,8 +18,13 @@ from pathlib import Path
 EPILOG = """\
 A header is one comment line that declares it and one that closes it:
 
-  <!-- header engine-api "Engine API" | Literals #engine-literals | Grammar #extended-grammar -->
+  <!-- header ### engine-api "Engine API" | Literals #engine-literals | Grammar #extended-grammar -->
   <!-- /header -->
+
+The leading hashes set the heading level as in markdown, and default to ## when left out.
+The title is the heading's text, so it shows in GitHub's outline; the links are buttons
+on the right of the same line, and levels 3 and below get a rule underneath, where GitHub
+draws none of its own.
 
 The id is lowercase letters, digits, and dashes, and becomes the anchor. Each link is a
 label and a target separated by its last space, and a header may have none. Everything
@@ -43,11 +48,11 @@ ROW = 40
 EM = {**dict.fromkeys("iljtf.,:;!|' ", 0.3), **dict.fromkeys("mwMW", 0.85)}
 
 OPEN = re.compile(r"<!--\s*header(?:\s+(?P<spec>.*?))?\s*-->$")
-SPEC = re.compile(r'(?P<id>[a-z0-9][a-z0-9-]*)\s+"(?P<title>[^"]+)"\s*(?P<links>\|.*)?$')
+SPEC = re.compile(r'(?:(?P<level>#{1,6})\s+)?(?P<id>[a-z0-9][a-z0-9-]*)\s+"(?P<title>[^"]+)"\s*(?P<links>\|.*)?$')
 CLOSE = re.compile(r"<!--\s*/header\s*-->$")
 FENCE = re.compile(r"^ {0,3}(?P<mark>`{3,}|~{3,})(?P<info>.*)$")
 HEADING = re.compile(r"^ {0,3}#{1,6}\s+(?P<text>.+?)\s*#*\s*$")
-SYNTAX = 'expected <!-- header ID "Title" | Label target ... -->'
+SYNTAX = 'expected <!-- header [##] ID "Title" | Label target ... -->'
 
 
 class SpecError(Exception):
@@ -59,6 +64,7 @@ class Header:
   id: str
   title: str
   links: list[tuple[str, str]]
+  level: int
   open: int
   close: int = -1
 
@@ -82,13 +88,6 @@ def svg(w, h, body, stretch=False):
   ratio = ' preserveAspectRatio="none"' if stretch else ""
   return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h}" viewBox="0 0 {w:.0f} {h}"{ratio}>'
           f'{SIGNATURE}{body}</svg>\n')
-
-
-def title_svg(text, t):
-  # Natural spacing with room to spare: the width estimate is rough and empty space on the right is invisible.
-  size = 24
-  return svg(text_width(text, size) * 1.15, ROW,
-             f'<text x="0" y="29" font-family="{FONT}" font-size="{size}" font-weight="600" fill="{t["fg"]}">{escape(text)}</text>')
 
 
 def button_svg(text, t):
@@ -132,7 +131,7 @@ def parse_spec(spec, where):
     if not label.strip() or not target:
       raise SpecError(f"{where}: link {part.strip()!r} needs a label and a target")
     links.append((label.strip(), target))
-  return m["id"], m["title"].strip(), links
+  return m["id"], m["title"].strip(), links, len(m["level"] or "##")
 
 
 def parse(path, root):
@@ -202,19 +201,20 @@ def picture(src, alt, attrs=""):
 
 
 def render(page, h, img):
-  # Inline buttons in a right-aligned paragraph wrap in reading order, where right floats would stack reversed.
+  # Right floats stack in reverse, so the buttons go in last first to read left to right.
   src = lambda name: Path(os.path.relpath(img / name, page.path.parent)).as_posix()
   base = f"{page.slug}.{h.id}"
-  title = f'<a href="#{h.id}">{picture(src(f"{base}.title.svg"), h.title, " align=left")}</a>'
-  buttons = "".join(f'<a href="{escape(target)}">{picture(src(f"{base}.{i}.svg"), label)}</a>'
-                    for i, (label, target) in enumerate(h.links))
-  rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1")
-  return [f'<p align="right"><a id="{h.id}"></a>{title}{buttons}<br clear="all">{rule}</p>']
+  anchor = "" if github_slug(h.title) == h.id else f'<a id="{h.id}"></a>'
+  buttons = "".join(f'<a href="{escape(target)}">{picture(src(f"{base}.{i}.svg"), label, " align=right")}</a>'
+                    for i, (label, target) in reversed(list(enumerate(h.links))))
+  rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1") if h.level > 2 else ""
+  tag = f"h{h.level}"
+  return [f'<{tag}>{anchor}{escape(h.title)}{buttons}<br clear="all">{rule}</{tag}>']
 
 
 def images(page, h):
   base = f"{page.slug}.{h.id}"
-  out = themed(f"{base}.title", lambda t: title_svg(h.title, t))
+  out = {}
   for i, (label, _) in enumerate(h.links):
     out |= themed(f"{base}.{i}", lambda t, label=label: button_svg(label, t))
   return out
