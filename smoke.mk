@@ -103,13 +103,13 @@ libs:
 	echo "libs: $(or $(libs),none)"
 
 # The build passes the engines it selected; each one must be present and each one left out absent.
-engines ?= awk jq lua s7 micropy js
+engines ?= awk jq lua s7 micropy wasm js sqlite
 # A wasi module from the wasm3 tree: it prints a fixed greeting, then its argv.
 wasm.test ?= src/wasm3-0.9.0/test/wasi/simple/test.wasm
 
 builtins:
 	test "$(filter $(engines),$(.FEATURES))" = "$(engines)"
-	test -z "$(filter-out $(engines),$(filter awk jq lua s7 micropy wasm js kv,$(.FEATURES)))"
+	test -z "$(filter-out $(engines),$(filter awk jq lua s7 micropy wasm js sqlite,$(.FEATURES)))"
 	test "$(.ENGINES)" = "$(engines)"
 	echo "features: $(filter $(engines),$(.FEATURES))"
 	echo "engines: $(.ENGINES)"

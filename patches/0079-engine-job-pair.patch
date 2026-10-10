@@ -1,0 +1,33 @@
+Engine job pair: an imported target's job is a fork of make, and it now gets the call
+pair a recipe child gets, dispatched in the fork, so a workspace call from the engine
+goes up to the owner instead of into the fork's own copy of the namespace; the parent
+serves the pair while it waits, as for any child.
+
+--- a/src/job.c
++++ b/src/job.c
+@@ -1189,6 +1189,12 @@
+     EINTRLOOP (r, dup2 (child->output.out, FD_STDOUT));
+   environ = child->environment;
+   amk_fork_settle ();
++  /* The job's own pair, so a workspace call from the engine goes up to the owner rather than into this fork's copy.  */
++  {
++    int creq, crep, creq_at, crep_at;
++    if (amk_call_child_fds (&creq, &crep, &creq_at, &crep_at))
++      amk_call_dispatch (creq, crep);
++  }
+
+   if (file->amk_value != NULL && !streq (file->amk_value, file->name))
+     _exit ((program = amk_goal_value (file->amk_value)) == NULL || puts (program) < 0 || fflush (stdout) != 0);
+@@ -1554,7 +1560,11 @@
+       jobserver_pre_child (ANY_SET (flags, COMMANDS_RECURSE));
+
+       if (child->file->amk_engine)
+-        child->pid = amk_engine_job (child);
++        {
++          amk_call_child_pending ();
++          child->pid = amk_engine_job (child);
++          amk_call_child_spawned (child);
++        }
+       else
+         {
+           amk_call_child_pending ();

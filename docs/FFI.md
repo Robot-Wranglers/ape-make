@@ -37,9 +37,10 @@
 
 A workspace is a namespace whose engine row meets the call channel's contract, so
 recipes reach it through `AMK_CALL`, a backing can keep it in a file, and
-`<engine>.import` can seed it. jq is the one such row in the default build; kv, built
-`with=kv`, is a second one whose value is key=value lines, with `*` as its whole program.
-The contract:
+`<engine>.import` can seed it. jq is one such row; sqlite is the other, and its value is
+an in-memory database: a program is one or
+more statements, every row comes back as a JSON object on a line, and `.dump` is its whole
+program, a dump of schema and rows that `load` replays. The contract:
 
 | the row | means |
 | --- | --- |
@@ -125,7 +126,7 @@ swapped := $(lua print(amk.call("subst", ",", ";", "a,b")))
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [awk](../README.md#awk-jq) | yes | yes | yes | - | - | - | - | - | - | - |
 | [jq](../README.md#awk-jq) | yes | yes | yes | workspace | yes | - | - | - | - | workspace |
-| kv | yes | yes | yes | workspace | - | - | - | - | - | workspace |
+| sqlite | yes | yes | yes | workspace | - | - | - | - | - | workspace |
 | [lua](../README.md#lua) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [s7](../README.md#s7) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |
 | [micropy](../README.md#micropy) | yes | - | yes | yes | yes | yes | yes | yes | yes | yes |

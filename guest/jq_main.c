@@ -7,12 +7,7 @@
 
 #include "jq.h"
 #include "jv.h"
-
-/* make's sink, where a run's result goes: one write function, and make decides where the bytes land. */
-struct amk_sink
-{
-  void (*write) (struct amk_sink *, const char *, size_t);
-};
+#include "amk_guest.h"
 
 /* Compiled programs, keyed by the bound names and the program text. */
 struct jq_prog
@@ -34,48 +29,8 @@ jq_emit (struct amk_sink *out, const char *s, size_t n)
   out->write (out, s, n);
 }
 
-/* One word off the line as a shell would read it, quotes honored; the word is written into buf and p moves past it. */
-static int
-jq_word (const char **p, char *buf, size_t size)
-{
-  const char *s = *p;
-  size_t n = 0;
-  char quote = 0;
-  while (*s == ' ' || *s == '\t')
-    ++s;
-  if (*s == '\0')
-    {
-      *p = s;
-      return 0;
-    }
-  while (*s && (quote || (*s != ' ' && *s != '\t')))
-    {
-      if (!quote && (*s == '\'' || *s == '"'))
-        quote = *s++;
-      else if (*s == quote)
-        {
-          quote = 0;
-          ++s;
-        }
-      else if (quote == '"' && *s == '\\' && s[1] == 'n')
-        {
-          if (n + 1 < size)
-            buf[n++] = '\n';
-          s += 2;
-        }
-      else
-        {
-          if (*s == '\\' && s[1] && (!quote || (quote == '"' && (s[1] == '"' || s[1] == '\\'))))
-            ++s;
-          if (n + 1 < size)
-            buf[n++] = *s;
-          ++s;
-        }
-    }
-  buf[n] = '\0';
-  *p = s;
-  return 1;
-}
+/* The request line's word reader is the shared one, since the option words are the channel's grammar and not jq's. */
+#define jq_word amk_word
 
 /* The program compiled once per distinct text and set of bound names: the bindings ride in on the input beside the value, so a new value for a name is never a recompile. */
 static jq_state *

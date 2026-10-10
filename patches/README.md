@@ -79,7 +79,8 @@ patch that adds that guest.
 | `0074-target-flags.patch` | `$(<name>.import.target target,program,flags)`, `$(<name>.import.target* var,flags)` and `@<name>.import.target flags`: the engine's flags ahead of the program; jq no longer gets `-n` implicitly, so a jq target filters its standard input unless it says `--null-input` |
 | `0075-workspace-messages.patch` | the errors from a jq namespace's backing, owner and the call channel say workspace, as the docs do; the names in the code are unchanged |
 | `0076-workspace-row.patch` | a workspace row: any engine row with `run` and a `whole` program serves the call channel, the file backings and `<name>.import`; the channel picks the namespace's owner, else the first workspace row; `dump` and a backing write with the row's whole program; the store names in the code become workspace |
-| `0077-kv.patch` | `$(kv)`, opt-in with `with=kv`: a workspace row whose value is key=value lines, `get key`, `update key value`, `load text`, with `*` as its whole program; the guest is `guest/kv_main.c` with no tarball, and it pins the channel, the backings and the import against the row's contract |
+| `0078-sqlite.patch` | `$(sqlite)`: a workspace row whose state is an in-memory database; `get` and `update` run statements and print each row as a JSON object on a line, `load` replays a text of statements, and `.dump` is the whole program; the guest is `guest/sqlite_main.c` over the amalgamation, and the `sqlite3` name runs statements from its arguments and stdin |
+| `0079-engine-job-pair.patch` | an imported target's fork gets the call pair a recipe child gets and dispatches onto it, so a workspace call from the engine reaches the owner instead of the fork's copy |
 
 An `api` patch shapes what a guest sees of make: an entry on the engine row, an event, or a
 call into make. The series before it fits make to guests; an api patch fits guests to make,

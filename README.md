@@ -287,9 +287,7 @@ Special guests are the embedded engines that are linked into `amk` directly.
 | [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | 0.8 MB | on |
 | [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | 2.0 MB | on |
 | [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | on |
-| kv | 1.0 | `guest/kv_main.c` | - | off |
-
-kv is a workspace of key=value lines with no library behind it, built `with=kv`: `$(kv.ns K, create)`, then `$(K.update color red)`, `$(K.get color)`, and `$(K.load text)`; a recipe reaches it over the call channel like a jq workspace. See the [workspace rows](docs/FFI.md#workspace-rows) in the FFI documentation.
+| [sqlite](#sqlite) | 3.53.4 | [sqlite.org](https://sqlite.org/download.html) | 1.0 MB | on |
 
 Besides the choice of guest, two other concepts that relate to the engine API are **Interface Style** and **Access Mode**.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 
@@ -534,8 +532,8 @@ amk hi
 # HELLO!
 ```
 
-<!-- header ### misc-examples "Misc Examples" | awk and jq #awk-jq | lua #lua | s7 #s7 | micropy #micropy | js #js | wasm #wasm -->
-<h3>Misc Examples<a href="#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.5.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.5.svg" alt="wasm"></picture></a><a href="#js"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.4.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.4.svg" alt="js"></picture></a><a href="#micropy"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.3.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.3.svg" alt="micropy"></picture></a><a href="#s7"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.2.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.2.svg" alt="s7"></picture></a><a href="#lua"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.1.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.1.svg" alt="lua"></picture></a><a href="#awk-jq"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.0.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.0.svg" alt="awk and jq"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h3>
+<!-- header ### misc-examples "Misc Examples" | awk and jq #awk-jq | lua #lua | s7 #s7 | micropy #micropy | js #js | wasm #wasm | sqlite #sqlite -->
+<h3>Misc Examples<a href="#sqlite"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.6.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.6.svg" alt="sqlite"></picture></a><a href="#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.5.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.5.svg" alt="wasm"></picture></a><a href="#js"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.4.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.4.svg" alt="js"></picture></a><a href="#micropy"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.3.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.3.svg" alt="micropy"></picture></a><a href="#s7"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.2.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.2.svg" alt="s7"></picture></a><a href="#lua"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.1.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.1.svg" alt="lua"></picture></a><a href="#awk-jq"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.misc-examples.0.dark.svg"><img align=right src="docs/img/hdr/readme.misc-examples.0.svg" alt="awk and jq"></picture></a><br clear="all"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/_rule.dark.svg"><img width=2000 height=1 src="docs/img/hdr/_rule.svg" alt=""></picture></h3>
 <!-- /header -->
 
 <a id="awk-jq"></a>
@@ -655,16 +653,16 @@ newest := $(js ${js.newest},$(pkgs))
 <a id="wasm"></a>
 #### wasm
 
-On by default; leave it out with `without=wasm3`. The first argument is a module path and its
+WASM is a misfit from the otther engines -- the first argument is a module path and its
 arguments, not program text. What the module's `_start` writes to stdout is the result.
 
 ```Makefile
+# an exported function by name; its return value is the result, as a Result: line
+$(wasm.argv --func fib,src/wasm3-0.9.0/test/lang/fib32.wasm 20)
+
 # a WASI module with an argument
 module := src/wasm3-0.9.0/test/wasi/simple/test.wasm
 echoed := $(findstring Args: test.wasm; hello;,$(wasm ${module} hello))
-
-# an exported function by name; its return value is the result, as a Result: line
-$(wasm.argv --func fib,src/wasm3-0.9.0/test/lang/fib32.wasm 20)
 ```
 
 The wasm3 command line, repl included, is `amk --wasm`:
@@ -693,6 +691,34 @@ endef
 fibs := $(subst Result: ,,$(wasm.argv --repl,,$(session)))
 ```
 
+<a id="sqlite"></a>
+#### sqlite
+
+An in-memory database held by the make process, with JSON functions and recursive CTEs.
+A program is one or more statements; each result row comes back as a JSON object on a line.
+`@sqlite.import` loads a define as the schema, and `--arg name value` binds `:name` as text,
+which a typed column converts.
+
+```Makefile
+@sqlite.import
+define edges
+  CREATE TABLE e(a INTEGER, b INTEGER);
+  INSERT INTO e VALUES(1,2),(2,3),(3,1);
+endef
+
+# a recursive walk of the cycle: {"seen":[1,2,3]}
+seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WHERE a = x) SELECT json_group_array(x) AS seen FROM r)
+
+# a bound value never becomes SQL text: {"n":2}
+$(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
+n := $(edges.get --arg a 3 SELECT count(*) AS n FROM e WHERE a = :a)
+```
+
+A recipe reaches the same database over the call channel, so shell stages and engine
+stages share one store. [demos/tuple-space.mk](demos/tuple-space.mk) builds a Linda tuple
+space on it, with workers in four languages under `-j4`. The `sqlite3` command line is
+`amk --sqlite`, one in-memory database for its arguments and then stdin.
+
 ### Further Reading
 
 The [FFI docs](docs/FFI.md) cover the rest of the bridge:
@@ -700,8 +726,9 @@ The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 | topic | what it gives |
 | --- | --- |
 | [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
+| [Workspace rows](docs/FFI.md#workspace-rows) | jq values and sqlite databases held by the make process, the contract a row meets |
 | [jq workspaces](docs/FFI.md#jq-workspaces) | named JSON values, updated in the make process with no fork |
-| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | jq workspaces from a running recipe's shell |
+| [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | workspaces from a running recipe's shell |
 | [Init](docs/FFI.md#init) | a chunk run in each persistent state before the parse |
 | [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
 | [The guest handle](docs/FFI.md#the-guest-handle) | variable reads and writes, expansion, and eval from a guest |
