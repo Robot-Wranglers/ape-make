@@ -4,17 +4,6 @@ parent drains the read end while it waits and hands the text over once, through
 amk_mail_take, when the job is collected. A job's word to the loop that spawned it is a
 write to a descriptor, not a file in a run directory.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -31,6 +31,8 @@
- int amk_foreground (pid_t pid);
- void amk_signal_spawned (int sig);
- void amk_reap_foreign (pid_t pid, int code, int sig);
-+int amk_mail_take (pid_t pid, char **buf, size_t *len);
-+int amk_mail_send (const char *s, size_t n);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- void amk_engine_init (void);
 --- a/src/main.c
 +++ b/src/main.c
 @@ -25,6 +25,7 @@

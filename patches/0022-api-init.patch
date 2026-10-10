@@ -5,16 +5,6 @@ a named path that cannot be read says so. Output goes to stderr. A zygote runs i
 and every request inherits the result, and a hook the chunk registers is in place for the
 first goals event, so a distribution's guest-side code is loaded where the parse lives.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -33,6 +33,7 @@
- void amk_reap_foreign (pid_t pid, int code, int sig);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
-+void amk_engine_init (void);
- 
- /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
- struct amk_engine
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2542,6 +2542,71 @@

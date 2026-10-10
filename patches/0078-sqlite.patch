@@ -5,18 +5,6 @@ rows that load replays. The guest is guest/sqlite_main.c over the amalgamation, 
 sqlite3 name is sqlite's own shell; the row passes -- ahead of a program, so a target or
 a builtin runs it against an in-memory database unless its flags name one.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -146,6 +146,9 @@
- extern void *jq_open (void);
- extern int jq_run (void *state, struct amk_sink *out, const char *op, const char *prog);
- extern int jq_filter (struct amk_sink *out, const char *prog, const char *input);
-+extern int sqlite_main (int argc, char **argv);
-+extern void *sqlite_open (void);
-+extern int sqlite_run (void *state, struct amk_sink *out, const char *op, const char *prog);
- extern int lua_run_main (int argc, char **argv);
- extern void *lua_open (void);
- extern int lua_run (void *state, struct amk_sink *out, const char *op, const char *prog);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2516,6 +2516,9 @@

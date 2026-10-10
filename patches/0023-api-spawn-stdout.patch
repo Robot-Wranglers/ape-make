@@ -3,17 +3,6 @@ parent's stream, so a caller can read what a goal printed once the job is collec
 path is opened in the child before its goals run; a path that cannot be opened is
 reported there and the job keeps the parent's stream. Lua exposes it as opts.stdout.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -25,7 +25,7 @@
- 
- extern const char *const amk_event_names[];
- /* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
--pid_t amk_spawn_goals (int n, char **words, int foreground);
-+pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
- int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
- int amk_kill_child (pid_t pid, int sig);
- int amk_foreground (pid_t pid);
 --- a/src/main.c
 +++ b/src/main.c
 @@ -5479,7 +5479,7 @@

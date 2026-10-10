@@ -12,15 +12,6 @@ chunk runs with the async flag so it may await at top level. QuickJS ships a Mak
 that only builds its programs, so its guest rule compiles the sources directly instead
 of running one.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -23,5 +23,6 @@
- extern int s7_run_main (int argc, char **argv);
- extern int micropy_run_main (int argc, char **argv);
- extern int wasm3_main (int argc, char **argv);
-+extern int js_run_main (int argc, char **argv);
- 
- #endif
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2511,6 +2511,9 @@

@@ -8,32 +8,6 @@ routed to, func_guest forks and runs a guest over its input, and amk_split_argv 
 an option list the way a shell would. main.c reads the rows into .FEATURES and .ENGINES.
 A row sits behind its engine define; everything else is always compiled.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -0,0 +1,23 @@
-+/* The engine table: one row per linked-in guest, and the one place that says which exist.  */
-+
-+#ifndef AMK_H
-+#define AMK_H
-+
-+struct amk_engine
-+  {
-+    const char *name;
-+    const char *aliases;
-+    int (*main) (int, char **);
-+    unsigned int dashdash:1;
-+    unsigned int cmdline:1;
-+    unsigned int argv:1;
-+  };
-+
-+extern const struct amk_engine amk_engines[];
-+const struct amk_engine *amk_engine_by_name (const char *name);
-+int amk_engine_called (const struct amk_engine *e, const char *word);
-+
-+extern int gawk_main (int argc, char **argv);
-+extern int jq_main (int argc, char **argv);
-+
-+#endif
 --- a/src/function.c
 +++ b/src/function.c
 @@ -22,6 +22,7 @@

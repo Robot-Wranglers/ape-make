@@ -7,55 +7,6 @@ applying whole records as they arrive, and a printed goal's value comes up the j
 The tagged reply FIFOs, their directory under TMPDIR, the temp file queues, and amk_mkfifo
 are gone: nothing amk makes under TMPDIR but the serve socket.
 
-diff --git a/src/amk.h b/src/amk.h
-index 76f3b04..f0ec822 100644
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -5,6 +5,7 @@
- 
- #include <stdio.h>
- #include <sys/types.h>
-+#include <sys/select.h>
- 
- /* The payload member make reads before any makefile.  */
- #define AMK_PRELUDE_MK "/zip/__init__.mk"
-@@ -29,6 +30,7 @@ struct amk_event_info
- extern const char *const amk_event_names[];
- /* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
- pid_t amk_spawn_goals (int n, char **words, int foreground, const char *stdout_path);
-+void amk_spawn_stdout_to_mail (void);
- int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
- int amk_kill_child (pid_t pid, int sig);
- int amk_foreground (pid_t pid);
-@@ -45,7 +47,7 @@ int amk_function_exists (const char *name);
- void amk_var_set (const char *name, const char *value);
- void amk_eval (const char *text);
- extern int amk_queue_fd;
--void amk_queue_apply (FILE *queue);
-+char *amk_collect (int *out, size_t *outlen, int *q, int *in, const char *feed, size_t feedlen);
- char *amk_func_goal (char *o, char **argv, const char *funcname);
- char *amk_func_require (char *o, char **argv, const char *funcname);
- char *amk_func_dedent (char *o, char **argv, const char *funcname);
-@@ -69,10 +71,18 @@ void amk_default_goal_settle (void);
- 
- /* The call channel: recipes and jobs ask the store engine's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a store. */
- #define AMK_STORE_ENGINE "jq"
-+struct amk_chan { int req; int rep; char *buf; size_t len; };
- void amk_call_init (void);
- void amk_call_dispatch (void);
--void amk_call_cleanup (void);
- void amk_call_wait (int ms);
-+/* Any other wait that blocks while children run adds the channel descriptors to its set and serves the ready ones after. */
-+int amk_call_fdset (fd_set *rd);
-+void amk_call_ready (fd_set *rd);
-+/* A recipe child's own pair: made before the spawn, its ends dup'd onto the named descriptors in the child, this side served while make waits, and dropped with the child. */
-+void amk_call_child_pending (void);
-+int amk_call_child_fds (int *req, int *rep, int *req_at, int *rep_at);
-+void amk_call_child_spawned (struct child *child);
-+void amk_call_child_drop (struct child *child);
- pid_t amk_wait_any (int *status);
- int amk_call_forwarding (void);
- 
 diff --git a/src/function.c b/src/function.c
 index 72d4918..22fc787 100644
 --- a/src/function.c

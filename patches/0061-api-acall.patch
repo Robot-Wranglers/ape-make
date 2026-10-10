@@ -6,18 +6,6 @@ The child is a spawned job to the reaper and the sweep, through the slot setup t
 api now shares, and it closes every socket it inherited, so a server's connection closes
 with its reply rather than with the call.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -36,6 +36,9 @@
- void amk_reap_foreign (pid_t pid, int code, int sig);
- int amk_mail_take (pid_t pid, char **buf, size_t *len);
- int amk_mail_send (const char *s, size_t n);
-+pid_t amk_call_begin (const char *name, unsigned int argc, const char **args, int *fd);
-+int amk_call_end (pid_t pid, char **text, const char **err);
-+char *amk_call (const char *name, unsigned int argc, const char **args, const char **err);
- char *amk_var_get (const char *name);
- int amk_has_db (void);
- int amk_function_exists (const char *name);
 --- a/src/main.c
 +++ b/src/main.c
 @@ -6278,8 +6278,9 @@

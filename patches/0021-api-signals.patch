@@ -11,24 +11,6 @@ make's own reaping: the kernel stops the reader's whole group, the job leader wi
 option on amk.spawn, the stopped status from amk.wait, amk.kill over the group, and
 amk.foreground.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -24,9 +24,12 @@
-   };
- 
- extern const char *const amk_event_names[];
--/* The spawn api: a goal list run in a fork of this parsed image, the wait that collects it, and the parking make's own reaping hands a spawned pid to. */
--pid_t amk_spawn_goals (int n, char **words);
--int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig);
-+/* The spawn api: a goal list run in a fork of this parsed image as its own process group, the wait that collects it, the signal and terminal verbs over it, and the parking make's own reaping hands a spawned pid to. */
-+pid_t amk_spawn_goals (int n, char **words, int foreground);
-+int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig, int *stopped);
-+int amk_kill_child (pid_t pid, int sig);
-+int amk_foreground (pid_t pid);
-+void amk_signal_spawned (int sig);
- void amk_reap_foreign (pid_t pid, int code, int sig);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
 --- a/src/commands.c
 +++ b/src/commands.c
 @@ -21,6 +21,7 @@

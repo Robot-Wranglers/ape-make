@@ -9,15 +9,6 @@ That entry point also hands the chunk a string port over its input instead of s7
 stdin, whose read-line keeps the newline, answers an empty string at end of file, and
 splits any line past 1023 bytes.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -20,5 +20,6 @@
- extern int gawk_main (int argc, char **argv);
- extern int jq_main (int argc, char **argv);
- extern int lua_run_main (int argc, char **argv);
-+extern int s7_run_main (int argc, char **argv);
- 
- #endif
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2502,6 +2502,9 @@

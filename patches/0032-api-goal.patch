@@ -7,17 +7,6 @@ prerequisite on x's value file, so referencing a value declares the edge and the
 target reruns only when a value it reads is newer. A plain file target's value is the file
 itself, copied into the value directory by a pattern rule the first define enters.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -40,6 +40,8 @@
- void amk_eval (const char *text);
- extern int amk_queue_fd;
- void amk_queue_apply (FILE *queue);
-+char *amk_func_goal (char *o, char **argv, const char *funcname);
-+char *amk_cell_text (const char *name, const char *engine, const char *body);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- void amk_engine_init (void);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2906,4 +2906,5 @@

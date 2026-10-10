@@ -6,22 +6,6 @@ the engine's command line. jq no longer gets -n behind the user's back: a jq tar
 its standard input as any jq does, and one that generates its value without input says
 --null-input. The star form dereferences only the variable, so the flags pass as written.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -62,11 +62,11 @@
- int amk_profile_enter (struct amk_prof_frame *f);
- void amk_profile_leave (struct amk_prof_frame *f, const char *kind, const char *name);
- void amk_profile_report (void);
--void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
-+void amk_import_target (const char *name, const char *engine, const char *body, const char *flags, const floc *flocp);
- struct child;
- struct amk_engine;
- void amk_fork_settle (void);
--void amk_engine_program (const struct amk_engine *e, const char *program);
-+void amk_engine_program (const struct amk_engine *e, const char *flags, const char *program);
- char *amk_func_stdin (char *o, char **argv, const char *funcname);
- char *amk_func_sys (char *o, char **argv, const char *funcname);
- void amk_stdin_pending (struct child *child);
 --- a/src/file.c
 +++ b/src/file.c
 @@ -1438,6 +1438,7 @@

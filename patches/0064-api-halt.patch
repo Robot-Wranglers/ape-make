@@ -5,19 +5,6 @@ whose recursive child leaves with 112 halts the same way, silently. The status i
 halt climbs: the asker's own make answers it before any forwarding, so it never travels
 the pair a sub-make or a served request shares with its caller.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -86,6 +86,10 @@
- pid_t amk_wait_any (int *status);
- int amk_call_forwarding (void);
-
-+/* A recipe asked its make to halt: the recipe's remaining lines and the process's remaining goals are dropped, and it leaves with AMK_HALT, which a make whose recursive recipe child leaves with it takes as the same request.  */
-+#define AMK_HALT 112
-+extern unsigned int amk_halt;
-+
- /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
- struct amk_sink
-   {
 --- a/src/main.c
 +++ b/src/main.c
 @@ -350,6 +350,9 @@

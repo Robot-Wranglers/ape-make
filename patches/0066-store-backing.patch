@@ -6,17 +6,6 @@ size moved since the last load. A forwarder declares to the owner up the channel
 sub-make that parses the same makefile joins the owner's backing; a repeat must match
 the first declaration, and a different mode or path is refused.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -121,6 +121,8 @@
- /* The call channel's way into the store: one operation on a namespace, made on first use, and the stateless filter.  */
- int amk_store_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
- int amk_store_filter (struct amk_sink *out, const char *prog, const char *input);
-+/* The store's backing declaration for a namespace: a mode word, then a path past run; a repeat must match. */
-+int amk_store_backing (const char *ns, const char *spec);
-
- /* A guest's make function: fn answers make's call with the state it was defined in; a name make has already is refused with -1, a name this state defined before is rebound with 1, and a new one answers 0. */
- int amk_func_add (const char *name, void *state, char *(*fn) (void *state, const char *name, unsigned int argc, char **argv));
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2940,6 +2940,11 @@

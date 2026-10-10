@@ -6,53 +6,6 @@ unknown-operation message lists the row's own ops; the filter is answered by the
 workspace row with a stateless run and refused by a build with none. The store names
 in the code become workspace, and the name constant goes.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -79,8 +79,7 @@
- extern char *amk_goal_autofill;
- void amk_default_goal_settle (void);
-
--/* The call channel: recipes and jobs ask the store engine's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a store. */
--#define AMK_STORE_ENGINE "jq"
-+/* The call channel: recipes and jobs ask a workspace row's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a workspace. */
- struct amk_chan { int req; int rep; char *buf; size_t len; };
- void amk_call_init (void);
- void amk_call_dispatch (int req, int rep);
-@@ -109,6 +108,7 @@
- int amk_call_forward (const char *line, struct amk_sink *out);
-
- /* The kept-state primitives, when a row has them: open gives a fresh opaque state, or null when the engine cannot open another; run executes one operation's program in a state, its output to the sink, and answers the status; hook hears every event in the given state; filter, when a row has one, runs a program over an input text with no state. ops names the operations make registers over run, space-separated. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
-+/* A workspace row is one with run and whole, and it meets the call channel's contract: ops holds get, update and load; get with the whole program prints the whole value; load with a text replaces it; every output is a sequence of lines, counted by the reply; filter, when the row has one, is its stateless run, and a row without one refuses the channel's filter. A backing writes the whole value out and loads it back through those two. */
- struct amk_engine
-   {
-     const char *name;
-@@ -122,17 +122,21 @@
-     void (*hook) (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
-     int (*filter) (struct amk_sink *out, const char *prog, const char *input);
-     const char *ops;
-+    const char *whole;
-   };
-
- extern const struct amk_engine amk_engines[];
- const struct amk_engine *amk_engine_by_name (const char *name);
- int amk_engine_called (const struct amk_engine *e, const char *word);
-+/* Whether a row is a workspace row, and the workspace row a namespace name reaches: its owner, else the first workspace row in the build, else null. */
-+int amk_engine_is_workspace (const struct amk_engine *e);
-+const struct amk_engine *amk_workspace_engine (const char *ns);
-
--/* The call channel's way into the store: one operation on a namespace, made on first use, and the stateless filter.  */
--int amk_store_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
--int amk_store_filter (struct amk_sink *out, const char *prog, const char *input);
--/* The store's backing declaration for a namespace: a mode word, then a path past run; a repeat must match. */
--int amk_store_backing (const char *ns, const char *spec);
-+/* The call channel's way into a workspace: one operation on a namespace, made on first use, and the stateless filter.  */
-+int amk_workspace_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
-+int amk_workspace_filter (struct amk_sink *out, const char *prog, const char *input);
-+/* A workspace's backing declaration for a namespace: a mode word, then a path past run; a repeat must match. */
-+int amk_workspace_backing (const char *ns, const char *spec);
-
- /* A guest's make function: fn answers make's call with the state it was defined in; a name make has already is refused with -1, a name this state defined before is rebound with 1, and a new one answers 0. */
- int amk_func_add (const char *name, void *state, char *(*fn) (void *state, const char *name, unsigned int argc, char **argv));
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2499,7 +2499,7 @@

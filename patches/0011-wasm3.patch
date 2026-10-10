@@ -11,15 +11,6 @@ routed to amk_exit, so a module's exit code becomes the child's status. Function
 from the argv companion print on stderr, the way the cli prints them, so only what the
 module writes to stdout is the expansion.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -22,5 +22,6 @@
- extern int lua_run_main (int argc, char **argv);
- extern int s7_run_main (int argc, char **argv);
- extern int micropy_run_main (int argc, char **argv);
-+extern int wasm3_main (int argc, char **argv);
- 
- #endif
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2508,6 +2508,9 @@

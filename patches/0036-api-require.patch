@@ -4,14 +4,6 @@ spaces, commas, or both, since the function takes any number of arguments and re
 the words of all of them. The message is red when stderr is a terminal and neither
 NO_COLOR nor NOCOLOR is set.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -45,4 +45,5 @@
- void amk_queue_apply (FILE *queue);
- char *amk_func_goal (char *o, char **argv, const char *funcname);
-+char *amk_func_require (char *o, char **argv, const char *funcname);
- char *amk_cell_text (const char *name, const char *engine, const char *body);
- struct child;
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2924,2 +2924,3 @@

@@ -5,55 +5,6 @@ no guest needs a header of make's. Every event fires in the make process, where 
 persistent state lives, and a hook observes: it cannot veto or replace a recipe. Lua takes
 the entry and routes an event to amk.on.<event> in its persistent state.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -4,8 +4,29 @@
- #define AMK_H
- 
- #include <stdio.h>
-+#include <sys/types.h>
- 
--/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream. */
-+/* The events make announces, and what each carries: goals names the goal list, the recipe events name their target. */
-+enum amk_event
-+  {
-+    AMK_EVENT_GOALS,
-+    AMK_EVENT_RECIPE_START,
-+    AMK_EVENT_RECIPE_END
-+  };
-+
-+struct amk_event_info
-+  {
-+    const char *target;
-+    const char *status;
-+    int exit_code;
-+    int exit_sig;
-+    pid_t pid;
-+  };
-+
-+extern const char *const amk_event_names[];
-+void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
-+
-+/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
- struct amk_engine
-   {
-     const char *name;
-@@ -15,6 +36,7 @@
-     unsigned int cmdline:1;
-     unsigned int argv:1;
-     int (*persist) (FILE *, int, char **);
-+    void (*hook) (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
-   };
- 
- extern const struct amk_engine amk_engines[];
-@@ -25,6 +47,7 @@
- extern int jq_main (int argc, char **argv);
- extern int lua_run_main (int argc, char **argv);
- extern int lua_persist_main (FILE *out, int argc, char **argv);
-+extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
- extern int s7_run_main (int argc, char **argv);
- extern int micropy_run_main (int argc, char **argv);
- extern int wasm3_main (int argc, char **argv);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2500,7 +2500,7 @@

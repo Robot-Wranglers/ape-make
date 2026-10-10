@@ -15,31 +15,6 @@ call travels the same way, so every process of a run reads and writes one set of
 A served request starts as an owner with fresh pipes, since the zygote closed every
 inherited descriptor.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -58,12 +58,22 @@
- extern char *amk_goal_autofill;
- void amk_default_goal_settle (void);
- 
-+/* The call channel: recipes and jobs ask the store engine's persist entry over a pipe pair and read a line-framed reply, answered while make waits on children; a process that inherited a live pair forwards up it instead of holding a store. */
-+#define AMK_STORE_ENGINE "jq"
-+void amk_call_init (void);
-+void amk_call_dispatch (void);
-+void amk_call_cleanup (void);
-+void amk_call_wait (int ms);
-+pid_t amk_wait_any (int *status);
-+int amk_call_forwarding (void);
-+
- /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
- struct amk_sink
-   {
-     void (*write) (struct amk_sink *, const char *, size_t);
-   };
- extern struct amk_sink amk_sink_stderr;
-+int amk_call_forward (const char *line, struct amk_sink *out);
- 
- /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the sink; hook, when a row has one, hears every event as its name and the info fields. */
- struct amk_engine
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2947,7 +2947,15 @@

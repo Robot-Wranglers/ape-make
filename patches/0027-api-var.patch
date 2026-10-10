@@ -11,22 +11,6 @@ the records, in order, once the child's output is in. In this process, a write a
 once. The queue is a file and not a pipe so a guest that writes more than a pipe holds
 cannot block against a parent still reading its output.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -33,6 +33,13 @@
- void amk_reap_foreign (pid_t pid, int code, int sig);
- int amk_mail_take (pid_t pid, char **buf, size_t *len);
- int amk_mail_send (const char *s, size_t n);
-+char *amk_var_get (const char *name);
-+int amk_has_db (void);
-+int amk_function_exists (const char *name);
-+void amk_var_set (const char *name, const char *value);
-+void amk_eval (const char *text);
-+extern int amk_queue_fd;
-+void amk_queue_apply (FILE *queue);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- void amk_engine_init (void);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2640,6 +2640,7 @@

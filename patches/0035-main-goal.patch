@@ -4,17 +4,6 @@ that pick; when no goal is on the command line, a __main__ target replaces the p
 not a value a makefile or the AMK_GOAL knob assigned. Both places that read the default
 settle it first: the ordinary run and a zygote request that names no goal.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -55,6 +55,8 @@
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- void amk_engine_init (void);
-+extern char *amk_goal_autofill;
-+void amk_default_goal_settle (void);
-
- /* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
- struct amk_sink
 --- a/src/read.c
 +++ b/src/read.c
 @@ -2008,8 +2008,12 @@

@@ -8,16 +8,6 @@ and the routine sit apart from the other api builtins, after the eval row and af
 amk_func_require, so a series that grows several builtins at once keeps each patch on
 its own context.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -61,6 +61,7 @@
- void amk_fork_settle (void);
- void amk_engine_program (const struct amk_engine *e, const char *program);
- char *amk_func_stdin (char *o, char **argv, const char *funcname);
-+char *amk_func_sys (char *o, char **argv, const char *funcname);
- void amk_stdin_pending (struct child *child);
- int amk_stdin_fd (const void *child);
- void amk_stdin_drop (struct child *child);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -3679,6 +3679,7 @@

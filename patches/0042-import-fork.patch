@@ -9,21 +9,6 @@ exec, so an imported target no longer uses amk.stdin, which stays for ordinary r
 The rules are entered by the import routine itself, and the routine that finds the
 goals a body references is named for that.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -48,10 +48,11 @@
- char *amk_func_dedent (char *o, char **argv, const char *funcname);
- char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
- char *amk_dedent (const char *text, size_t *basep, int *badp);
--char *amk_cell_text (const char *name, const char *engine, const char *body);
- void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
- struct child;
- struct amk_engine;
-+void amk_fork_settle (void);
-+void amk_engine_program (const struct amk_engine *e, const char *program);
- char *amk_func_stdin (char *o, char **argv, const char *funcname);
- void amk_stdin_pending (struct child *child);
- int amk_stdin_fd (const void *child);
 --- a/src/filedef.h
 +++ b/src/filedef.h
 @@ -113,6 +113,9 @@

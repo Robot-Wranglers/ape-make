@@ -5,42 +5,6 @@ read-back and no copy, and has no size limit; the trailing newline every builtin
 comes off by stepping back in that buffer. The init chunk's sink is stderr. The guest
 declares the one-field struct itself and keeps no header of make's.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -37,7 +37,14 @@
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- void amk_engine_init (void);
- 
--/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
-+/* Where an engine's result goes: write appends bytes, and the make side decides where they land. */
-+struct amk_sink
-+  {
-+    void (*write) (struct amk_sink *, const char *, size_t);
-+  };
-+extern struct amk_sink amk_sink_stderr;
-+
-+/* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the sink; hook, when a row has one, hears every event as its name and the info fields. */
- struct amk_engine
-   {
-     const char *name;
-@@ -46,7 +53,7 @@
-     unsigned int dashdash:1;
-     unsigned int cmdline:1;
-     unsigned int argv:1;
--    int (*persist) (FILE *, int, char **);
-+    int (*persist) (struct amk_sink *, int, char **);
-     void (*hook) (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
-   };
- 
-@@ -57,7 +64,7 @@
- extern int gawk_main (int argc, char **argv);
- extern int jq_main (int argc, char **argv);
- extern int lua_run_main (int argc, char **argv);
--extern int lua_persist_main (FILE *out, int argc, char **argv);
-+extern int lua_persist_main (struct amk_sink *out, int argc, char **argv);
- extern void lua_hook_main (const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
- extern int s7_run_main (int argc, char **argv);
- extern int micropy_run_main (int argc, char **argv);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2602,7 +2602,7 @@

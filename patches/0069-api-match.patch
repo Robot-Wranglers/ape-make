@@ -9,16 +9,6 @@ ends a file is not a line of its own. A pattern that does not compile is fatal, 
 function, the pattern and the compiler's reason; a file that cannot be read answers empty
 with one warning. match joins .FEATURES.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -55,6 +55,7 @@
- char *amk_dedent (const char *text, size_t *basep, int *badp);
- char *amk_func_cksum (char *o, char **argv, const char *funcname);
- unsigned long amk_cksum (const unsigned char *data, size_t len);
-+char *amk_func_match (char *o, char **argv, const char *funcname);
- void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
- struct child;
- struct amk_engine;
 --- a/src/function.c
 +++ b/src/function.c
 @@ -3676,6 +3676,9 @@

@@ -382,11 +382,14 @@ $(HERE)cosmocc/bin/cosmocc: $(cosmocc.zip)
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 patch: $(make.src)
-	@# Unpack make and apply the patch series in order, into a fresh tree.
-$(make.src): $(make.tarball) $(patch.dirs) $(patches)
+	@# Unpack make, add amk's own sources, and apply the patch series in order, into a fresh tree.
+# amk's own sources have no stock counterpart, so they are copied in whole rather than carried as patches.
+amk.sources := $(wildcard src/amk/*)
+$(make.src): $(make.tarball) $(patch.dirs) $(patches) $(amk.sources)
 	$(call log, patch, unpacking $(make.tarball) into $@$(if $(flavor), for flavor $(flavor)))
 	rm -rf $@ && mkdir -p $@
 	tar xzf $(make.tarball) -C $@ --strip-components=1
+	cp $(amk.sources) $@/src/
 	for p in $(patches); do \
 	  $(call log, patch, applying $${p#$(HERE)}); \
 	  $(PATCH) -d $@ -p1 -l -i "$$p" \
@@ -856,7 +859,7 @@ release.watch:
 	$(call log, release, streaming run $$rid); gh run watch "$$rid" --exit-status
 
 clean:
-	@# Drop the landed deliverable, the unpacked sources, build trees, and outputs.
+	@# Drop the landed deliverable, the unpacked sources, build trees, and outputs; src/amk is amk's own source and stays.
 	$(call log, clean, dropping $(deliverable) src build out -- this costs a full rebuild)
-	$(call log, clean, the downloads and $(cosmocc.dir) stay)
-	rm -rf $(deliverable) src build out
+	$(call log, clean, the downloads, $(cosmocc.dir) and src/amk stay)
+	rm -rf $(deliverable) $(filter-out src/amk,$(wildcard src/*)) build out

@@ -9,16 +9,6 @@ inconsistent line is fatal, since the engine would only misread it. The one rout
 amk_dedent, serves both and any other C caller. $(amk.val.dedent name) is the shortcut
 for dedenting a variable's unexpanded value, as the value function reads it.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -46,4 +46,7 @@
- char *amk_func_goal (char *o, char **argv, const char *funcname);
- char *amk_func_require (char *o, char **argv, const char *funcname);
-+char *amk_func_dedent (char *o, char **argv, const char *funcname);
-+char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
-+char *amk_dedent (const char *text, size_t *basep, int *badp);
- char *amk_cell_text (const char *name, const char *engine, const char *body);
- struct child;
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2924,4 +2924,6 @@

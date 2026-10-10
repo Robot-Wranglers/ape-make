@@ -6,18 +6,6 @@ defaults every makefile under amk would otherwise repeat, each one a plain assig
 later makefile overrides, and AMK_NO_PRELUDE skips it. No boot script and no shell is
 involved, so a start costs nothing extra.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -6,6 +6,9 @@
- #include <stdio.h>
- #include <sys/types.h>
-
-+/* The payload member make reads before any makefile.  */
-+#define AMK_PRELUDE_MK "/zip/__init__.mk"
-+
- /* The events make announces, and what each carries: goals names the goal list, the recipe events name their target. */
- enum amk_event
-   {
 --- a/src/read.c
 +++ b/src/read.c
 @@ -216,6 +216,13 @@

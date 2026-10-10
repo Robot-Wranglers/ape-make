@@ -9,17 +9,6 @@ gives it, not zlib's crc32, so a key spelled by the pipe cksum | awk comes out t
 from the builtin and no cache entry moves. cksum joins .FEATURES, so a makefile can
 guard on it and keep the pipe for a stock make.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -53,6 +53,8 @@
- char *amk_func_dedent (char *o, char **argv, const char *funcname);
- char *amk_func_val_dedent (char *o, char **argv, const char *funcname);
- char *amk_dedent (const char *text, size_t *basep, int *badp);
-+char *amk_func_cksum (char *o, char **argv, const char *funcname);
-+unsigned long amk_cksum (const unsigned char *data, size_t len);
- void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
- struct child;
- struct amk_engine;
 --- a/src/function.c
 +++ b/src/function.c
 @@ -3670,6 +3670,12 @@

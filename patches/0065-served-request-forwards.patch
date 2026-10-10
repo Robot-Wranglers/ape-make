@@ -6,17 +6,6 @@ serves as an owner from the store the parse left. A client whose pair its make h
 dropped, a backgrounded request whose recipe ended, gets status 2 and an error line on
 every store call, never a store of its own: the upward write runs with SIGPIPE ignored.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -73,7 +73,7 @@
- #define AMK_STORE_ENGINE "jq"
- struct amk_chan { int req; int rep; char *buf; size_t len; };
- void amk_call_init (void);
--void amk_call_dispatch (void);
-+void amk_call_dispatch (int req, int rep);
- void amk_call_wait (int ms);
- /* Any other wait that blocks while children run adds the channel descriptors to its set and serves the ready ones after. */
- int amk_call_fdset (fd_set *rd);
 --- a/src/main.c
 +++ b/src/main.c
 @@ -4811,9 +4811,11 @@

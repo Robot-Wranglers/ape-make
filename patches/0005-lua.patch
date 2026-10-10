@@ -7,15 +7,6 @@ skips lua.c and luac.c and compiles guest/lua_main.c in their place, which is wh
 lua_run_main lives. Lua also ships no configure, so its guest rule compiles the sources
 directly instead of running one.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -19,5 +19,6 @@
- 
- extern int gawk_main (int argc, char **argv);
- extern int jq_main (int argc, char **argv);
-+extern int lua_run_main (int argc, char **argv);
- 
- #endif
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2499,6 +2499,9 @@

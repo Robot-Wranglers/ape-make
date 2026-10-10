@@ -9,14 +9,6 @@ line like that with no define after it is fatal; an at line that names no such b
 is left to make as before. define.<name> is gone, and its rules are entered through the
 same routine the builtin uses.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -50,4 +50,5 @@
- char *amk_dedent (const char *text, size_t *basep, int *badp);
- char *amk_cell_text (const char *name, const char *engine, const char *body);
-+void amk_import_target (const char *name, const char *engine, const char *body, const floc *flocp);
- struct child;
- struct amk_engine;
 --- a/src/read.c
 +++ b/src/read.c
 @@ -67,10 +67,6 @@

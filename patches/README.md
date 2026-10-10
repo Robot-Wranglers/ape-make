@@ -4,6 +4,11 @@ A numbered series applied to make 4.4.1 in order with GNU patch (`gpatch` on mac
 Each file opens with a note on what it does, and a guest's exceptions are written on the
 patch that adds that guest.
 
+amk's own files, which have no counterpart in stock make, live in `src/amk/` as plain
+sources, the one directory under `src/` that git tracks and `make clean` keeps. `make patch`
+copies them into make's `src/` after unpacking and before the series, so a patch here or in
+an overlay can still change them. Edit `src/amk/amk.h` directly; no patch carries it.
+
 | patch | what it adds |
 | --- | --- |
 | `0001-socket-mode.patch` | resident dispatch: `--serve` and `--client`, with the cmsg layout block for Cosmopolitan on Darwin and the BSDs |
@@ -97,12 +102,12 @@ series belongs upstream as a patch of its own.
 
 ## The engine table
 
-`src/amk.h` declares a row: the builtin name, which is also the feature word and the
+`src/amk/amk.h` declares a row: the builtin name, which is also the feature word and the
 `--flag`, the multi-call names, the entry point, and three bits for the argv shape. The
 table lives in `function.c`, and everything that asks which engines exist reads it: the
 `$(name)` and `$(name.argv)` registration, `.FEATURES` and `.ENGINES`, the multi-call
 dispatch, and `--list-engines`. An engine's patch adds one row behind
-`#ifdef AMK_ENGINE_<NAME>` and one extern in the header. The build passes a define per
+`#ifdef AMK_ENGINE_<NAME>`, and its externs go in `src/amk/amk.h`. The build passes a define per
 selected engine, so `without` needs no change to the series: a patch always applies, and
 the preprocessor decides what survives. Adding an engine means adding that row alongside
 the four entries in the Makefile that name it.

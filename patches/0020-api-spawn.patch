@@ -6,20 +6,6 @@ waits on any pid, so a spawned child it collects first is parked by amk_reap_for
 handed over on the next wait; a pid it never spawned stays ignored as before. Lua exposes
 the api as amk.spawn, amk.wait and amk.kill.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -24,6 +24,11 @@
-   };
- 
- extern const char *const amk_event_names[];
-+/* The spawn api: a goal list run in a fork of this parsed image, the wait that collects it, and the parking make's own reaping hands a spawned pid to. */
-+pid_t amk_spawn_goals (int n, char **words);
-+int amk_wait_child (pid_t want, int block, pid_t *got, int *code, int *sig);
-+void amk_reap_foreign (pid_t pid, int code, int sig);
-+void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
- 
- /* persist, when a row has one, runs in this process against a state kept for its life and writes its result to the stream; hook, when a row has one, hears every event as its name and the info fields. */
 --- a/src/job.c
 +++ b/src/job.c
 @@ -27,6 +27,18 @@

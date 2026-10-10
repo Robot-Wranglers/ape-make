@@ -6,20 +6,6 @@ under -j each get their own. With it, an engine's flag form reads its program fr
 standard input when the argument is a lone dash, so an imported target's program reaches
 its engine with no file and no argument limit.
 
---- a/src/amk.h
-+++ b/src/amk.h
-@@ -43,4 +43,11 @@
- char *amk_func_goal (char *o, char **argv, const char *funcname);
- char *amk_cell_text (const char *name, const char *engine, const char *body);
-+struct child;
-+struct amk_engine;
-+char *amk_func_stdin (char *o, char **argv, const char *funcname);
-+void amk_stdin_pending (struct child *child);
-+int amk_stdin_fd (const void *child);
-+void amk_stdin_drop (struct child *child);
-+void amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv);
- void amk_forget_children (void);
- void amk_hook_fire (enum amk_event event, const struct amk_event_info *info);
 --- a/src/function.c
 +++ b/src/function.c
 @@ -2907,4 +2907,5 @@
