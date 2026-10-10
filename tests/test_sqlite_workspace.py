@@ -1,7 +1,8 @@
 """Pins the sqlite workspace row, its targets, and its command line.
 
 A namespace is one in-memory database: rows come back as JSON lines, state survives across
-requests, `--argjson` binds typed, owned and shared backings write, load, and reload the dump.
+requests, `--argjson` binds typed, owned and shared backings write, load, and reload the dump,
+get refuses a write, and load replaces a table of the same name.
 A target runs sqlite's shell with its flags over an in-memory database and reads standard
 input through a dot command; the multicall name is the shell itself.
 """
@@ -163,3 +164,32 @@ def test_the_multicall_name_after_dashdash_runs_in_memory(amk, tmp_path):
   assert r.returncode == 0, r.stdout + r.stderr
   assert r.stdout.strip() == "7", r.stdout + r.stderr
   assert not list(tmp_path.glob("*.db")), list(tmp_path.iterdir())
+
+
+def _parse(amk, tmp_path, lines):
+  probe = tmp_path / "probe.mk"
+  probe.write_text("\n".join(lines + ["all:", "\t@echo done", ""]))
+  return sh(amk, ["-s", "-f", str(probe), "all"], cwd=tmp_path)
+
+
+@pytest.mark.engines("sqlite")
+def test_get_refuses_a_statement_that_writes(amk, tmp_path):
+  r = _parse(amk, tmp_path, [
+    "$(sqlite.ns W, create)",
+    "$(W.update CREATE TABLE t(k))",
+    "x := $(W.get INSERT INTO t VALUES(1))",
+    "$(info n=$(W.get SELECT count(*) AS n FROM t))",
+  ])
+  assert "a statement that writes belongs in update" in r.stderr, r.stderr
+  assert 'n={"n":0}' in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.engines("sqlite")
+def test_load_replaces_a_table_of_the_same_name(amk, tmp_path):
+  r = _parse(amk, tmp_path, [
+    "$(sqlite.ns W, create)",
+    "$(W.update CREATE TABLE t(k); INSERT INTO t VALUES('old'))",
+    "$(W.load CREATE TABLE t(k); INSERT INTO t VALUES('new'))",
+    "$(info rows=$(W.get SELECT k FROM t))",
+  ])
+  assert 'rows={"k":"new"}' in r.stdout, r.stdout + r.stderr
