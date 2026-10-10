@@ -69,6 +69,7 @@ void amk_fork_settle (void);
 void amk_engine_program (const struct amk_engine *e, const char *flags, const char *program);
 char *amk_func_stdin (char *o, char **argv, const char *funcname);
 char *amk_func_sys (char *o, char **argv, const char *funcname);
+char *amk_func_bash (char *o, char **argv, const char *funcname);
 void amk_stdin_pending (struct child *child);
 int amk_stdin_fd (const void *child);
 void amk_stdin_drop (struct child *child);
@@ -199,10 +200,11 @@ struct amk_cli_ops
     unsigned int argv:1;
   };
 
-/* Every kept state: create gives a fresh opaque state, or null when the engine cannot make another. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
+/* Every kept state: create gives a fresh opaque state, or null when the engine cannot make another; single marks an engine whose only state is main. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
 struct amk_kept_ops
   {
     void *(*create) (void);
+    unsigned int single:1;
   };
 
 /* A scripting guest: exec runs code in a state; import runs code and lifts what it defines into make, printing the names of the variables it gave; hook, when set, hears every event in the state. */
@@ -225,11 +227,14 @@ struct amk_workspace_ops
     int (*filter) (struct amk_sink *out, const char *prog, const char *input);
   };
 
-/* An engine is its command line and at most one of the two kept-state interfaces; amk_engines_check refuses any other row at startup. */
+/* An engine is its command line and at most one of the two kept-state interfaces; amk_engines_check refuses any other row at startup. language is what its programs are written in, implementation the guest linked in, and version that guest's release. */
 struct amk_engine
   {
     const char *name;
     const char *aliases;
+    const char *language;
+    const char *implementation;
+    const char *version;
     const struct amk_cli_ops *cli;
     const struct amk_state_ops *state;
     const struct amk_workspace_ops *workspace;
@@ -239,6 +244,8 @@ extern const struct amk_engine amk_engines[];
 const struct amk_engine *amk_engine_by_name (const char *name);
 int amk_engine_called (const struct amk_engine *e, const char *word);
 void amk_engines_check (void);
+void amk_engines_json (FILE *out);
+void amk_engine_versions (void);
 /* The kept-state interface a row has, if any, the operation words that interface takes on a namespace, and whether a word is one of them; every engine registers the names of all of them.  */
 #define AMK_OPS_ALL "exec import get update load"
 const struct amk_kept_ops *amk_engine_kept (const struct amk_engine *e);
@@ -250,7 +257,7 @@ const struct amk_engine *amk_workspace_engine (const char *ns);
 
 /* The call channel's way into a workspace: one operation on a namespace, made on first use, and the stateless filter.  */
 int amk_workspace_call (struct amk_sink *out, const char *op, const char *ns, const char *prog);
-int amk_workspace_filter (struct amk_sink *out, const char *prog, const char *input);
+int amk_workspace_filter (struct amk_sink *out, const char *engine, const char *prog, const char *input);
 /* A workspace's backing declaration for a namespace: a mode word, then a path past run; a repeat must match. */
 int amk_workspace_backing (const char *ns, const char *spec);
 

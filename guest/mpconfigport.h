@@ -1,11 +1,14 @@
-/* MicroPython's configuration for the amk guest: the extra-features level, numbers as CPython has them, and stdio and files through the host filesystem. */
+/* MicroPython's configuration for the amk guest: the everything level, numbers as CPython has them, and stdio and files through the host filesystem. */
 
 #include <alloca.h>
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
-#define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EXTRA_FEATURES)
+#define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EVERYTHING)
+
+/* marshal saves bytecode, which needs the qstr table that persistent code brings, so mpy loading comes on as in the unix port. */
+#define MICROPY_PERSISTENT_CODE_LOAD            (1)
 
 typedef long mp_off_t;
 

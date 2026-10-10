@@ -137,15 +137,11 @@ micropython.feature := micropy
 wasm3.feature := wasm
 quickjs.feature := js
 sqlite.feature := sqlite
-# Only the ones that carry a cli answer to a name of their own; the binary holds the others as libraries.
-gawk.alias := awk
-jq.alias   := jq
-wasm3.alias := wasm3
-sqlite.alias := sqlite3
 engines.defs     = $(foreach e,$(engines),-D$($(e).define)=$($(e).version))
 version.defs     = -DAMK_VERSION=$(amk.version) $(if $(flavor),-DAMK_FLAVOR=$(flavor))
 engines.features = $(foreach e,$(engines),$($(e).feature))
-engines.aliases  = $(foreach e,$(engines),$(if $(filter-out undefined,$(origin $(e).alias)),$($(e).alias)))
+# The names the given binary answers to, every engine's own and its aliases, as its engine listing reports them.
+engines.names    = $(1) --list-engines | awk -F'"' '/"(name|aliases)":/ { for (i = 4; i < NF; i += 2) print $$i }'
 
 tools.files := $(foreach t,$(tools),$($(t).file))
 libs.tarballs := $(foreach l,$(libs),$($(l).tarball))
@@ -644,8 +640,8 @@ $(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) 
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
 	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython,$(engines)),lib) $(notdir $(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
-	$(foreach n,$(engines.aliases),ln -sf amk $(bin)/$(n);)
-	$(call log, build, artifact $@ is ready -- $(bin) holds the $(engines.aliases) names for it)
+	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
+	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
 
 build.native: $(artifact.host)
 	@# The same with the host compiler, unoptimized, for the fast loop.
@@ -657,8 +653,8 @@ $(artifact.host): $(make.src) build/.engines$(suffix) $(foreach e,$(engines),$(g
 	  && $(HERE)$(make.src)/configure --disable-dependency-tracking CFLAGS="$(native.cflags)" CPPFLAGS="$(engines.defs) $(version.defs)" \
 	  && make -j$(jobs) LIBS="$(foreach e,$(engines),$(HERE)$(guests.host)/$(e).o) -lm"
 	rm -f $@ && install -m 0755 build/native$(suffix)/make $@
-	$(foreach n,$(engines.aliases),ln -sf amk $(bin.host)/$(n);)
-	$(call log, build.native, artifact $@ is ready -- $(bin.host) holds the $(engines.aliases) names for it)
+	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin.host)/$$n; done
+	$(call log, build.native, artifact $@ is ready -- $(bin.host) holds every engine name and alias for it)
 
 # The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so it runs without this file's undefined-variable warnings.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
@@ -780,7 +776,7 @@ $(docker.dir)/.context: $(artifact.ape) $(cosmocc.dir)/bin/cosmocc
 	$(foreach a,$(docker.arches), \
 	  sh $(cosmocc.dir)/bin/assimilate -e $(assimilate.$(a)) -o $(docker.dir)/$(a)/amk $(artifact.ape) >/dev/null \
 	  && chmod 0755 $(docker.dir)/$(a)/amk \
-	  $(foreach n,$(engines.aliases),&& ln -sf amk $(docker.dir)/$(a)/$(n));)
+	  && for n in $$($(call engines.names,$(artifact.ape))); do ln -sf amk $(docker.dir)/$(a)/$$n; done;)
 	touch $@
 
 smoke.docker: build.docker

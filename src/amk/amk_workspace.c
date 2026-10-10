@@ -255,7 +255,7 @@ char *
 func_op (char *o, char **argv, const char *funcname)
 {
   const struct amk_engine *e = amk_engine_by_name (funcname);
-  return amk_ns_run (o, e, "main", funcname + strlen (e->name) + 1, argv[0], funcname);
+  return amk_ns_run (o, e, "main", strchr (funcname, '.') + 1, argv[0], funcname);
 }
 
 /* A handle, ns.op: the operation in the namespace it was made for.  */
@@ -538,16 +538,22 @@ amk_workspace_call (struct amk_sink *out, const char *op, const char *ns, const 
   return amk_ns_apply (e, row, out, op, prog);
 }
 
-/* The call channel's filter: the stateless run of the first workspace row that has one, over the input text.  */
+/* The call channel's filter: the named engine's stateless run over the input text; an engine without one is refused by name.  */
 int
-amk_workspace_filter (struct amk_sink *out, const char *prog, const char *input)
+amk_workspace_filter (struct amk_sink *out, const char *engine, const char *prog, const char *input)
 {
-  const struct amk_engine *e;
-  for (e = amk_engines; e->name != NULL; ++e)
-    if (amk_engine_is_workspace (e) && e->workspace->filter != NULL)
-      return e->workspace->filter (out, prog, input != NULL ? input : "");
-  fprintf (stderr, "amk: call: filter: no workspace in this build has a stateless run\n");
-  return 2;
+  const struct amk_engine *e = amk_engine_by_name (engine);
+  if (e == NULL)
+    {
+      fprintf (stderr, "amk: call: filter: no engine named %s\n", engine);
+      return 2;
+    }
+  if (e->workspace == NULL || e->workspace->filter == NULL)
+    {
+      fprintf (stderr, "amk: call: filter: %s has no filter\n", e->name);
+      return 2;
+    }
+  return e->workspace->filter (out, prog, input != NULL ? input : "");
 }
 
 /* The functions guests defined, each with the state that answers it, so make's call lands in the namespace that made it.  */
@@ -672,7 +678,7 @@ int
 amk_is_workspace_import (const char *name)
 {
   const struct amk_engine *e = amk_engine_by_name (name);
-  return amk_engine_is_workspace (e) && streq (name + strlen (e->name), ".import");
+  return amk_engine_is_workspace (e) && streq (name + strcspn (name, "."), ".import");
 }
 
 /* $(jq.import name,text): the namespace made as create makes it, handles included, with the one text loaded as its whole value; importing the name again replaces the value.  */

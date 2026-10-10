@@ -1,4 +1,4 @@
-/* The guest handle's make side: variable reads and writes, eval, the queue a forked guest's writes ride up, the collector, $(goal), and $(amk.stdin).  */
+/* The guest handle's make side: variable reads and writes, eval, the queue a forked guest's writes ride up, the collector, $(goal), $(amk.stdin), and $(amk.bash).  */
 
 #include "makeint.h"
 #include "filedef.h"
@@ -8,6 +8,7 @@
 #include "os.h"
 #include "commands.h"
 #include "debug.h"
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/wait.h>
 #include "amk.h"
@@ -449,4 +450,53 @@ amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
     }
   buf[len] = '\0';
   argv[1] = buf;
+}
+
+/* $(amk.bash cmd): the command run by bash under -euo pipefail in one fork, never the makefile's SHELL, stdin closed, and its output kept with its lines intact, less one trailing newline; a nonzero status is fatal, 127 when bash is not found.  */
+char *
+amk_func_bash (char *o, char **argv, const char *funcname)
+{
+  char *av[] = { (char *) "bash", (char *) "-euo", (char *) "pipefail", (char *) "-c", argv[0], NULL };
+  int out[2], q = -1, st = 0, status;
+  size_t len = 0;
+  char *buf, code[16];
+  pid_t pid;
+
+  if (pipe (out) < 0)
+    OSS (fatal, NILF, _("$(%s ...): pipe: %s"), funcname, strerror (errno));
+  fflush (stdout);
+  fflush (stderr);
+  pid = fork ();
+  if (pid < 0)
+    OSS (fatal, NILF, _("$(%s ...): fork: %s"), funcname, strerror (errno));
+  if (pid == 0)
+    {
+      int nul = open ("/dev/null", O_RDONLY);
+      if (nul >= 0)
+        dup2 (nul, 0);
+      dup2 (out[1], 1);
+      close (out[0]);
+      close (out[1]);
+      signal (SIGPIPE, SIG_DFL);
+      execvp ("bash", av);
+      fprintf (stderr, "%s: bash: %s\n", funcname, strerror (errno));
+      _exit (127);
+    }
+
+  close (out[1]);
+  buf = amk_collect (&out[0], &len, &q, NULL, NULL, 0);
+  while (waitpid (pid, &st, 0) < 0 && errno == EINTR)
+    ;
+  status = WIFEXITED (st) ? WEXITSTATUS (st) : 128 + WTERMSIG (st);
+  if (status != 0)
+    {
+      sprintf (code, "%d", status);
+      OSS (fatal, reading_file, _("$(%s ...): bash exited with status %s"), funcname, code);
+    }
+  if (len > 0 && buf[len - 1] == '\n')
+    --len;
+  if (len > 0)
+    o = variable_buffer_output (o, buf, len);
+  free (buf);
+  return o;
 }

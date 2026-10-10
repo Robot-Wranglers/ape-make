@@ -244,15 +244,23 @@ amk_read_line_shared (int fd) {
   return line;
 }
 
-/* A filter request's header names how many input lines follow it; -1 for any other request.  */
+/* A filter request's header names its engine, then how many input lines follow it; the old form without the engine is counted too, so the stream stays in step until it is refused. -1 for any other request.  */
 static int
 amk_call_input_lines (const char *line) {
+  const char *p;
   char *end;
   long n;
   if (strncmp (line, "filter ", 7) != 0)
     return -1;
-  n = strtol (line + 7, &end, 10);
-  if (end == line + 7 || (*end != ' ' && *end != '\0') || n < 0)
+  p = line + 7;
+  n = strtol (p, &end, 10);
+  if (end == p || (*end != ' ' && *end != '\0')) {
+    p += strcspn (p, " ");
+    while (*p == ' ')
+      ++p;
+    n = strtol (p, &end, 10);
+  }
+  if (end == p || (*end != ' ' && *end != '\0') || n < 0)
     return -1;
   return (int) n;
 }
@@ -312,10 +320,10 @@ amk_call_slurp (const char *op, const char *name, const char *path) {
   return text;
 }
 
-/* One request line to a workspace: the operation, the name, and the rest as the program. A dump prints the whole state, a load names a file read here, and a filter, whose input lines the transport counted, runs with no name.  */
+/* One request line to a workspace: the operation, the name, and the rest as the program. A dump prints the whole state, a load names a file read here, and a filter names its engine and the input lines the transport counted.  */
 static int
 amk_call_serve (struct amk_sink *out, const char *line, const char *input) {
-  char op[32], name[1024];
+  char op[32], name[1024], count[32];
   const char *p = line;
   char *text;
   int rc;
@@ -325,11 +333,14 @@ amk_call_serve (struct amk_sink *out, const char *line, const char *input) {
     return 2;
   }
   if (strcmp (op, "filter") == 0) {
-    if (amk_call_input_lines (line) >= 0)
-      amk_call_word (&p, name, sizeof name);
+    if (!amk_call_word (&p, name, sizeof name) || strspn (name, "0123456789") == strlen (name)
+        || !amk_call_word (&p, count, sizeof count)) {
+      fprintf (stderr, "amk: call: filter names its engine first: filter ENGINE LINES PROGRAM\n");
+      return 2;
+    }
     while (*p == ' ' || *p == '\t')
       ++p;
-    return amk_workspace_filter (out, p, input);
+    return amk_workspace_filter (out, name, p, input);
   }
   if (!amk_call_word (&p, name, sizeof name)) {
     fprintf (stderr, "amk: call: %s: expected a name, got: %s\n", op, line);

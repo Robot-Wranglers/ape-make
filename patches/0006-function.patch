@@ -115,7 +115,7 @@ function or macro, and a guest asks whether a name is one.
  #define FT_ENTRY(_name, _min, _max, _exp, _func) \
    { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
 
-@@ -2527,8 +2620,26 @@
+@@ -2527,8 +2620,27 @@
    FT_ENTRY ("if",            2,  3,  0,  func_if),
    FT_ENTRY ("or",            1,  0,  0,  func_or),
    FT_ENTRY ("and",           1,  0,  0,  func_and),
@@ -136,6 +136,7 @@ function or macro, and a guest asks whether a name is one.
 +  FT_ENTRY ("amk.match.file", 2, 2,  1,  amk_func_match),
 +  FT_ENTRY ("amk.match*",    2,  2,  1,  func_star),
 +  FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
++  FT_ENTRY ("amk.bash",      1,  1,  1,  amk_func_bash),
    FT_ENTRY ("value",         0,  1,  1,  func_value),
    FT_ENTRY ("eval",          0,  1,  1,  func_eval),
 +  FT_ENTRY ("amk.sys",       1,  1,  1,  amk_func_sys),
@@ -195,7 +196,7 @@ function or macro, and a guest asks whether a name is one.
    max_args = saved_args;
 
    v->exp_count = 0;
-@@ -2838,8 +2963,88 @@
+@@ -2838,8 +2963,95 @@
 
    ent = hash_insert (&function_table, ent);
    free (ent);
@@ -204,7 +205,7 @@ function or macro, and a guest asks whether a name is one.
 +}
 +
 +/* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
-+static struct function_table_entry amk_function_entries[256];
++static struct function_table_entry amk_function_entries[512];
 +
 +/* One engine builtin into its slot and the table, answering the slot after it.  */
 +static struct function_table_entry *
@@ -221,13 +222,34 @@ function or macro, and a guest asks whether a name is one.
 +  return f + 1;
  }
 
-+/* An engine builtin's name: the engine's, a dot, and a suffix.  */
++/* An engine builtin's name: a spelling of the engine, a dot, and a suffix.  */
 +static char *
-+amk_entry_name (const struct amk_engine *e, const char *suffix, size_t len)
++amk_entry_name (const char *spelling, const char *suffix, size_t len)
 +{
-+  char *name = xmalloc (strlen (e->name) + len + 2);
-+  sprintf (name, "%s.%.*s", e->name, (int) len, suffix);
++  char *name = xmalloc (strlen (spelling) + len + 2);
++  sprintf (name, "%s.%.*s", spelling, (int) len, suffix);
 +  return name;
++}
++
++/* Every builtin of one engine under one spelling, its name or an alias: each operation's name, .ns, and .import answer through the interface the row has, or refuse; an operation in main takes one argument, so its program keeps its commas.  */
++static struct function_table_entry *
++amk_engine_entries (struct function_table_entry *f, const struct amk_engine *e, const char *spelling)
++{
++  const char *p = AMK_OPS_ALL, *w;
++  size_t wlen;
++  f = amk_entry_add (f, spelling, func_engine, 1, 2);
++  if (e->cli->argv)
++    f = amk_entry_add (f, amk_entry_name (spelling, "argv", 4), func_engine, 2, 3);
++  while ((w = find_next_token (&p, &wlen)) != NULL)
++    if (wlen != 6 || memcmp (w, "import", 6) != 0)
++      f = amk_entry_add (f, amk_entry_name (spelling, w, wlen), amk_engine_has_op (e, w, wlen) ? func_op : func_refuse, 1, 1);
++  f = amk_entry_add (f, amk_entry_name (spelling, "ns", 2), amk_engine_kept (e) != NULL ? func_ns : func_refuse, 2, 3);
++  f = amk_entry_add (f, amk_entry_name (spelling, "import.target", 13), func_import_target, 1, 3);
++  /* A state's import lifts the guest's names into make; a workspace's makes a namespace from a name and its whole value, so the at line above a define gives that define's name a workspace.  */
++  f = amk_entry_add (f, amk_entry_name (spelling, "import", 6),
++                     e->state != NULL ? func_op : e->workspace != NULL ? func_workspace_import : func_refuse,
++                     1, e->state != NULL ? 1 : 2);
++  return f;
 +}
 +
 +static void
@@ -238,30 +260,16 @@ function or macro, and a guest asks whether a name is one.
 +  amk_engines_check ();
 +  for (e = amk_engines; e->name; ++e)
 +    {
-+      const char *p = AMK_OPS_ALL, *w;
-+      size_t wlen;
-+      f = amk_entry_add (f, e->name, func_engine, 1, 2);
-+      if (e->cli->argv)
++      const char *p = e->aliases;
++      f = amk_engine_entries (f, e, e->name);
++      while (p != NULL && *p)
 +        {
-+          char *name = xmalloc (f[-1].len + 6);
-+          sprintf (name, "%s.argv", e->name);
-+          *f = f[-1];
-+          f->name = name;
-+          f->len += 5;
-+          f->minimum_args = 2;
-+          f->maximum_args = 3;
-+          hash_insert (&function_table, f++);
++          size_t n = strcspn (p, " ");
++          f = amk_engine_entries (f, e, xstrndup (p, n));
++          p += n;
++          while (*p == ' ')
++            ++p;
 +        }
-+      /* Every engine has every operation's name, .ns, and .import: each answers through the interface the row has, or refuses; an operation in main takes one argument, so its program keeps its commas.  */
-+      while ((w = find_next_token (&p, &wlen)) != NULL)
-+        if (wlen != 6 || memcmp (w, "import", 6) != 0)
-+          f = amk_entry_add (f, amk_entry_name (e, w, wlen), amk_engine_has_op (e, w, wlen) ? func_op : func_refuse, 1, 1);
-+      f = amk_entry_add (f, amk_entry_name (e, "ns", 2), amk_engine_kept (e) != NULL ? func_ns : func_refuse, 2, 3);
-+      f = amk_entry_add (f, amk_entry_name (e, "import.target", 13), func_import_target, 1, 3);
-+      /* A state's import lifts the guest's names into make; a workspace's makes a namespace from a name and its whole value, so the at line above a define gives that define's name a workspace.  */
-+      f = amk_entry_add (f, amk_entry_name (e, "import", 6),
-+                         e->state != NULL ? func_op : e->workspace != NULL ? func_workspace_import : func_refuse,
-+                         1, e->state != NULL ? 1 : 2);
 +    }
 +  /* Every builtin gets a star twin whose arguments may name variables.  */
 +  {

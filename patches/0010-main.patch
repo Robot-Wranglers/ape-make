@@ -120,7 +120,7 @@ the profile, and answers a served request.
 +/* The flags amk reads ahead of option decoding, in the order it reads them; the engine flags print themselves from the table.  */
 +static const char *const amk_usage[] =
 +  {
-+    N_("  --list-engines              Print each engine: its name, then its multi-call names.\n"),
++    N_("  --list-engines              Print every engine as JSON: language, guest and version, interface, and capabilities.\n"),
 +    N_("  --serve SOCK ARGS...        Parse once and answer requests on SOCK as the zygote.\n"),
 +    N_("  --client SOCK REQUEST...    Run REQUEST against a zygote; after --, a cold command for when it refuses.\n"),
 +    N_("  --resident ARGS...          One command served by a zygote it starts and reaps itself.\n"),
@@ -175,7 +175,7 @@ the profile, and answers a served request.
    die (bad ? MAKE_FAILURE : MAKE_SUCCESS);
  }
 
-@@ -1194,6 +1286,135 @@
+@@ -1194,6 +1286,134 @@
    /* Useful for attaching debuggers, etc.  */
    SPIN ("main-entry");
 
@@ -201,15 +201,14 @@ the profile, and answers a served request.
 +    base = base ? base + 1 : argv[0];
 +    if (argc >= 2 && strcmp (argv[1], "--list-engines") == 0)
 +      {
-+        for (e = amk_engines; e->name; ++e)
-+          printf ("%s%s%s\n", e->name, e->aliases ? "\t" : "", e->aliases ? e->aliases : "");
++        amk_engines_json (stdout);
 +        exit (0);
 +      }
 +    for (e = amk_engines; e->name; ++e)
 +      {
 +        if (amk_engine_called (e, base))
 +          exit (e->cli->main (argc, argv));
-+        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && strcmp (argv[1] + 2, e->name) == 0)
++        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && amk_engine_called (e, argv[1] + 2))
 +          {
 +            argv[1] = (char *) e->name;
 +            amk_program_from_stdin (e, argc - 1, argv + 1);
@@ -320,7 +319,7 @@ the profile, and answers a served request.
  #ifndef NO_ARCHIVES
                             " archives"
  #endif
-@@ -1470,9 +1691,52 @@
+@@ -1470,9 +1691,29 @@
  #ifdef MAKE_MAINTAINER_MODE
                             " maintainer"
  #endif
@@ -343,31 +342,8 @@ the profile, and answers a served request.
 +    define_variable_cname (".FEATURES", all, o_default, 0);
 +    define_variable_cname (".ENGINES", engines, o_default, 0);
 +    define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
-+    /* Each engine's define carries the version the build unpacked, read here as the variable of the builtin's name.  */
-+#ifdef AMK_ENGINE_GAWK
-+    define_variable_cname ("awk.__version__", AMK_STR(AMK_ENGINE_GAWK), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_JQ
-+    define_variable_cname ("jq.__version__", AMK_STR(AMK_ENGINE_JQ), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_LUA
-+    define_variable_cname ("lua.__version__", AMK_STR(AMK_ENGINE_LUA), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_S7
-+    define_variable_cname ("s7.__version__", AMK_STR(AMK_ENGINE_S7), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_MICROPY
-+    define_variable_cname ("micropy.__version__", AMK_STR(AMK_ENGINE_MICROPY), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_WASM3
-+    define_variable_cname ("wasm.__version__", AMK_STR(AMK_ENGINE_WASM3), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_QUICKJS
-+    define_variable_cname ("js.__version__", AMK_STR(AMK_ENGINE_QUICKJS), o_default, 0);
-+#endif
-+#ifdef AMK_ENGINE_SQLITE
-+    define_variable_cname ("sqlite.__version__", AMK_STR(AMK_ENGINE_SQLITE), o_default, 0);
-+#endif
++    /* Each engine's version, read from its row, under its name and every alias.  */
++    amk_engine_versions ();
 +    define_variable_cname ("amk.__fxns__", "$(amk.fxns? $(.ENGINES))", o_default, 1);
 +    define_variable_cname ("amk.__vars__", "$(amk.vars? $(.ENGINES))", o_default, 1);
 +    free (all);

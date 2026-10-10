@@ -37,9 +37,15 @@ amk.ns() {
   amk.call "${line//$'\n'/ }"
 }
 
-# A pipeline stage: the tool's options then the jq program, over stdin in the make process; the program rides raw as the rest of the line.
-jq.pipe() {
+# A pipeline stage: the engine, its options, then the program, over stdin in the make process; the program rides raw as the rest of the line.
+amk.filter() {
+  local engine=$1 ; shift
   local -a lines
   mapfile -t lines
-  amk.call "filter ${#lines[@]} $(amk.words "${@:1:$#-1}")${@: -1}" "${lines[@]}"
+  amk.call "filter $engine ${#lines[@]} $(amk.words "${@:1:$#-1}")${@: -1}" "${lines[@]}"
+}
+
+# The same stage through jq.
+jq.pipe() {
+  amk.filter jq "$@"
 }

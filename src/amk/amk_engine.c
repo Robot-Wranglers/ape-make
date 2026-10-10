@@ -40,7 +40,7 @@ static const struct amk_state_ops s7_state = {
 #ifdef AMK_ENGINE_MICROPY
 static const struct amk_cli_ops micropy_cli = { .main = micropy_run_main };
 static const struct amk_state_ops micropy_state = {
-  .kept = { .create = micropy_create }, .exec = micropy_exec, .import = micropy_import, .hook = micropy_hook,
+  .kept = { .create = micropy_create, .single = 1 }, .exec = micropy_exec, .import = micropy_import, .hook = micropy_hook,
 };
 #endif
 #ifdef AMK_ENGINE_WASM3
@@ -60,34 +60,49 @@ static const struct amk_workspace_ops sqlite_workspace = {
 };
 #endif
 
+#ifndef AMK_STR
+# define AMK_STR_(x) #x
+# define AMK_STR(x) AMK_STR_(x)
+#endif
+
 const struct amk_engine amk_engines[] =
   {
 #ifdef AMK_ENGINE_GAWK
-    { .name = "awk", .aliases = "awk gawk", .cli = &awk_cli },
+    { .name = "awk", .aliases = "gawk", .language = "awk", .implementation = "gawk",
+      .version = AMK_STR (AMK_ENGINE_GAWK), .cli = &awk_cli },
 #endif
 #ifdef AMK_ENGINE_JQ
-    { .name = "jq", .aliases = "jq", .cli = &jq_cli, .workspace = &jq_workspace },
+    { .name = "jq", .language = "jq", .implementation = "jq",
+      .version = AMK_STR (AMK_ENGINE_JQ), .cli = &jq_cli, .workspace = &jq_workspace },
 #endif
 #ifdef AMK_ENGINE_LUA
-    { .name = "lua", .cli = &lua_cli, .state = &lua_state },
+    { .name = "lua", .language = "Lua", .implementation = "Lua",
+      .version = AMK_STR (AMK_ENGINE_LUA), .cli = &lua_cli, .state = &lua_state },
 #endif
 #ifdef AMK_ENGINE_S7
-    { .name = "s7", .cli = &s7_cli, .state = &s7_state },
+    { .name = "s7", .aliases = "lisp", .language = "Scheme", .implementation = "s7",
+      .version = AMK_STR (AMK_ENGINE_S7), .cli = &s7_cli, .state = &s7_state },
 #endif
 #ifdef AMK_ENGINE_MICROPY
-    { .name = "micropy", .cli = &micropy_cli, .state = &micropy_state },
+    { .name = "micropy", .language = "Python", .implementation = "MicroPython",
+      .version = AMK_STR (AMK_ENGINE_MICROPY), .cli = &micropy_cli, .state = &micropy_state },
 #endif
 #ifdef AMK_ENGINE_WASM3
-    { .name = "wasm", .aliases = "wasm3", .cli = &wasm_cli },
+    { .name = "wasm", .aliases = "wasm3", .language = "WebAssembly", .implementation = "wasm3",
+      .version = AMK_STR (AMK_ENGINE_WASM3), .cli = &wasm_cli },
 #endif
 #ifdef AMK_ENGINE_QUICKJS
-    { .name = "js", .cli = &js_cli, .state = &js_state },
+    { .name = "js", .language = "JavaScript", .implementation = "QuickJS",
+      .version = AMK_STR (AMK_ENGINE_QUICKJS), .cli = &js_cli, .state = &js_state },
 #endif
 #ifdef AMK_ENGINE_SQLITE
-    { .name = "sqlite", .aliases = "sqlite3", .cli = &sqlite_cli, .workspace = &sqlite_workspace },
+    { .name = "sqlite", .aliases = "sqlite3", .language = "SQL", .implementation = "SQLite",
+      .version = AMK_STR (AMK_ENGINE_SQLITE), .cli = &sqlite_cli, .workspace = &sqlite_workspace },
 #endif
     { .name = NULL }
   };
+
+static int amk_engine_spelling_taken (const struct amk_engine *e);
 
 /* A row is refused unless it has a command line, at most one kept-state interface, and every member of that interface but the optional hook and filter.  */
 void
@@ -99,6 +114,10 @@ amk_engines_check (void)
       const char *missing = NULL;
       if (e->cli == NULL || e->cli->main == NULL)
         missing = "a command line";
+      else if (e->language == NULL || e->implementation == NULL || e->version == NULL)
+        missing = "a language, an implementation, and a version";
+      else if (amk_engine_spelling_taken (e))
+        missing = "names that no other engine has";
       else if (e->state != NULL && e->workspace != NULL)
         missing = "only one of the state and workspace interfaces";
       else if (e->state != NULL && (e->state->kept.create == NULL || e->state->exec == NULL || e->state->import == NULL))
@@ -120,6 +139,85 @@ amk_engine_kept (const struct amk_engine *e)
   return e->state != NULL ? &e->state->kept : e->workspace != NULL ? &e->workspace->kept : NULL;
 }
 
+/* Every engine's version as a make variable, under its name and under each alias.  */
+void
+amk_engine_versions (void)
+{
+  const struct amk_engine *e;
+  char var[128];
+  for (e = amk_engines; e->name; ++e)
+    {
+      const char *p = e->aliases;
+      snprintf (var, sizeof var, "%s.__version__", e->name);
+      define_variable (var, strlen (var), e->version, o_default, 0);
+      while (p != NULL && *p)
+        {
+          size_t n = strcspn (p, " ");
+          snprintf (var, sizeof var, "%.*s.__version__", (int) n, p);
+          define_variable (var, strlen (var), e->version, o_default, 0);
+          p += n;
+          while (*p == ' ')
+            ++p;
+        }
+    }
+}
+
+static void
+amk_json_bool (FILE *out, const char *key, int on, int last)
+{
+  fprintf (out, "        \"%s\": %s%s\n", key, on ? "true" : "false", last ? "" : ",");
+}
+
+/* --list-engines: every engine as a JSON object, its language and guest, its interface, and what it supports, each capability read from the row so the listing cannot drift from the build.  */
+void
+amk_engines_json (FILE *out)
+{
+  const struct amk_engine *e;
+  fputs ("{\n  \"engines\": [\n", out);
+  for (e = amk_engines; e->name; ++e)
+    {
+      const struct amk_kept_ops *kept = amk_engine_kept (e);
+      const struct amk_state_ops *s = e->state;
+      const struct amk_workspace_ops *w = e->workspace;
+      const char *p = e->aliases;
+      int first = 1;
+      fprintf (out, "    {\n      \"name\": \"%s\",\n      \"aliases\": [", e->name);
+      while (p != NULL && *p)
+        {
+          size_t alen = strcspn (p, " ");
+          fprintf (out, "%s\"%.*s\"", first ? "" : ", ", (int) alen, p);
+          first = 0;
+          p += alen;
+          while (*p == ' ')
+            ++p;
+        }
+      fprintf (out, "],\n      \"language\": \"%s\",\n      \"implementation\": \"%s\",\n      \"version\": \"%s\",\n",
+               e->language, e->implementation, e->version);
+      fprintf (out, "      \"interface\": %s,\n", s != NULL ? "\"state\"" : w != NULL ? "\"workspace\"" : "null");
+      fprintf (out, "      \"namespaces\": %s,\n", kept == NULL ? "null" : kept->single ? "\"main\"" : "\"many\"");
+      fputs ("      \"capabilities\": {\n", out);
+      amk_json_bool (out, "builtin", 1, 0);
+      amk_json_bool (out, "argv", e->cli->argv, 0);
+      amk_json_bool (out, "stdin_program", !e->cli->argv, 0);
+      amk_json_bool (out, "import_target", 1, 0);
+      amk_json_bool (out, "exec", s != NULL, 0);
+      amk_json_bool (out, "import_lift", s != NULL, 0);
+      amk_json_bool (out, "init", s != NULL, 0);
+      amk_json_bool (out, "hook", s != NULL && s->hook != NULL, 0);
+      amk_json_bool (out, "guest_handle", s != NULL, 0);
+      amk_json_bool (out, "get", w != NULL, 0);
+      amk_json_bool (out, "update", w != NULL, 0);
+      amk_json_bool (out, "load", w != NULL, 0);
+      amk_json_bool (out, "dump", w != NULL, 0);
+      amk_json_bool (out, "import_seed", w != NULL, 0);
+      amk_json_bool (out, "backing", w != NULL, 0);
+      amk_json_bool (out, "channel", w != NULL, 0);
+      amk_json_bool (out, "filter", w != NULL && w->filter != NULL, 1);
+      fprintf (out, "      }\n    }%s\n", e[1].name != NULL ? "," : "");
+    }
+  fputs ("  ]\n}\n", out);
+}
+
 const char *
 amk_engine_ops (const struct amk_engine *e)
 {
@@ -128,14 +226,55 @@ amk_engine_ops (const struct amk_engine *e)
   return e->state != NULL ? "exec import" : e->workspace != NULL ? "get update load" : NULL;
 }
 
-/* The row for a builtin name, with or without its .argv suffix.  */
+/* Whether the first len bytes of word are the row's name or one of its aliases.  */
+static int
+amk_engine_spelled (const struct amk_engine *e, const char *word, size_t len)
+{
+  const char *p = e->aliases;
+  if (strlen (e->name) == len && memcmp (e->name, word, len) == 0)
+    return 1;
+  while (p && *p)
+    {
+      size_t n = strcspn (p, " ");
+      if (n == len && memcmp (p, word, len) == 0)
+        return 1;
+      p += n;
+      while (*p == ' ')
+        ++p;
+    }
+  return 0;
+}
+
+/* Whether another row already answers to the row's name or one of its aliases.  */
+static int
+amk_engine_spelling_taken (const struct amk_engine *e)
+{
+  const struct amk_engine *o;
+  const char *p = e->aliases;
+  for (o = amk_engines; o < e; ++o)
+    if (amk_engine_spelled (o, e->name, strlen (e->name)))
+      return 1;
+  while (p && *p)
+    {
+      size_t n = strcspn (p, " ");
+      for (o = amk_engines; o->name; ++o)
+        if (amk_engine_spelled (o, p, n) && (o != e || (strlen (o->name) == n && memcmp (o->name, p, n) == 0)))
+          return 1;
+      p += n;
+      while (*p == ' ')
+        ++p;
+    }
+  return 0;
+}
+
+/* The row for a builtin name, spelled with the engine's name or an alias, with or without a dotted suffix.  */
 const struct amk_engine *
 amk_engine_by_name (const char *name)
 {
   const struct amk_engine *e;
   size_t n = strcspn (name, ".");
   for (e = amk_engines; e->name; ++e)
-    if (strlen (e->name) == n && memcmp (e->name, name, n) == 0)
+    if (amk_engine_spelled (e, name, n))
       return e;
   return NULL;
 }
@@ -202,23 +341,24 @@ amk_init_chunk (const struct amk_engine *e)
   return chunk;
 }
 
-/* Every row with a state interface runs its init chunk, once, in main, with print on stderr.  */
+/* Every row with a state interface runs its init chunk, once, in main, with print on stderr; any other row with a chunk is refused.  */
 void
 amk_engine_init (void)
 {
   const struct amk_engine *e;
   for (e = amk_engines; e->name; ++e)
-    if (e->state != NULL)
-      {
-        char *chunk = amk_init_chunk (e);
-        void *state;
-        if (chunk == NULL)
-          continue;
-        state = amk_ns_state (e, "main", 1);
-        if (state != NULL)
-          e->state->exec (state, &amk_sink_stderr, chunk);
-        free (chunk);
-      }
+    {
+      char *chunk = amk_init_chunk (e);
+      void *state;
+      if (chunk == NULL)
+        continue;
+      if (e->state == NULL)
+        OS (fatal, NILF, _("%s has no init; init is for state engines"), e->name);
+      state = amk_ns_state (e, "main", 1);
+      if (state != NULL)
+        e->state->exec (state, &amk_sink_stderr, chunk);
+      free (chunk);
+    }
 }
 
 /* The goal make chose for itself from the first rule, so a later value can be told from a makefile's own.  */
@@ -237,22 +377,11 @@ amk_default_goal_settle (void)
     define_variable_global (".DEFAULT_GOAL", 13, "__main__", o_file, 0, NILF);
 }
 
-/* Whether word is one of the row's multi-call names.  */
+/* Whether word is one of the row's multi-call names: its own name or an alias.  */
 int
 amk_engine_called (const struct amk_engine *e, const char *word)
 {
-  const char *p = e->aliases;
-  size_t n = strlen (word);
-  while (p && *p)
-    {
-      size_t len = strcspn (p, " ");
-      if (len == n && memcmp (p, word, n) == 0)
-        return 1;
-      p += len;
-      while (*p == ' ')
-        ++p;
-    }
-  return 0;
+  return amk_engine_spelled (e, word, strlen (word));
 }
 
 /* A guest's exit inside the forked child: flush its own output and leave without libc's stream cleanup, which would seek the parent's open makefile. */
