@@ -636,9 +636,9 @@ s7_amk_export_one (s7_scheme *sc, s7_pointer args)
   return r;
 }
 
-/* The open primitive: a kept interpreter, which make holds for the life of the process, with the handle bound and the export helper defined. */
+/* The create member: a kept interpreter, which make holds for the life of the process, with the handle bound and the export helper defined. */
 __attribute__ ((visibility ("default"))) void *
-s7_open (void)
+s7_create (void)
 {
   s7_scheme *sc = s7_state_open ();
   if (sc == NULL)
@@ -648,20 +648,15 @@ s7_open (void)
   return sc;
 }
 
-/* The run primitive: exec runs the chunk in the interpreter with what it prints to the sink; import runs it with output on stderr, then hands make what it left in the rootlet and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-s7_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the interpreter with what it prints to the sink; import runs it with output on stderr, then hands make what it left in the rootlet and the sink their names. */
+static int
+s7_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   s7_scheme *sc = state;
   struct amk_capture capture;
   int export = strcmp (op, "import") == 0;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "s7: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "s7.%s: no chunk\n", op);
@@ -683,6 +678,18 @@ s7_run (void *state, struct amk_sink *out, const char *op, const char *prog)
   if (rc == 0)
     rc = s7_export_globals (sc, out);
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+s7_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return s7_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+s7_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return s7_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: (amk-on event), when the interpreter holds a procedure there, is called with the event as a let. Its output goes to stderr, and an error reports there and is otherwise ignored. */

@@ -768,9 +768,9 @@ lua_push_amk (lua_State *L)
     }
 }
 
-/* The open primitive: a kept state, which make holds for the life of the process, with print and io bound to the sink and the handle in place. */
+/* The create member: a kept state, which make holds for the life of the process, with print and io bound to the sink and the handle in place. */
 __attribute__ ((visibility ("default"))) void *
-lua_open (void)
+lua_create (void)
 {
   lua_State *L = lua_open_state ();
   if (L == NULL)
@@ -786,19 +786,14 @@ lua_open (void)
   return L;
 }
 
-/* The run primitive: exec runs the chunk in the state with its output to the sink; import runs it with print on stderr, then hands make the globals it defined or rebound and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-lua_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the state with its output to the sink; import runs it with print on stderr, then hands make the globals it defined or rebound and the sink their names. */
+static int
+lua_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   lua_State *L = state;
   int export = strcmp (op, "import") == 0;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "lua: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "lua.%s: no chunk\n", op);
@@ -823,6 +818,18 @@ lua_run (void *state, struct amk_sink *out, const char *op, const char *prog)
     }
   lua_sink = &amk_sink_stderr;
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+lua_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return lua_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+lua_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return lua_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a function there, is called with the event as a table. Its print goes to stderr, and an error reports there and is otherwise ignored. */

@@ -432,7 +432,7 @@ amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
 {
   char *buf;
   size_t len = 0, cap = 4096;
-  if (e->argv || argc < 2 || strcmp (argv[1], "-") != 0)
+  if (e->cli->argv || argc < 2 || strcmp (argv[1], "-") != 0)
     return;
   buf = xmalloc (cap + 1);
   while (1)

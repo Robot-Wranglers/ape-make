@@ -699,9 +699,9 @@ micropy_run_main (int argc, char **argv)
   return rc;
 }
 
-/* The open primitive: the one kept state, which make holds as main; a second open answers null, since micropython has one heap and one set of globals. */
+/* The create member: the one kept state, which make holds as main; a second create answers null, since micropython has one heap and one set of globals. */
 __attribute__ ((visibility ("default"))) void *
-micropy_open (void)
+micropy_create (void)
 {
   if (micropy_kept)
     return NULL;
@@ -715,9 +715,9 @@ micropy_open (void)
   return &micropy_kept;
 }
 
-/* The run primitive: exec runs the chunk with what it writes to stdout going to the sink; import runs it with output on stderr, then hands make the globals it defined or rebound and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-micropy_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk with what it writes to stdout going to the sink; import runs it with output on stderr, then hands make the globals it defined or rebound and the sink their names. */
+static int
+micropy_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   struct amk_capture capture;
   int export = strcmp (op, "import") == 0;
@@ -726,11 +726,6 @@ micropy_run (void *state, struct amk_sink *out, const char *op, const char *prog
   int rc;
 
   (void) state;
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "micropy: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "micropy.%s: no chunk\n", op);
@@ -761,6 +756,18 @@ micropy_run (void *state, struct amk_sink *out, const char *op, const char *prog
   fprintf (stderr, "micropy.import: ");
   mp_obj_print_exception (&mp_stderr_print, MP_OBJ_FROM_PTR (nlr.ret_val));
   return 1;
+}
+
+__attribute__ ((visibility ("default"))) int
+micropy_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return micropy_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+micropy_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return micropy_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a callable there, is called with the event as a dict. Its print goes to stderr, and an error reports there and is otherwise ignored. */

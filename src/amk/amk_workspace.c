@@ -74,9 +74,31 @@ amk_ns_state (const struct amk_engine *e, const char *name, int open)
         return NULL;
       ns = amk_ns_add (e, name);
     }
-  if (ns->state == NULL && open)
-    ns->state = e->open ();
+  if (ns->state == NULL && open && amk_engine_kept (e) != NULL)
+    ns->state = amk_engine_kept (e)->create ();
   return ns->state;
+}
+
+/* The member an operation names, on the interface the row has.  */
+static int
+amk_state_member (const struct amk_engine *e, void *state, struct amk_sink *out, const char *op, const char *prog)
+{
+  const struct amk_state_ops *s = e->state;
+  const struct amk_workspace_ops *w = e->workspace;
+  if (s != NULL && streq (op, "exec"))
+    return s->exec (state, out, prog);
+  if (s != NULL && streq (op, "import"))
+    return s->import (state, out, prog);
+  if (w != NULL && streq (op, "get"))
+    return w->get (state, out, prog);
+  if (w != NULL && streq (op, "update"))
+    return w->update (state, out, prog);
+  if (w != NULL && streq (op, "load"))
+    return w->load (state, prog);
+  if (w != NULL && streq (op, "dump"))
+    return w->dump (state, out);
+  fprintf (stderr, "amk: %s has no %s; one of %s\n", e->name, op, amk_engine_ops (e) != NULL ? amk_engine_ops (e) : "none");
+  return 2;
 }
 
 /* One operation in a state, credited to its engine while it runs.  */
@@ -86,7 +108,7 @@ amk_state_run (const struct amk_engine *e, void *state, struct amk_sink *out, co
   const char *outer = amk_binding_engine;
   int rc;
   amk_binding_engine = e->name;
-  rc = e->run (state, out, op, prog);
+  rc = amk_state_member (e, state, out, op, prog);
   amk_binding_engine = outer;
   return rc;
 }
@@ -99,24 +121,34 @@ amk_ns_valid (const char *name)
   return n > 0 && n < 200 && strpbrk (name, " \t\n'\"\\") == NULL;
 }
 
-/* Whether word is one of the row's operations.  */
-static int
-amk_engine_has_op (const struct amk_engine *e, const char *word)
+int
+amk_engine_has_op (const struct amk_engine *e, const char *word, size_t len)
 {
-  const char *p = e->ops, *w;
+  const char *p = amk_engine_ops (e), *w;
   size_t wlen;
   if (p == NULL)
     return 0;
   while ((w = find_next_token (&p, &wlen)) != NULL)
-    if (wlen == strlen (word) && memcmp (w, word, wlen) == 0)
+    if (wlen == len && memcmp (w, word, wlen) == 0)
       return 1;
   return 0;
+}
+
+char *
+func_refuse (char *o, char **argv, const char *funcname)
+{
+  const struct amk_engine *e = amk_engine_by_name (funcname);
+  (void) argv;
+  if (amk_engine_ops (e) == NULL)
+    OSS (fatal, reading_file, _("%s: %s has no state or workspace interface"), funcname, e->name);
+  OSSS (fatal, reading_file, _("%s: %s has no such operation; one of %s"), funcname, e->name, amk_engine_ops (e));
+  return o;
 }
 
 int
 amk_engine_is_workspace (const struct amk_engine *e)
 {
-  return e != NULL && e->run != NULL && e->whole != NULL;
+  return e != NULL && e->workspace != NULL;
 }
 
 const struct amk_engine *
@@ -232,7 +264,10 @@ func_handle (char *o, char **argv, const char *funcname)
 {
   const char *dot = strrchr (funcname, '.');
   char *ns = xstrndup (funcname, dot - funcname);
-  o = amk_ns_run (o, amk_ns_owner (ns), ns, dot + 1, argv[0], funcname);
+  const struct amk_engine *e = amk_ns_owner (ns);
+  if (!amk_engine_has_op (e, dot + 1, strlen (dot + 1)))
+    OSSS (fatal, reading_file, _("%s: %s has no such operation; one of %s"), funcname, e->name, amk_engine_ops (e));
+  o = amk_ns_run (o, e, ns, dot + 1, argv[0], funcname);
   free (ns);
   return o;
 }
@@ -331,7 +366,7 @@ amk_ns_sync_out (const struct amk_engine *e, struct amk_ns *row)
 
   if (row->mode < AMK_BACK_OWNED)
     return 0;
-  rc = amk_state_run (e, row->state, &sink.base, "get", e->whole);
+  rc = amk_state_run (e, row->state, &sink.base, "dump", "");
   if (rc != 0)
     {
       free (sink.buf);
@@ -437,11 +472,11 @@ amk_ns_create (const struct amk_engine *e, const char *ns, const char *funcname)
       if (amk_ns_state (e, "main", 1) == NULL)
         OSS (fatal, reading_file, _("%s: cannot open a %s state"), funcname, e->name);
       row = amk_ns_add (e, ns);
-      row->state = e->open ();
+      row->state = amk_engine_kept (e)->create ();
       if (row->state == NULL)
         OSS (fatal, reading_file, _("%s: create is not supported for %s"), funcname, e->name);
     }
-  for (p = e->ops; (w = find_next_token (&p, &wlen)) != NULL;)
+  for (p = AMK_OPS_ALL; (w = find_next_token (&p, &wlen)) != NULL;)
     {
       char *name = xmalloc (strlen (ns) + wlen + 3);
       sprintf (name, "%s.%.*s", ns, (int) wlen, w);
@@ -453,7 +488,7 @@ amk_ns_create (const struct amk_engine *e, const char *ns, const char *funcname)
       free (name);
     }
   row->handles = 1;
-  for (p = e->ops; (w = find_next_token (&p, &wlen)) != NULL;)
+  for (p = AMK_OPS_ALL; (w = find_next_token (&p, &wlen)) != NULL;)
     {
       amk_handle_add (ns, w, wlen, 0);
       amk_handle_add (ns, w, wlen, 1);
@@ -474,9 +509,9 @@ amk_workspace_call (struct amk_sink *out, const char *op, const char *ns, const 
       fprintf (stderr, "amk: call: this build has no workspaces\n");
       return 2;
     }
-  if (!amk_engine_has_op (e, op))
+  if (!amk_engine_has_op (e, op, strlen (op)) && !streq (op, "dump"))
     {
-      fprintf (stderr, "amk: call: unknown operation %s; one of %s, dump, filter, create\n", op, e->ops);
+      fprintf (stderr, "amk: call: unknown operation %s; one of %s, dump, filter, create\n", op, amk_engine_ops (e));
       return 2;
     }
   if (!amk_ns_valid (ns))
@@ -494,7 +529,7 @@ amk_workspace_call (struct amk_sink *out, const char *op, const char *ns, const 
   if (row == NULL)
     row = amk_ns_add (e, ns);
   if (row->state == NULL)
-    row->state = e->open ();
+    row->state = e->workspace->kept.create ();
   if (row->state == NULL)
     {
       fprintf (stderr, "amk: call: cannot open a %s state\n", e->name);
@@ -509,8 +544,8 @@ amk_workspace_filter (struct amk_sink *out, const char *prog, const char *input)
 {
   const struct amk_engine *e;
   for (e = amk_engines; e->name != NULL; ++e)
-    if (amk_engine_is_workspace (e) && e->filter != NULL)
-      return e->filter (out, prog, input != NULL ? input : "");
+    if (amk_engine_is_workspace (e) && e->workspace->filter != NULL)
+      return e->workspace->filter (out, prog, input != NULL ? input : "");
   fprintf (stderr, "amk: call: filter: no workspace in this build has a stateless run\n");
   return 2;
 }
@@ -601,8 +636,8 @@ func_ns (char *o, char **argv, const char *funcname)
         }
       return o;
     }
-  if (!amk_engine_has_op (e, op))
-    OSSS (fatal, reading_file, _("%s: expected an op, got \"%s\"; one of %s create"), funcname, op, e->ops);
+  if (!amk_engine_has_op (e, op, strlen (op)))
+    OSSS (fatal, reading_file, _("%s: expected an op, got \"%s\"; one of %s create"), funcname, op, amk_engine_ops (e));
   if (argv[2] == NULL)
     OSS (fatal, reading_file, _("%s %s: no program"), funcname, op);
   if (!streq (ns, "main"))

@@ -208,12 +208,12 @@ the profile, and answers a served request.
 +    for (e = amk_engines; e->name; ++e)
 +      {
 +        if (amk_engine_called (e, base))
-+          exit (e->main (argc, argv));
++          exit (e->cli->main (argc, argv));
 +        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && strcmp (argv[1] + 2, e->name) == 0)
 +          {
 +            argv[1] = (char *) e->name;
 +            amk_program_from_stdin (e, argc - 1, argv + 1);
-+            exit (e->main (argc - 1, argv + 1));
++            exit (e->cli->main (argc - 1, argv + 1));
 +          }
 +      }
 +    (void) base;

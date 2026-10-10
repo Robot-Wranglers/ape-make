@@ -312,11 +312,12 @@ done:
   return rc;
 }
 
-/* load: the one JSON text that is the program becomes the value. */
-static int
-jq_load (jv *state, const char *text)
+/* The load member: the one JSON text becomes the value, or the value is left as it was. */
+__attribute__ ((visibility ("default"))) int
+jq_load (void *vstate, const char *text)
 {
-  jv v = jv_parse (text);
+  jv *state = vstate;
+  jv v = jv_parse (text != NULL ? text : "");
   if (!jv_is_valid (v))
     {
       jv msg = jv_invalid_get_msg (v);
@@ -329,9 +330,9 @@ jq_load (jv *state, const char *text)
   return 0;
 }
 
-/* The open primitive: a fresh state holding null. */
+/* The create member: a fresh state holding null. */
 __attribute__ ((visibility ("default"))) void *
-jq_open (void)
+jq_create (void)
 {
   jv *state = malloc (sizeof *state);
   if (state == NULL)
@@ -340,16 +341,25 @@ jq_open (void)
   return state;
 }
 
-/* The run primitive: get, update or load on the state, with the output to the sink. */
+/* The get member: the program over the value, every output to the sink, the value kept as it was. */
 __attribute__ ((visibility ("default"))) int
-jq_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+jq_get (void *state, struct amk_sink *out, const char *prog)
 {
-  if (strcmp (op, "get") == 0 || strcmp (op, "update") == 0)
-    return jq_run_op (state, out, op, prog != NULL ? prog : "", NULL);
-  if (strcmp (op, "load") == 0)
-    return jq_load (state, prog != NULL ? prog : "");
-  fprintf (stderr, "jq: unknown operation %s; one of get, update, load\n", op);
-  return JQ_STATUS_USAGE;
+  return jq_run_op (state, out, "get", prog != NULL ? prog : "", NULL);
+}
+
+/* The update member: the program over the value, its first output kept as the new value and the rest to the sink. */
+__attribute__ ((visibility ("default"))) int
+jq_update (void *state, struct amk_sink *out, const char *prog)
+{
+  return jq_run_op (state, out, "update", prog != NULL ? prog : "", NULL);
+}
+
+/* The dump member: the whole value, as the JSON text load takes back. */
+__attribute__ ((visibility ("default"))) int
+jq_dump (void *state, struct amk_sink *out)
+{
+  return jq_run_op (state, out, "get", ".", NULL);
 }
 
 /* The filter primitive: the program over every JSON text in the input, with no state. */

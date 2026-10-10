@@ -14,35 +14,119 @@
 #include <sys/wait.h>
 #include "amk.h"
 
-/* Each row: the builtin name, the multi-call names, the entry point, and the argv shape.  */
+/* Each engine's interfaces, then its row: the builtin name, the multi-call names, and the interfaces it has.  */
+#ifdef AMK_ENGINE_GAWK
+static const struct amk_cli_ops awk_cli = { .main = gawk_main, .dashdash = 1, .argv = 1 };
+#endif
+#ifdef AMK_ENGINE_JQ
+static const struct amk_cli_ops jq_cli = { .main = jq_main, .argv = 1 };
+static const struct amk_workspace_ops jq_workspace = {
+  .kept = { .create = jq_create },
+  .get = jq_get, .update = jq_update, .load = jq_load, .dump = jq_dump, .filter = jq_filter,
+};
+#endif
+#ifdef AMK_ENGINE_LUA
+static const struct amk_cli_ops lua_cli = { .main = lua_run_main };
+static const struct amk_state_ops lua_state = {
+  .kept = { .create = lua_create }, .exec = lua_exec, .import = lua_import, .hook = lua_hook,
+};
+#endif
+#ifdef AMK_ENGINE_S7
+static const struct amk_cli_ops s7_cli = { .main = s7_run_main };
+static const struct amk_state_ops s7_state = {
+  .kept = { .create = s7_create }, .exec = s7_exec, .import = s7_import, .hook = s7_hook,
+};
+#endif
+#ifdef AMK_ENGINE_MICROPY
+static const struct amk_cli_ops micropy_cli = { .main = micropy_run_main };
+static const struct amk_state_ops micropy_state = {
+  .kept = { .create = micropy_create }, .exec = micropy_exec, .import = micropy_import, .hook = micropy_hook,
+};
+#endif
+#ifdef AMK_ENGINE_WASM3
+static const struct amk_cli_ops wasm_cli = { .main = wasm3_main, .cmdline = 1, .argv = 1 };
+#endif
+#ifdef AMK_ENGINE_QUICKJS
+static const struct amk_cli_ops js_cli = { .main = js_run_main };
+static const struct amk_state_ops js_state = {
+  .kept = { .create = js_create }, .exec = js_exec, .import = js_import, .hook = js_hook,
+};
+#endif
+#ifdef AMK_ENGINE_SQLITE
+static const struct amk_cli_ops sqlite_cli = { .main = sqlite_main, .dashdash = 1, .argv = 1 };
+static const struct amk_workspace_ops sqlite_workspace = {
+  .kept = { .create = sqlite_create },
+  .get = sqlite_get, .update = sqlite_update, .load = sqlite_load, .dump = sqlite_dump,
+};
+#endif
+
 const struct amk_engine amk_engines[] =
   {
 #ifdef AMK_ENGINE_GAWK
-    { "awk", "awk gawk", gawk_main, 1, 0, 1 },
+    { .name = "awk", .aliases = "awk gawk", .cli = &awk_cli },
 #endif
 #ifdef AMK_ENGINE_JQ
-    { "jq", "jq", jq_main, 0, 0, 1, jq_open, jq_run, 0, jq_filter, "get update load", "." },
+    { .name = "jq", .aliases = "jq", .cli = &jq_cli, .workspace = &jq_workspace },
 #endif
 #ifdef AMK_ENGINE_LUA
-    { "lua", 0, lua_run_main, 0, 0, 0, lua_open, lua_run, lua_hook, 0, "exec import" },
+    { .name = "lua", .cli = &lua_cli, .state = &lua_state },
 #endif
 #ifdef AMK_ENGINE_S7
-    { "s7", 0, s7_run_main, 0, 0, 0, s7_open, s7_run, s7_hook, 0, "exec import" },
+    { .name = "s7", .cli = &s7_cli, .state = &s7_state },
 #endif
 #ifdef AMK_ENGINE_MICROPY
-    { "micropy", 0, micropy_run_main, 0, 0, 0, micropy_open, micropy_run, micropy_hook, 0, "exec import" },
+    { .name = "micropy", .cli = &micropy_cli, .state = &micropy_state },
 #endif
 #ifdef AMK_ENGINE_WASM3
-    { "wasm", "wasm3", wasm3_main, 0, 1, 1 },
+    { .name = "wasm", .aliases = "wasm3", .cli = &wasm_cli },
 #endif
 #ifdef AMK_ENGINE_QUICKJS
-    { "js", 0, js_run_main, 0, 0, 0, js_open, js_run, js_hook, 0, "exec import" },
+    { .name = "js", .cli = &js_cli, .state = &js_state },
 #endif
 #ifdef AMK_ENGINE_SQLITE
-    { "sqlite", "sqlite3", sqlite_main, 1, 0, 1, sqlite_open, sqlite_run, 0, 0, "get update load", ".dump" },
+    { .name = "sqlite", .aliases = "sqlite3", .cli = &sqlite_cli, .workspace = &sqlite_workspace },
 #endif
-    { 0, 0, 0, 0, 0, 0 }
+    { .name = NULL }
   };
+
+/* A row is refused unless it has a command line, at most one kept-state interface, and every member of that interface but the optional hook and filter.  */
+void
+amk_engines_check (void)
+{
+  const struct amk_engine *e;
+  for (e = amk_engines; e->name; ++e)
+    {
+      const char *missing = NULL;
+      if (e->cli == NULL || e->cli->main == NULL)
+        missing = "a command line";
+      else if (e->state != NULL && e->workspace != NULL)
+        missing = "only one of the state and workspace interfaces";
+      else if (e->state != NULL && (e->state->kept.create == NULL || e->state->exec == NULL || e->state->import == NULL))
+        missing = "every member of its state interface";
+      else if (e->workspace != NULL
+               && (e->workspace->kept.create == NULL || e->workspace->get == NULL || e->workspace->update == NULL
+                   || e->workspace->load == NULL || e->workspace->dump == NULL))
+        missing = "every member of its workspace interface";
+      if (missing != NULL)
+        OSS (fatal, NILF, _("engine %s: needs %s"), e->name, missing);
+    }
+}
+
+const struct amk_kept_ops *
+amk_engine_kept (const struct amk_engine *e)
+{
+  if (e == NULL)
+    return NULL;
+  return e->state != NULL ? &e->state->kept : e->workspace != NULL ? &e->workspace->kept : NULL;
+}
+
+const char *
+amk_engine_ops (const struct amk_engine *e)
+{
+  if (e == NULL)
+    return NULL;
+  return e->state != NULL ? "exec import" : e->workspace != NULL ? "get update load" : NULL;
+}
 
 /* The row for a builtin name, with or without its .argv suffix.  */
 const struct amk_engine *
@@ -65,11 +149,11 @@ amk_hook_fire (enum amk_event event, const struct amk_event_info *info)
 {
   const struct amk_engine *e;
   for (e = amk_engines; e->name; ++e)
-    if (e->hook)
+    if (e->state != NULL && e->state->hook != NULL)
       {
         void *state = amk_ns_state (e, "main", 0);
         if (state != NULL)
-          e->hook (state, amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
+          e->state->hook (state, amk_event_names[event], info->target, info->status, info->exit_code, info->exit_sig, (long) info->pid);
       }
 }
 
@@ -118,13 +202,13 @@ amk_init_chunk (const struct amk_engine *e)
   return chunk;
 }
 
-/* Every row with a run entry runs its init chunk, once, in main, with print on stderr.  */
+/* Every row with a state interface runs its init chunk, once, in main, with print on stderr.  */
 void
 amk_engine_init (void)
 {
   const struct amk_engine *e;
   for (e = amk_engines; e->name; ++e)
-    if (e->run)
+    if (e->state != NULL)
       {
         char *chunk = amk_init_chunk (e);
         void *state;
@@ -132,7 +216,7 @@ amk_engine_init (void)
           continue;
         state = amk_ns_state (e, "main", 1);
         if (state != NULL)
-          e->run (state, &amk_sink_stderr, "exec", chunk);
+          e->state->exec (state, &amk_sink_stderr, chunk);
         free (chunk);
       }
 }
@@ -304,7 +388,7 @@ func_engine (char *o, char **argv, const char *funcname)
   char *opts = NULL;
   char *args = NULL;
   int ac = 1;
-  if (e->filter && strchr (funcname, '.') == NULL)
+  if (e->workspace != NULL && e->workspace->filter != NULL && strchr (funcname, '.') == NULL)
     return amk_filter_expand (o, e, argv[0], argv[1]);
   av[0] = (char *) e->name;
   if (strchr (funcname, '.'))
@@ -312,9 +396,9 @@ func_engine (char *o, char **argv, const char *funcname)
       opts = xstrdup (*argv++);
       ac += amk_split_argv (opts, av + ac, 30);
     }
-  if (e->dashdash)
+  if (e->cli->dashdash)
     av[ac++] = (char *) "--";
-  if (e->cmdline)
+  if (e->cli->cmdline)
     {
       args = xstrdup (argv[0]);
       ac += amk_split_argv (args, av + ac, 62 - ac);
@@ -322,7 +406,7 @@ func_engine (char *o, char **argv, const char *funcname)
   else
     av[ac++] = argv[0];
   av[ac] = NULL;
-  o = func_guest (o, funcname, e->main, ac, av, argv[1]);
+  o = func_guest (o, funcname, e->cli->main, ac, av, argv[1]);
   free (opts);
   free (args);
   return o;
@@ -338,9 +422,9 @@ amk_engine_program (const struct amk_engine *e, const char *flags, const char *p
   av[0] = (char *) e->name;
   if (flags != NULL)
     ac += amk_split_argv (xstrdup (flags), av + ac, 30);
-  if (e->dashdash)
+  if (e->cli->dashdash)
     av[ac++] = (char *) "--";
-  if (e->cmdline)
+  if (e->cli->cmdline)
     {
       args = xstrdup (program);
       ac += amk_split_argv (args, av + ac, 62 - ac);
@@ -350,7 +434,7 @@ amk_engine_program (const struct amk_engine *e, const char *flags, const char *p
   av[ac] = NULL;
   amk_queue_fd = -1;
   optind = 0;
-  amk_exit (e->main (ac, av));
+  amk_exit (e->cli->main (ac, av));
 }
 
 /* The expansion being built, as a sink: what an engine writes lands in make's own buffer at the call's place, with no copy between.  */
@@ -382,7 +466,7 @@ amk_filter_expand (char *o, const struct amk_engine *e, const char *prog, const 
 
   sink.base.write = amk_expand_write;
   sink.o = o;
-  rc = e->filter (&sink.base, prog, input != NULL ? input : "");
+  rc = e->workspace->filter (&sink.base, prog, input != NULL ? input : "");
   shell_completed (rc, 0);
   o = sink.o;
   if ((size_t) (o - variable_buffer) > start && o[-1] == '\n')

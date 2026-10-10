@@ -726,10 +726,10 @@ The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 | topic | what it gives |
 | --- | --- |
 | [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
-| [Workspace rows](docs/FFI.md#workspace-rows) | jq values and sqlite databases held by the make process, the contract a row meets |
+| [The workspace interface](docs/FFI.md#the-workspace-interface) | jq values and sqlite databases held by the make process, and the verbs every workspace has |
 | [jq workspaces](docs/FFI.md#jq-workspaces) | named JSON values, updated in the make process with no fork |
 | [Calls from a recipe](docs/FFI.md#calls-from-a-recipe) | workspaces from a running recipe's shell |
-| [Init](docs/FFI.md#init) | a chunk run in each persistent state before the parse |
+| [Init](docs/FFI.md#init) | a chunk run in each scripting guest's main state before the parse |
 | [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
 | [The guest handle](docs/FFI.md#the-guest-handle) | variable reads and writes, expansion, and eval from a guest |
 | [Registering make functions](docs/FFI.md#registering-make-functions) | guest functions and values as make functions and variables |

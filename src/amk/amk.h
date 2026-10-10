@@ -175,6 +175,8 @@ char *func_handle (char *o, char **argv, const char *funcname);
 char *func_ns (char *o, char **argv, const char *funcname);
 char *func_import_target (char *o, char **argv, const char *funcname);
 char *func_workspace_import (char *o, char **argv, const char *funcname);
+/* Any engine builtin the row's interface lacks: a fatal error naming the engine and what it has.  */
+char *func_refuse (char *o, char **argv, const char *funcname);
 /* The payload's entry points, which main calls before and while it reads its options.  */
 void amk_payload_boot (int argc, char **argv);
 void amk_payload_path (void);
@@ -188,27 +190,60 @@ extern struct hash_table files;
 char *func_engine (char *o, char **argv, const char *funcname);
 char *func_bindings (char *o, char **argv, const char *funcname);
 
-/* The kept-state primitives, when a row has them: open gives a fresh opaque state, or null when the engine cannot open another; run executes one operation's program in a state, its output to the sink, and answers the status; hook hears every event in the given state; filter, when a row has one, runs a program over an input text with no state. ops names the operations make registers over run, space-separated. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
-/* A workspace row is one with run and whole, and it meets the call channel's contract: ops holds get, update and load; get with the whole program prints the whole value; load with a text replaces it; every output is a sequence of lines, counted by the reply; filter, when the row has one, is its stateless run, and a row without one refuses the channel's filter. A backing writes the whole value out and loads it back through those two. */
-struct amk_engine
+/* Every engine: main is its command line, the $(name ...) builtin, and an imported target's job; dashdash puts -- ahead of the program, cmdline splits the program into words, argv gives the $(name.argv ...) form. */
+struct amk_cli_ops
   {
-    const char *name;
-    const char *aliases;
     int (*main) (int, char **);
     unsigned int dashdash:1;
     unsigned int cmdline:1;
     unsigned int argv:1;
-    void *(*open) (void);
-    int (*run) (void *state, struct amk_sink *out, const char *op, const char *prog);
+  };
+
+/* Every kept state: create gives a fresh opaque state, or null when the engine cannot make another. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
+struct amk_kept_ops
+  {
+    void *(*create) (void);
+  };
+
+/* A scripting guest: exec runs code in a state; import runs code and lifts what it defines into make, printing the names of the variables it gave; hook, when set, hears every event in the state. */
+struct amk_state_ops
+  {
+    struct amk_kept_ops kept;
+    int (*exec) (void *state, struct amk_sink *out, const char *prog);
+    int (*import) (void *state, struct amk_sink *out, const char *prog);
     void (*hook) (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+  };
+
+/* A datastructure guest: get runs a program over the state and leaves it as it was; update runs one that may change it; load replaces the whole state with a text, all or nothing; dump prints the whole state as the text load takes back. Every output is a sequence of lines. filter, when set, runs a program over an input text with no state. */
+struct amk_workspace_ops
+  {
+    struct amk_kept_ops kept;
+    int (*get) (void *state, struct amk_sink *out, const char *prog);
+    int (*update) (void *state, struct amk_sink *out, const char *prog);
+    int (*load) (void *state, const char *text);
+    int (*dump) (void *state, struct amk_sink *out);
     int (*filter) (struct amk_sink *out, const char *prog, const char *input);
-    const char *ops;
-    const char *whole;
+  };
+
+/* An engine is its command line and at most one of the two kept-state interfaces; amk_engines_check refuses any other row at startup. */
+struct amk_engine
+  {
+    const char *name;
+    const char *aliases;
+    const struct amk_cli_ops *cli;
+    const struct amk_state_ops *state;
+    const struct amk_workspace_ops *workspace;
   };
 
 extern const struct amk_engine amk_engines[];
 const struct amk_engine *amk_engine_by_name (const char *name);
 int amk_engine_called (const struct amk_engine *e, const char *word);
+void amk_engines_check (void);
+/* The kept-state interface a row has, if any, the operation words that interface takes on a namespace, and whether a word is one of them; every engine registers the names of all of them.  */
+#define AMK_OPS_ALL "exec import get update load"
+const struct amk_kept_ops *amk_engine_kept (const struct amk_engine *e);
+const char *amk_engine_ops (const struct amk_engine *e);
+int amk_engine_has_op (const struct amk_engine *e, const char *word, size_t len);
 /* Whether a row is a workspace row, and the workspace row a namespace name reaches: its owner, else the first workspace row in the build, else null. */
 int amk_engine_is_workspace (const struct amk_engine *e);
 const struct amk_engine *amk_workspace_engine (const char *ns);
@@ -224,28 +259,38 @@ int amk_func_add (const char *name, void *state, char *(*fn) (void *state, const
 
 extern int gawk_main (int argc, char **argv);
 extern int jq_main (int argc, char **argv);
-extern void *jq_open (void);
-extern int jq_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *jq_create (void);
+extern int jq_get (void *state, struct amk_sink *out, const char *prog);
+extern int jq_update (void *state, struct amk_sink *out, const char *prog);
+extern int jq_load (void *state, const char *text);
+extern int jq_dump (void *state, struct amk_sink *out);
 extern int jq_filter (struct amk_sink *out, const char *prog, const char *input);
 extern int sqlite_main (int argc, char **argv);
-extern void *sqlite_open (void);
-extern int sqlite_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *sqlite_create (void);
+extern int sqlite_get (void *state, struct amk_sink *out, const char *prog);
+extern int sqlite_update (void *state, struct amk_sink *out, const char *prog);
+extern int sqlite_load (void *state, const char *text);
+extern int sqlite_dump (void *state, struct amk_sink *out);
 extern int lua_run_main (int argc, char **argv);
-extern void *lua_open (void);
-extern int lua_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *lua_create (void);
+extern int lua_exec (void *state, struct amk_sink *out, const char *prog);
+extern int lua_import (void *state, struct amk_sink *out, const char *prog);
 extern void lua_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 extern int s7_run_main (int argc, char **argv);
-extern void *s7_open (void);
-extern int s7_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *s7_create (void);
+extern int s7_exec (void *state, struct amk_sink *out, const char *prog);
+extern int s7_import (void *state, struct amk_sink *out, const char *prog);
 extern void s7_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 extern int micropy_run_main (int argc, char **argv);
-extern void *micropy_open (void);
-extern int micropy_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *micropy_create (void);
+extern int micropy_exec (void *state, struct amk_sink *out, const char *prog);
+extern int micropy_import (void *state, struct amk_sink *out, const char *prog);
 extern void micropy_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 extern int wasm3_main (int argc, char **argv);
 extern int js_run_main (int argc, char **argv);
-extern void *js_open (void);
-extern int js_run (void *state, struct amk_sink *out, const char *op, const char *prog);
+extern void *js_create (void);
+extern int js_exec (void *state, struct amk_sink *out, const char *prog);
+extern int js_import (void *state, struct amk_sink *out, const char *prog);
 extern void js_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 
 #endif

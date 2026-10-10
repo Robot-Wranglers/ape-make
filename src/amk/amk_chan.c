@@ -312,7 +312,7 @@ amk_call_slurp (const char *op, const char *name, const char *path) {
   return text;
 }
 
-/* One request line to a workspace: the operation, the name, and the rest as the program. A dump is a get of the row's whole program, a load names a file read here, and a filter, whose input lines the transport counted, runs with no name.  */
+/* One request line to a workspace: the operation, the name, and the rest as the program. A dump prints the whole state, a load names a file read here, and a filter, whose input lines the transport counted, runs with no name.  */
 static int
 amk_call_serve (struct amk_sink *out, const char *line, const char *input) {
   char op[32], name[1024];
@@ -339,10 +339,8 @@ amk_call_serve (struct amk_sink *out, const char *line, const char *input) {
     ++p;
   if (strcmp (op, "create") == 0)
     return amk_workspace_backing (name, p);
-  if (strcmp (op, "dump") == 0) {
-    const struct amk_engine *e = amk_workspace_engine (name);
-    return amk_workspace_call (out, "get", name, e != NULL ? e->whole : "");
-  }
+  if (strcmp (op, "dump") == 0)
+    return amk_workspace_call (out, "dump", name, "");
   if (strcmp (op, "load") == 0) {
     char path[4096];
     if (!amk_call_word (&p, path, sizeof path)) {

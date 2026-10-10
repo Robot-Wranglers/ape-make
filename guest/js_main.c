@@ -617,9 +617,9 @@ js_export_globals (JSContext *ctx, JSValueConst before, struct amk_sink *out)
   return rc;
 }
 
-/* The open primitive: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
+/* The create member: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
 __attribute__ ((visibility ("default"))) void *
-js_open (void)
+js_create (void)
 {
   struct js_state *s = calloc (1, sizeof *s);
   if (s == NULL)
@@ -635,9 +635,9 @@ js_open (void)
   return s;
 }
 
-/* The run primitive: exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
+static int
+js_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   struct js_state *s = state;
   struct amk_capture capture;
@@ -646,11 +646,6 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
   JSValue before;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "js: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "js.%s: no chunk\n", op);
@@ -673,6 +668,18 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
     rc = js_export_globals (ctx, before, out);
   JS_FreeValue (ctx, before);
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+js_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+js_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a function there, is called with the event as an object. Its print goes to stderr, and an error reports there and is otherwise ignored. */

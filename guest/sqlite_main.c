@@ -167,6 +167,13 @@ sq_exec (sqlite3 *db, struct amk_sink *out, const char *op, const char *text)
         }
       if (st == NULL)
         continue;
+      if (strcmp (op, "get") == 0 && !sqlite3_stmt_readonly (st))
+        {
+          fprintf (stderr, "sqlite.get: a statement that writes belongs in update: %s\n", sqlite3_sql (st));
+          sqlite3_finalize (st);
+          rc = SQLITE_STATUS_USAGE;
+          break;
+        }
       for (i = 0; i < nargs; ++i)
         {
           char param[260];
@@ -265,9 +272,9 @@ sq_dump (sqlite3 *db, struct amk_sink *out)
   return 0;
 }
 
-/* The open primitive: a fresh in-memory database. */
+/* The create member: a fresh in-memory database. */
 __attribute__ ((visibility ("default"))) void *
-sqlite_open (void)
+sqlite_create (void)
 {
   sqlite3 *db = NULL;
   if (sqlite3_open (":memory:", &db) != SQLITE_OK)
@@ -278,33 +285,87 @@ sqlite_open (void)
   return db;
 }
 
-/* The run primitive: get runs statements and prints their rows, update does the same, and load replaces the database with the text's statements; the whole program is the dump. */
-__attribute__ ((visibility ("default"))) int
-sqlite_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* Every view, trigger and table dropped, indexes with their tables, inside the caller's transaction. */
+static int
+sq_drop_all (sqlite3 *db)
 {
-  sqlite3 *db = state;
-  if (prog == NULL)
-    prog = "";
-  if (strcmp (op, "get") == 0 && strcmp (prog, ".dump") == 0)
-    return sq_dump (db, out);
-  if (strcmp (op, "get") == 0 || strcmp (op, "update") == 0)
-    {
-      if (*prog == '\0')
-        {
-          fprintf (stderr, "sqlite.%s: no statement\n", op);
-          return SQLITE_STATUS_USAGE;
-        }
-      return sq_exec (db, out, op, prog);
-    }
-  if (strcmp (op, "load") == 0)
+  static const char *const kinds[] = { "view", "trigger", "table" };
+  int k, rc = SQLITE_OK;
+  for (k = 0; k < 3 && rc == SQLITE_OK; ++k)
     {
       sqlite3_stmt *st = NULL;
-      sqlite3_exec (db, "PRAGMA writable_schema = 1; DELETE FROM sqlite_master; PRAGMA writable_schema = 0; VACUUM", NULL, NULL, NULL);
-      (void) st;
-      return sq_exec (db, NULL, op, prog);
+      char **names = NULL;
+      int n = 0, i;
+      rc = sqlite3_prepare_v2 (db, "SELECT name FROM sqlite_master WHERE type = ?1 AND name NOT LIKE 'sqlite_%'", -1, &st, NULL);
+      if (rc != SQLITE_OK)
+        break;
+      sqlite3_bind_text (st, 1, kinds[k], -1, SQLITE_STATIC);
+      while (sqlite3_step (st) == SQLITE_ROW)
+        {
+          names = realloc (names, (size_t) (n + 1) * sizeof *names);
+          names[n++] = strdup ((const char *) sqlite3_column_text (st, 0));
+        }
+      sqlite3_finalize (st);
+      for (i = 0; i < n; ++i)
+        {
+          char *q = sqlite3_mprintf ("DROP %s IF EXISTS \"%w\"", kinds[k], names[i]);
+          if (rc == SQLITE_OK)
+            rc = sqlite3_exec (db, q, NULL, NULL, NULL);
+          sqlite3_free (q);
+          free (names[i]);
+        }
+      free (names);
     }
-  fprintf (stderr, "sqlite: unknown operation %s; one of get, update, load\n", op);
-  return SQLITE_STATUS_USAGE;
+  return rc;
+}
+
+static int
+sq_statements (sqlite3 *db, struct amk_sink *out, const char *op, const char *prog)
+{
+  if (prog == NULL || *prog == '\0')
+    {
+      fprintf (stderr, "sqlite.%s: no statement\n", op);
+      return SQLITE_STATUS_USAGE;
+    }
+  return sq_exec (db, out, op, prog);
+}
+
+/* The get member: the statements' rows to the sink; a statement that would write is refused. */
+__attribute__ ((visibility ("default"))) int
+sqlite_get (void *state, struct amk_sink *out, const char *prog)
+{
+  return sq_statements (state, out, "get", prog);
+}
+
+/* The update member: the statements, writes included, their rows to the sink. */
+__attribute__ ((visibility ("default"))) int
+sqlite_update (void *state, struct amk_sink *out, const char *prog)
+{
+  return sq_statements (state, out, "update", prog);
+}
+
+/* The load member: the database replaced by the text's statements in one transaction, or left as it was. */
+__attribute__ ((visibility ("default"))) int
+sqlite_load (void *state, const char *text)
+{
+  sqlite3 *db = state;
+  int rc;
+  if (sqlite3_exec (db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK || sq_drop_all (db) != SQLITE_OK)
+    {
+      fprintf (stderr, "sqlite.load: %s\n", sqlite3_errmsg (db));
+      sqlite3_exec (db, "ROLLBACK", NULL, NULL, NULL);
+      return SQLITE_STATUS_RUN;
+    }
+  rc = sq_exec (db, NULL, "load", text != NULL ? text : "");
+  sqlite3_exec (db, rc == 0 ? "COMMIT" : "ROLLBACK", NULL, NULL, NULL);
+  return rc;
+}
+
+/* The dump member: schema and rows, as the statements load replays. */
+__attribute__ ((visibility ("default"))) int
+sqlite_dump (void *state, struct amk_sink *out)
+{
+  return sq_dump (state, out);
 }
 
 /* The state as one blob and back, for a layer that carries engine state whole. */
