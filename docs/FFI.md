@@ -1,3 +1,5 @@
+<a id="the-ffi"></a>
+
 # The FFI
 
 An engine is a guest linked into amk: a command line, and at most one of two kept-state
@@ -15,18 +17,20 @@ implements each verb once over the members, and adds what every engine shares:
 [namespaces](#namespaces), handles, backings, the [call channel](#calls-from-a-recipe),
 and the refusals.
 
+<a id="capabilities-by-engine"></a>
+
 ## Capabilities by Engine
 
-| engine | command line | `.argv` | interface | optional members |
-| --- | --- | --- | --- | --- |
-| [awk](../README.md#awk-jq) | yes | yes | - | |
-| [wasm](../README.md#wasm) | a module | yes | - | |
-| [lua](../README.md#lua) | yes | - | state | `hook` |
-| [s7](../README.md#s7) | yes | - | state | `hook` |
-| [micropy](../README.md#micropy) | yes | - | state | `hook` |
-| [js](../README.md#js) | yes | - | state | `hook` |
-| [jq](../README.md#awk-jq) | yes | yes | workspace | `filter` |
-| [sqlite](../README.md#sqlite) | yes, sqlite's own shell | yes | workspace | |
+| engine | aliases | command line | `.argv` | interface | optional members |
+| --- | --- | --- | --- | --- | --- |
+| [awk](../README.md#awk-jq) | `gawk` | yes | yes | - | |
+| [wasm](../README.md#wasm) | `wasm3` | a module | yes | - | |
+| [lua](../README.md#lua) | | yes | - | state | `hook` |
+| [s7](../README.md#s7) | `lisp` | yes | - | state | `hook` |
+| [micropy](../README.md#micropy) | | yes | - | state | `hook` |
+| [js](../README.md#js) | | yes | - | state | `hook` |
+| [jq](../README.md#awk-jq) | | yes | yes | workspace | `filter` |
+| [sqlite](../README.md#sqlite) | `sqlite3` | yes, sqlite's own shell | yes | workspace | |
 
 The rows live in `src/amk/amk_engine.c`. At startup `amk_engines_check` refuses a row
 without a command line, with both interfaces, or missing a required member.
@@ -39,10 +43,14 @@ $(lua.ns w, create)
 y := $(w.get 1)              # lua has no such operation; one of exec import
 ```
 
+<a id="the-command-line"></a>
+
 ## The command line
 
 Every engine has one. It answers the builtin, an imported target's job, and the
 multi-call names.
+
+<a id="pass-by-value"></a>
 
 ### Pass by Value
 
@@ -70,11 +78,15 @@ define sq.sum
 endef
 ```
 
+<a id="defining-a-target-in-an-engine"></a>
+
 #### Defining a target in an engine
 
 `import.target` keeps the program as the variable `target` and makes `target` a rule
 whose job runs it. Its output is the target's value, which another imported body
 splices in as `@target@`.
+
+<a id="pass-by-reference"></a>
 
 ### Pass by Reference
 
@@ -88,16 +100,21 @@ Every builtin has a star form whose arguments may name variables.
 | `$(eng.ns* name, op, program_var)` | state and workspace engines |
 | `$(name.op* program_var)` | state and workspace engines |
 
+<a id="command-line"></a>
+
 ### Command line
 
 | form | does |
 | --- | --- |
 | `amk --eng args...`, or the binary under an engine's name | runs that engine's command line |
+| an alias, such as `lisp` for s7 | every form under that name too: `$(lisp ...)`, `$(lisp.exec ...)`, `@lisp.import`, `amk --lisp`, and the binary named `lisp`, all in the same engine and kept state |
 | `amk --eng -` | reads the program from standard input |
-| `amk --list-engines` | names each engine and its multi-call names |
+| `amk --list-engines` | every engine as JSON, with its capabilities read from the build |
 
 `amk --sqlite` is sqlite's own shell. After `--`, its database is in memory unless one
 was named before it, and each argument may mix statements with dot commands.
+
+<a id="namespaces"></a>
 
 ## Namespaces
 
@@ -116,6 +133,8 @@ A handle exists for every operation name; one the engine's interface lacks stops
 A name belongs to the engine that created it, and another engine's `create` of it fails.
 micropython has one heap, so it has `main` only.
 
+<a id="persistent-state"></a>
+
 ### Persistent state
 
 What one call leaves in a namespace, the next call finds:
@@ -125,6 +144,8 @@ $(lua.ns work, create)
 $(work.exec x = 41)
 answer := $(work.exec print(x + 1))
 ```
+
+<a id="the-state-interface"></a>
 
 ## The state interface
 
@@ -138,11 +159,15 @@ answer := $(work.exec print(x + 1))
 `$(eng.import prog)` and `@eng.import` above a define both run in `main`; the define's
 name is only a carrier for its body.
 
+<a id="init"></a>
+
 ### Init
 
 Before the parse, each state engine runs one chunk in `main`, its output on stderr. The
 chunk is `AMK_<ENGINE>_INIT`, as text or as `@path`; without it, the payload's
 `__init__.<engine>`.
+
+<a id="hooks"></a>
 
 ### Hooks
 
@@ -152,6 +177,8 @@ subscribes through its handle:
 ```Makefile
 $(lua.exec amk.on.goals = function(e) io.stderr:write("goals\n") end)
 ```
+
+<a id="the-guest-handle"></a>
 
 ### The guest handle
 
@@ -192,6 +219,8 @@ both := $(micropy import amk; print(amk.call("pair", "x,y", "$$(shell id)")))
 swapped := $(lua print(amk.call("subst", ",", ";", "a,b")))
 ```
 
+<a id="registering-make-functions"></a>
+
 ### Registering make functions
 
 A function a guest defines with `amk.func`, or one `import` lifts, becomes a make
@@ -211,6 +240,8 @@ endef
 sum := $(add 1,2)
 loud := $(shout hi)
 ```
+
+<a id="the-workspace-interface"></a>
 
 ## The workspace interface
 
@@ -238,6 +269,8 @@ $(sqlite.ns edges, create, owned edges.sql)
 $(edges.update CREATE TABLE IF NOT EXISTS e(a, b))
 ```
 
+<a id="jq-workspaces"></a>
+
 ### jq workspaces
 
 The state is one JSON value.
@@ -261,6 +294,8 @@ $(jq.ns who, create)
 name := $(who.update {"name": "a b"})
 who  := $(who.get -r .name)
 ```
+
+<a id="sqlite-workspaces"></a>
 
 ### sqlite workspaces
 
@@ -286,6 +321,8 @@ seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WH
 $(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
 ```
 
+<a id="calls-from-a-recipe"></a>
+
 ### Calls from a recipe
 
 A recipe reaches the make process's workspaces through a descriptor pair, `AMK_CALL` for
@@ -299,7 +336,7 @@ so a run has one set of workspaces.
 | `create name backing` | declares the namespace's backing |
 | `load name path` | loads the file's text |
 | `dump name` | prints the whole state |
-| `filter count prog` | the first workspace engine with a `filter`, over the `count` lines after the request |
+| `filter engine count prog` | the engine's `filter`, over the `count` lines after the request; an engine without one is refused by name |
 | `halt` | no more recipe lines or goals; make exits 112 |
 
 `source amk.sh` in a recipe gives shell helpers over the pair:
@@ -309,7 +346,8 @@ so a run has one set of workspaces.
 | `amk.call 'line' [input...]` | one request; prints the output, returns the status |
 | `amk.ns op name [options] -- prog` | one operation, a bound value quoted for the line |
 | `amk.words args...` | quotes words for a request line |
-| `jq.pipe [options] prog` | `filter` over standard input |
+| `amk.filter engine [options] prog` | `filter` over standard input, in the named engine |
+| `jq.pipe [options] prog` | `amk.filter jq` |
 
 ```Makefile
 SHELL := bash
@@ -318,6 +356,8 @@ count:
 	@source amk.sh; amk.ns update D -- 'CREATE TABLE t(k); INSERT INTO t VALUES(1)'
 	@source amk.sh; amk.ns get D -- 'SELECT count(*) AS n FROM t'
 ```
+
+<a id="reflection"></a>
 
 ## Reflection
 
@@ -333,6 +373,8 @@ count:
 methods := $(amk.fxns? lua, js)
 methods := $(amk.fxns? lua js)
 ```
+
+<a id="reference"></a>
 
 ## Reference
 

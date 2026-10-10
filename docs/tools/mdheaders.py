@@ -26,7 +26,9 @@ The title is the heading's text, so it shows in GitHub's outline; the links are 
 on the right of the same line, and levels 3 and below get a rule underneath, where GitHub
 draws none of its own.
 
-The id is lowercase letters, digits, and dashes, and becomes the anchor. Each link is a
+The id is lowercase letters, digits, and dashes, and becomes the anchor, written into the
+heading so links survive a change of title. Every other heading needs a permalink of its
+own, an <a id> on a line before it; --check fails on one without. Each link is a
 label and a target separated by its last space, and a header may have none. Everything
 between the two lines belongs to the tool and is rewritten on every run; the rest of the
 page is left byte for byte. Markers inside fenced code are ignored.
@@ -52,6 +54,7 @@ SPEC = re.compile(r'(?:(?P<level>#{1,6})\s+)?(?P<id>[a-z0-9][a-z0-9-]*)\s+"(?P<t
 CLOSE = re.compile(r"<!--\s*/header\s*-->$")
 FENCE = re.compile(r"^ {0,3}(?P<mark>`{3,}|~{3,})(?P<info>.*)$")
 HEADING = re.compile(r"^ {0,3}#{1,6}\s+(?P<text>.+?)\s*#*\s*$")
+ANCHOR = re.compile(r'<a\s+(?:id|name)=')
 SYNTAX = 'expected <!-- header [##] ID "Title" | Label target ... -->'
 
 
@@ -194,6 +197,21 @@ def warnings(page):
       yield f"{page.name}:{h.close + 2}: warning: leave a blank line after the closing marker, or this line joins the header's html"
 
 
+def unanchored(page):
+  """Every markdown heading outside the generated headers and fenced code whose last non-blank line before it holds no anchor: a link to it breaks when its text changes."""
+  lines, owned = [line.rstrip("\r\n") for line in lines_of(page.text)], set(page.code)
+  for h in page.headers:
+    owned.update(range(h.open, h.close + 1))
+  prev = ""
+  for n, line in enumerate(lines):
+    if n in owned:
+      continue
+    if (m := HEADING.match(line)) and not ANCHOR.search(prev):
+      yield f'{page.name}:{n + 1}: heading has no permalink: put <a id="{github_slug(m["text"])}"></a> on a line before it'
+    if line.strip():
+      prev = line
+
+
 def picture(src, alt, attrs=""):
   dark = src.replace(".svg", ".dark.svg")
   return (f'<picture><source media="(prefers-color-scheme: dark)" srcset="{dark}">'
@@ -204,7 +222,7 @@ def render(page, h, img):
   # Right floats stack in reverse, so the buttons go in last first to read left to right.
   src = lambda name: Path(os.path.relpath(img / name, page.path.parent)).as_posix()
   base = f"{page.slug}.{h.id}"
-  anchor = "" if github_slug(h.title) == h.id else f'<a id="{h.id}"></a>'
+  anchor = f'<a id="{h.id}"></a>'
   buttons = "".join(f'<a href="{escape(target)}">{picture(src(f"{base}.{i}.svg"), label, " align=right")}</a>'
                     for i, (label, target) in reversed(list(enumerate(h.links))))
   rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1") if h.level > 2 else ""
@@ -256,9 +274,13 @@ def main(argv=None):
   except SpecError as e:
     print(f"mdheaders: {e}", file=sys.stderr)
     return 2
+  bare = []
   for page in pages:
     for w in warnings(page):
       print(f"mdheaders: {w}", file=sys.stderr)
+    bare += list(unanchored(page))
+  for b in bare:
+    print(f"mdheaders: {b}", file=sys.stderr)
   img = args.img if args.img.is_absolute() else root / args.img
   files, stale = plan(pages, img)
   todo = [p for p, body in files.items() if changed(p, body)]
@@ -268,7 +290,7 @@ def main(argv=None):
       print(f"mdheaders: out of date: {rel(p)}", file=sys.stderr)
     for p in stale:
       print(f"mdheaders: stale image: {rel(p)}", file=sys.stderr)
-    return 1 if todo or stale else 0
+    return 1 if todo or stale or bare else 0
   img.mkdir(parents=True, exist_ok=True)
   for p in todo:
     p.write_bytes(files[p].encode("utf-8"))

@@ -1,4 +1,8 @@
+<a id="syntax-highlighting"></a>
+
 # Syntax highlighting
+
+<a id="what-it-highlights"></a>
 
 ## What it highlights
 
@@ -21,6 +25,8 @@ Here the body is lua up to its endef, even if the guest grammar is left mid-stri
 reaches its engine unexpanded, so make references and goal references inside it are marked
 on top of the guest grammar, strings included.
 
+<a id="installing"></a>
+
 ## Installing
 
 ```bash
@@ -29,6 +35,8 @@ make vscode
 
 This generates the grammars, packs them as `out/amk.vsix`, and installs that with the
 `code` command; reload the window afterwards. It needs `node`, `zip`, and `code` on PATH.
+
+<a id="engines-and-grammars"></a>
 
 ## Engines and grammars
 
@@ -44,6 +52,8 @@ This generates the grammars, packs them as `out/amk.vsix`, and installs that wit
 A body whose grammar is missing is marked as embedded but shows uncolored until another
 extension supplies that grammar. The table lives in `vscode/build.js`, which generates one
 block of the injection grammar per row.
+
+<a id="testing-the-grammars"></a>
 
 ## Testing the grammars
 
