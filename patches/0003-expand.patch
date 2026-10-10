@@ -1,0 +1,33 @@
+expand.c: the profiler times every recursive variable expansion under the variable's name.
+
+--- a/src/expand.c
++++ b/src/expand.c
+@@ -24,6 +24,7 @@
+ #include "job.h"
+ #include "variable.h"
+ #include "rule.h"
++#include "amk.h"
+
+ /* Initially, any errors reported when expanding strings will be reported
+    against the file where the error appears.  */
+@@ -158,10 +159,16 @@
+     }
+
+   v->expanding = 1;
+-  if (v->append)
+-    value = allocated_variable_append (v);
+-  else
+-    value = allocated_variable_expand (v->value);
++  {
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
++    if (v->append)
++      value = allocated_variable_append (v);
++    else
++      value = allocated_variable_expand (v->value);
++    if (timed)
++      amk_profile_leave (&pf, "var", v->name);
++  }
+   v->expanding = 0;
+
+   if (set_reading)

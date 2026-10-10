@@ -175,6 +175,15 @@ char *func_handle (char *o, char **argv, const char *funcname);
 char *func_ns (char *o, char **argv, const char *funcname);
 char *func_import_target (char *o, char **argv, const char *funcname);
 char *func_workspace_import (char *o, char **argv, const char *funcname);
+/* The payload's entry points, which main calls before and while it reads its options.  */
+void amk_payload_boot (int argc, char **argv);
+void amk_payload_path (void);
+void amk_payload_main (int *argcp, char ***argvp);
+int amk_ape_unpack (const char *name, const char *dest, int force);
+int amk_ape_list (void);
+int amk_bundle (int n, char **files, const char *out);
+/* make's table of every file it knows, which the goal references resolve against.  */
+extern struct hash_table files;
 /* The engine builtin and the bindings query, registered by make's function table.  */
 char *func_engine (char *o, char **argv, const char *funcname);
 char *func_bindings (char *o, char **argv, const char *funcname);

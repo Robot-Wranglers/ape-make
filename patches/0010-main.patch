@@ -1,0 +1,732 @@
+Hooks in main.c. The version and flavor the build passes, and the engine list, feed the
+banner and usage. The socket headers the resident code needs. The globals make's other
+files and amk's modules share, among them make's own bsd_signal. The star and question
+mark join the function-name characters. Usage lists amk's flags. Ahead of option decoding,
+main settles the profile flag, the multi-call names and engine flags, --ape-list,
+--ape-unpack, --bundle, the payload's tools and boot, and the resident roles. The feature
+list, the engines and their versions, and the bindings ledgers become variables. The call
+channel opens and the engines' init chunks run before the makefiles are read. The goal
+references settle before the dependencies are snapped. A re-exec keeps the serve words. The
+__main__ target can take the default goal. A zygote parks instead of running goals. Every
+hook hears the goal list. The version banner names amk. The served child's side, which
+adopts a request and runs it, and the goal list a spawned job runs, stay here, since they
+use make's own goal state. die takes a guest's exit status, sweeps the spawned jobs, writes
+the profile, and answers a served request.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -25,7 +25,37 @@
+ #include "debug.h"
+ #include "getopt.h"
+ #include "shuffle.h"
++#include <fcntl.h>
++#include "amk.h"
+
++/* The build passes the version and flavor as bare tokens; the banner and .AMK_VERSION read them as strings. */
++#define AMK_STR_(x) #x
++#define AMK_STR(x) AMK_STR_(x)
++#ifndef AMK_VERSION
++#define AMK_VERSION dev
++#endif
++#ifdef AMK_FLAVOR
++#define AMK_FLAVOR_STR " " AMK_STR(AMK_FLAVOR)
++#else
++#define AMK_FLAVOR_STR ""
++#endif
++
++/* The engine names from the table, space separated, for the banner and the usage trailer.  */
++static const char *
++amk_engine_list (void)
++{
++  static char names[256];
++  const struct amk_engine *e;
++  names[0] = '\0';
++  for (e = amk_engines; e->name; ++e)
++    {
++      if (names[0])
++        strcat (names, " ");
++      strcat (names, e->name);
++    }
++  return names;
++}
++
+ #include <assert.h>
+ #ifdef _AMIGA
+ # include <dos/dos.h>
+@@ -46,6 +76,15 @@
+ # include <fcntl.h>
+ #endif
+
++#ifndef WINDOWS32
++# include <sys/socket.h>
++# include <sys/un.h>
++# include <sys/wait.h>
++# include <sys/select.h>
++# include <sys/stat.h>
++# include <poll.h>
++#endif
++
+ #ifdef _AMIGA
+ int __stack = 20000; /* Make sure we have 20K of stack space */
+ #endif
+@@ -301,6 +340,25 @@
+ /* Whether or not .NOTINTERMEDIATE with no prerequisites was given.  */
+ unsigned int no_intermediates;
+
++/* Nonzero in a resident dispatch child, which shares state with its parent.  */
++unsigned int amk_child;
++
++/* A status a guest asked this process to leave with, in place of make's own.  */
++int amk_exit_status = -1;
++
++/* Nonzero once a recipe asked this process to halt.  */
++unsigned int amk_halt;
++
++/* Socket named by --serve, parked on once the makefiles are read.  */
++const char *amk_serve_path;
++
++/* The zygote's own argv, whose options a request may repeat and have dropped.  */
++int amk_serve_argc;
++char **amk_serve_argv;
++
++/* A dispatch child's connection back to its client, answered from die().  */
++int amk_conn = -1;
++
+ /* Count the number of commands we've invoked, that might change something in
+    the filesystem.  Start with 1 so calloc'd memory never matches.  */
+
+@@ -622,7 +680,7 @@
+ # else
+ typedef void (*bsd_signal_ret_t) (int);
+
+-static bsd_signal_ret_t
++bsd_signal_ret_t
+ bsd_signal (int sig, bsd_signal_ret_t func)
+ {
+   struct sigaction act, oact;
+@@ -671,6 +729,8 @@
+
+   stopchar_map[(int)'-'] = MAP_USERFUNC;
+   stopchar_map[(int)'_'] = MAP_USERFUNC;
++  stopchar_map[(int)'*'] |= MAP_USERFUNC;
++  stopchar_map[(int)'?'] |= MAP_USERFUNC;
+
+   stopchar_map[(int)' '] = MAP_BLANK;
+   stopchar_map[(int)'\t'] = MAP_BLANK;
+@@ -887,6 +947,42 @@
+ #endif
+ }
+
++/* The flags amk reads ahead of option decoding, in the order it reads them; the engine flags print themselves from the table.  */
++static const char *const amk_usage[] =
++  {
++    N_("  --list-engines              Print each engine: its name, then its multi-call names.\n"),
++    N_("  --serve SOCK ARGS...        Parse once and answer requests on SOCK as the zygote.\n"),
++    N_("  --client SOCK REQUEST...    Run REQUEST against a zygote; after --, a cold command for when it refuses.\n"),
++    N_("  --resident ARGS...          One command served by a zygote it starts and reaps itself.\n"),
++    N_("  --ape-list                  Print every payload member, one per line, as --ape-unpack names them.\n"),
++    N_("  --ape-unpack NAME [DEST]    Copy payload member NAME out and print its path; also -x NAME.\n"),
++    N_("  --force                     With --ape-unpack, overwrite a destination that exists.\n"),
++    N_("  --bundle FILES... --out DEST\n"),
++    N_("                              Write a copy of this program whose default entry is that makefile program.\n"),
++    N_("  --profile[=FILE]            Time every function, call macro and recursive variable by name; the table goes to FILE, or to stderr.\n"),
++    NULL
++  };
++
++static void
++amk_print_usage (FILE *usageto)
++{
++  const struct amk_engine *e;
++  const char *const *cpp;
++  char flag[64];
++
++  fputs (_("\nOptions amk adds, each read ahead of the ones above:\n"), usageto);
++  for (e = amk_engines; e->name; ++e)
++    {
++      sprintf (flag, "--%s ARGS...", e->name);
++      fprintf (usageto, _("  %-27s Run the %s engine over the rest of the line"), flag, e->name);
++      if (e->aliases && *e->aliases)
++        fprintf (usageto, _("; the same as the command %s"), e->aliases);
++      fputs (".\n", usageto);
++    }
++  for (cpp = amk_usage; *cpp; ++cpp)
++    fputs (_(*cpp), usageto);
++}
++
+ /* Print a nice usage method and exit.  */
+
+ static void NORETURN
+@@ -907,15 +1003,11 @@
+
+   for (cpp = usage; *cpp; ++cpp)
+     fputs (_(*cpp), usageto);
++  amk_print_usage (usageto);
+
+-  if (!remote_description || *remote_description == '\0')
+-    fprintf (usageto, _("\nThis program built for %s\n"), make_host);
+-  else
+-    fprintf (usageto, _("\nThis program built for %s (%s)\n"),
+-             make_host, remote_description);
++  fprintf (usageto, _("\nThis program is amk %s%s (%s)\n"),
++           AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
+
+-  fprintf (usageto, _("Report bugs to <bug-make@gnu.org>\n"));
+-
+   die (bad ? MAKE_FAILURE : MAKE_SUCCESS);
+ }
+
+@@ -1194,6 +1286,135 @@
+   /* Useful for attaching debuggers, etc.  */
+   SPIN ("main-entry");
+
++  /* The profile flag anywhere on the line is the environment switch spelled as an option: it sets AMK_PROFILE and leaves argv, so no engine, request or option decoding sees it.  */
++  {
++    int i, j = 1;
++    for (i = 1; i < argc; ++i)
++      if (strcmp (argv[i], "--profile") == 0)
++        setenv ("AMK_PROFILE", "-", 1);
++      else if (strncmp (argv[i], "--profile=", 10) == 0 && argv[i][10] != '\0')
++        setenv ("AMK_PROFILE", argv[i] + 10, 1);
++      else
++        argv[j++] = argv[i];
++    argv[j] = NULL;
++    argc = j;
++  }
++
++#ifndef WINDOWS32
++  /* Multi-call: run under an engine's name, or with its flag first, the file is that engine; --list-engines names them.  */
++  {
++    const char *base = strrchr (argv[0], '/');
++    const struct amk_engine *e;
++    base = base ? base + 1 : argv[0];
++    if (argc >= 2 && strcmp (argv[1], "--list-engines") == 0)
++      {
++        for (e = amk_engines; e->name; ++e)
++          printf ("%s%s%s\n", e->name, e->aliases ? "\t" : "", e->aliases ? e->aliases : "");
++        exit (0);
++      }
++    for (e = amk_engines; e->name; ++e)
++      {
++        if (amk_engine_called (e, base))
++          exit (e->main (argc, argv));
++        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && strcmp (argv[1] + 2, e->name) == 0)
++          {
++            argv[1] = (char *) e->name;
++            amk_program_from_stdin (e, argc - 1, argv + 1);
++            exit (e->main (argc - 1, argv + 1));
++          }
++      }
++    (void) base;
++  }
++
++  /* The listing is settled ahead of the boot like unpack, and takes no argument.  */
++  if (argc >= 2 && strcmp (argv[1], "--ape-list") == 0)
++    exit (amk_ape_list ());
++
++  /* Unpack is settled ahead of the boot, so no distribution ever sees the flag.  */
++  if (argc >= 2)
++    {
++      const char *name = NULL, *dest = NULL, *rest[2] = { NULL, NULL };
++      int i, n = 0, force = 0;
++      for (i = 2; i < argc; ++i)
++        if (strcmp (argv[i], "--force") == 0)
++          force = 1;
++        else if (n < 2)
++          rest[n++] = argv[i];
++      if (strncmp (argv[1], "--ape-unpack=", 13) == 0)
++        {
++          name = argv[1] + 13;
++          dest = rest[0];
++        }
++      else if (strcmp (argv[1], "--ape-unpack") == 0
++               || strcmp (argv[1], "-x") == 0)
++        {
++          name = rest[0] ? rest[0] : "";
++          dest = rest[1];
++        }
++      if (name)
++        {
++          int r = amk_ape_unpack (name, dest, force);
++          /* The path is the only output, so a caller can include what it names.  */
++          if (r == MAKE_SUCCESS)
++            puts (dest && *dest ? dest : name);
++          exit (r);
++        }
++    }
++
++  /* Bundle is settled ahead of the boot too, so a bundle can be bundled again.  */
++  if (argc >= 2 && strcmp (argv[1], "--bundle") == 0)
++    {
++      const char *out = NULL;
++      char **files = xmalloc (argc * sizeof *files);
++      int i, n = 0, r;
++      for (i = 2; i < argc; ++i)
++        if (strcmp (argv[i], "--out") == 0 && i + 1 < argc)
++          out = argv[++i];
++        else if (strncmp (argv[i], "--out=", 6) == 0)
++          out = argv[i] + 6;
++        else
++          files[n++] = argv[i];
++      r = amk_bundle (n, files, out);
++      if (r == MAKE_SUCCESS)
++        puts (out);
++      exit (r);
++    }
++
++  amk_payload_path ();
++  amk_payload_boot (argc, argv);
++
++  /* Settle the resident role before any option decoding, since a client hands
++     its own argv over untouched and never reads a makefile.  */
++  if (argc >= 3 && strcmp (argv[1], "--client") == 0)
++    amk_client (argv[2], argc - 3, argv + 3);
++  if (argc >= 3 && strcmp (argv[1], "--serve") == 0) {
++    int i;
++    amk_serve_path = argv[2];
++    for (i = 3; i <= argc; ++i) argv[i - 2] = argv[i];
++    argc -= 2;
++    amk_serve_argc = argc;
++    amk_serve_argv = argv;
++  }
++  /* Resident is the two roles run against each other for one command: the
++     child parks on this same argv, so its options match the request exactly,
++     and the parent hands the command over and reaps on the way out.  */
++  if (argc >= 2 && strcmp (argv[1], "--resident") == 0) {
++    int i;
++    for (i = 2; i <= argc; ++i) argv[i - 1] = argv[i];
++    argc -= 1;
++    if (amk_resident (argc, argv)) {
++      amk_serve_argc = argc;
++      amk_serve_argv = argv;
++    }
++  }
++  /* A zygote holds the bundle's entry among its own options.  */
++  amk_payload_main (&argc, &argv);
++  if (amk_serve_argv != 0) {
++    amk_serve_argc = argc;
++    amk_serve_argv = argv;
++  }
++#endif
++
+ #ifdef HAVE_ATEXIT
+   if (ANY_SET (check_io_state (), IO_STDOUT_OK))
+     atexit (close_stdout);
+@@ -1442,7 +1663,7 @@
+     const char *features = "target-specific order-only second-expansion"
+                            " else-if shortest-stem undefine oneshell nocomment"
+                            " grouped-target extra-prereqs notintermediate"
+-                           " shell-export"
++                           " shell-export cksum match"
+ #ifndef NO_ARCHIVES
+                            " archives"
+ #endif
+@@ -1470,9 +1691,52 @@
+ #ifdef MAKE_MAINTAINER_MODE
+                            " maintainer"
+ #endif
++                           " sys"
+                            ;
+
+-    define_variable_cname (".FEATURES", features, o_default, 0);
++    /* The engine names join the feature list, and the engines variable names that subset alone, both read from the engine table. */
++    const struct amk_engine *e;
++    char engines[256] = "";
++    char *all;
++    for (e = amk_engines; e->name; ++e)
++      {
++        if (*engines)
++          strcat (engines, " ");
++        strcat (engines, e->name);
++      }
++    all = xmalloc (strlen (features) + strlen (engines) + 2);
++    sprintf (all, "%s %s", features, engines);
++    define_variable_cname (".FEATURES", all, o_default, 0);
++    define_variable_cname (".ENGINES", engines, o_default, 0);
++    define_variable_cname (".AMK_VERSION", AMK_STR(AMK_VERSION), o_default, 0);
++    /* Each engine's define carries the version the build unpacked, read here as the variable of the builtin's name.  */
++#ifdef AMK_ENGINE_GAWK
++    define_variable_cname ("awk.__version__", AMK_STR(AMK_ENGINE_GAWK), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_JQ
++    define_variable_cname ("jq.__version__", AMK_STR(AMK_ENGINE_JQ), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_LUA
++    define_variable_cname ("lua.__version__", AMK_STR(AMK_ENGINE_LUA), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_S7
++    define_variable_cname ("s7.__version__", AMK_STR(AMK_ENGINE_S7), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_MICROPY
++    define_variable_cname ("micropy.__version__", AMK_STR(AMK_ENGINE_MICROPY), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_WASM3
++    define_variable_cname ("wasm.__version__", AMK_STR(AMK_ENGINE_WASM3), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_QUICKJS
++    define_variable_cname ("js.__version__", AMK_STR(AMK_ENGINE_QUICKJS), o_default, 0);
++#endif
++#ifdef AMK_ENGINE_SQLITE
++    define_variable_cname ("sqlite.__version__", AMK_STR(AMK_ENGINE_SQLITE), o_default, 0);
++#endif
++    define_variable_cname ("amk.__fxns__", "$(amk.fxns? $(.ENGINES))", o_default, 1);
++    define_variable_cname ("amk.__vars__", "$(amk.vars? $(.ENGINES))", o_default, 1);
++    free (all);
+   }
+
+   /* Configure GNU Guile support */
+@@ -2077,6 +2341,12 @@
+     int old_builtin_variables_flag = no_builtin_variables_flag;
+     int old_arg_job_slots = arg_job_slots;
+
++    /* The call channel is open before anything expands, so a parse-time call in a forwarder already travels up.  */
++    amk_call_init ();
++
++    /* Each engine's init chunk runs first, so what it defines and subscribes is there for the parse and for every zygote request.  */
++    amk_engine_init ();
++
+     /* Read all the makefiles.  */
+     read_files = read_all_makefiles (makefiles == 0 ? 0 : makefiles->list);
+
+@@ -2276,6 +2546,7 @@
+   /* Make each 'struct goaldep' point at the 'struct file' for the file
+      depended on.  Also do magic for special targets.  */
+
++  amk_goal_refs_settle ();
+   snap_deps ();
+
+   /* Define the file rules for the built-in suffix rules.  These will later
+@@ -2717,6 +2988,22 @@
+                    _("Couldn't change back to original directory"));
+             }
+
++          /* The serve words left argv before option decoding, so the re-exec
++             puts them back; without them the zygote runs its goal and exits.  */
++          if (amk_serve_path != 0)
++            {
++              const char **sv = alloca (sizeof (char*) * (argc + 4));
++              const char **p = nargv;
++              const char **q = sv;
++              *(q++) = *(p++);
++              *(q++) = "--serve";
++              *(q++) = amk_serve_path;
++              while (*p != 0)
++                *(q++) = *(p++);
++              *q = 0;
++              nargv = sv;
++            }
++
+           ++restarts;
+
+           if (ISDB (DB_BASIC))
+@@ -2851,6 +3138,7 @@
+     {
+       char *p;
+
++      amk_default_goal_settle ();
+       if (default_goal_var->recursive)
+         p = variable_expand (default_goal_var->value);
+       else
+@@ -2906,6 +3194,12 @@
+       O (fatal, NILF, _("No targets specified and no makefile found"));
+     }
+
++#ifndef WINDOWS32
++  /* Resident mode parks here and serves goals instead of running one.  */
++  if (amk_serve_path != 0)
++    amk_serve (amk_serve_path, read_files);
++#endif
++
+   /* Shuffle prerequisites to catch makefiles with incomplete depends. */
+
+   shuffle_goaldeps_recursive (goals);
+@@ -2914,7 +3208,29 @@
+
+   DB (DB_BASIC, (_("Updating goal targets....\n")));
+
++  /* Every hook hears the goal list, space-joined, before the first goal is updated.  */
+   {
++    struct goaldep *g;
++    struct amk_event_info info = { 0, "pending", 0, 0, 0 };
++    size_t n = 1;
++    char *names, *p;
++    for (g = goals; g; g = g->next)
++      n += strlen (g->file->name) + 1;
++    names = p = xmalloc (n);
++    *p = '\0';
++    for (g = goals; g; g = g->next)
++      {
++        if (p != names)
++          *p++ = ' ';
++        strcpy (p, g->file->name);
++        p += strlen (g->file->name);
++      }
++    info.target = names;
++    amk_hook_fire (AMK_EVENT_GOALS, &info);
++    free (names);
++  }
++
++  {
+     switch (update_goal_chain (goals))
+     {
+       case us_none:
+@@ -3717,11 +4033,14 @@
+
+   printf ("%sGNU Make %s\n", precede, version_string);
+
+-  if (!remote_description || *remote_description == '\0')
+-    printf (_("%sBuilt for %s\n"), precede, make_host);
+-  else
+-    printf (_("%sBuilt for %s (%s)\n"),
+-            precede, make_host, remote_description);
++  /* An ape runs on either architecture, so its banner says so instead of naming the build host. */
++#ifdef __COSMOPOLITAN__
++  printf (_("%sBuilt for x86_64 and aarch64 as an actually portable executable (amk %s%s: %s)\n"),
++          precede, AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
++#else
++  printf (_("%sBuilt for %s (amk %s%s: %s)\n"),
++          precede, make_host, AMK_STR(AMK_VERSION), AMK_FLAVOR_STR, amk_engine_list ());
++#endif
+
+   /* Print this untranslated.  The coding standards recommend translating the
+      (C) to the copyright symbol, but this string is going to change every
+@@ -3761,7 +4080,214 @@
+   printf (_("\n# Finished Make data base on %s\n"), ctime (&when));
+ }
+
++#ifndef WINDOWS32
++
++/* The names AMK_REARM_PID lists take this process's pid, in the global set so
++   every target of a child forked while a recipe expands reads its own.  */
++void
++amk_rearm_pid (const char *names) {
++  char pid[32];
++  const char *q = names;
++
++  sprintf (pid, "%d", (int) getpid ());
++  while (*q != '\0') {
++    size_t n;
++
++    q += strspn (q, " \t");
++    n = strcspn (q, " \t");
++    if (n == 0)
++      break;
++    define_variable_global (q, n, pid, o_override, 0, NILF);
++    q += n;
++  }
++}
++
++/* A child of the parsed image, served or spawned, takes its goals in three
++   steps that are the same for both: it drops the goals it inherited, it is
++   made ready once its own are recorded, and it runs them.  */
+ static void
++amk_child_goals_reset (void) {
++  goals = 0;
++  lastgoal = 0;
++  define_variable_cname ("MAKECMDGOALS", "", o_default, 0);
++}
++
++/* MAKEFLAGS was built before the fork, so it is rebuilt for sub-makes.  */
++static void
++amk_child_ready (void) {
++  define_makeflags (0);
++}
++
++static int
++amk_child_run (void) {
++  if (goals == 0)
++    return MAKE_SUCCESS;
++  switch (update_goal_chain (goals)) {
++  case us_none:
++  case us_success:  return MAKE_SUCCESS;
++  case us_question: return MAKE_TROUBLE;
++  case us_failed:   break;
++  }
++  return MAKE_FAILURE;
++}
++
++/* Adopt the request and run it in this process.  Never returns.  */
++
++void
++amk_dispatch (int conn) {
++  int fds[AMK_NFD];
++  const char *p, *argp;
++  char *buf;
++  size_t argc, envc, i;
++
++  if (!amk_recv_request (conn, &buf, fds)) {
++    amk_write_status (conn, 0);
++    amk_write_status (conn, MAKE_FAILURE);
++    _exit (MAKE_FAILURE);
++  }
++
++  amk_write_status (conn, (int) getpid ());
++
++  /* Buffered parse-time output belongs to the zygote, not to this request.  */
++  fflush (NULL);
++
++  for (i = 0; i < AMK_MAILFD; ++i) {
++    dup2 (fds[i], (int) i);
++    if (fds[i] > STDERR_FILENO && fds[i] != fds[AMK_MAILFD]
++        && fds[i] != fds[AMK_CALLFD] && fds[i] != fds[AMK_REPLYFD])
++      close (fds[i]);
++  }
++
++  p = buf;
++  if (*p != '\0' && chdir (p) < 0)
++    pfatal_with_name (p);
++  p += strlen (p) + 1;
++
++  amk_child = 1;
++  amk_conn = conn;
++  amk_child_goals_reset ();
++
++  /* Walk past argv to reach the environment, which is imported first so that
++     an argv override still outranks it.  */
++  argc = amk_get_u32 (&p);
++  argp = p;
++  for (i = 0; i < argc; ++i) p += strlen (p) + 1;
++  envc = amk_get_u32 (&p);
++
++  /* An option the zygote does not already carry means a different make, which
++     only the caller's own cold command can be.  */
++  if (!amk_negotiate (argp, argc)) {
++    amk_write_status (conn, AMK_STALE);
++    _exit (AMK_STALE);
++  }
++
++  amk_clear_zygote_env ();
++  {
++    char *rearm = amk_env_value (p, envc, "AMK_REARM");
++    char *aspid = amk_env_value (p, envc, "AMK_REARM_PID");
++
++    if (getenv ("AMK_DEBUG") != 0)
++      fprintf (stderr, "amk: rearm [%s] aspid [%s]\n",
++               rearm != 0 ? rearm : "", aspid != 0 ? aspid : "");
++
++    amk_import_env (p, envc, rearm);
++
++    /* The caller's mail pipe arrived as a descriptor of this process, so the name it gives recipes is rebound to that number.  */
++    if (amk_env_value (p, envc, "AMK_MAIL") != 0) {
++      char mail[16];
++
++      amk_mail_fd = fds[AMK_MAILFD];
++      sprintf (mail, "%d", amk_mail_fd);
++      define_variable_global ("AMK_MAIL", 8, mail, o_env, 0, NILF)->export = v_export;
++    } else if (fds[AMK_MAILFD] > STDERR_FILENO)
++      close (fds[AMK_MAILFD]);
++
++    /* The caller's call pair arrived the same way: with it this process forwards every workspace call up it, without it the slots are closed and it owns a workspace.  */
++    if (amk_env_value (p, envc, "AMK_CALL") != 0 && amk_env_value (p, envc, "AMK_REPLY") != 0)
++      amk_call_dispatch (fds[AMK_CALLFD], fds[AMK_REPLYFD]);
++    else {
++      if (fds[AMK_CALLFD] > STDERR_FILENO)
++        close (fds[AMK_CALLFD]);
++      if (fds[AMK_REPLYFD] > STDERR_FILENO)
++        close (fds[AMK_REPLYFD]);
++      amk_call_dispatch (-1, -1);
++    }
++
++    /* A name whose value is this process rather than the caller's: only the
++       child knows it, so it is set here rather than promoted from the request.  */
++    if (aspid != 0)
++      amk_rearm_pid (aspid);
++    free (rearm);
++    free (aspid);
++  }
++
++  p = argp;
++  for (i = 0; i < argc; ++i) {
++    /* Options were matched against the zygote's own, so they are no-ops here.  */
++    if (p[0] == '-' && p[1] != '\0') {
++      if (amk_opt_takes_arg (p) && i + 1 < argc) { p += strlen (p) + 1; ++i; }
++      p += strlen (p) + 1;
++      continue;
++    }
++    handle_non_switch_argument (p, o_command);
++    p += strlen (p) + 1;
++  }
++
++  /* A request naming no goal means the default, which the zygote resolved for its
++     own argv before the fork and this child discarded along with the rest.  */
++  if (goals == 0 && default_goal_var != 0)
++    amk_default_goal_settle ();
++  if (goals == 0 && default_goal_var != 0 && default_goal_var->value[0] != '\0') {
++    char *dg = allocated_variable_expand (default_goal_var->value);
++
++    if (dg != 0 && dg[0] != '\0')
++      handle_non_switch_argument (dg, o_command);
++    free (dg);
++  }
++
++  amk_child_ready ();
++
++  /* A makefile may record its own command line by reading the parent process,
++     which under dispatch is the zygote rather than the caller.  Rebuild it from
++     the request, at an origin that outranks the parse-time assignment.  */
++  {
++    size_t need = strlen (amk_serve_argv[0]) + 1;
++    const char *q = argp;
++    char *cli, *w;
++
++    for (i = 0; i < argc; ++i) { need += strlen (q) + 1; q += strlen (q) + 1; }
++
++    cli = xmalloc (need);
++    w = cli + sprintf (cli, "%s", amk_serve_argv[0]);
++    q = argp;
++    for (i = 0; i < argc; ++i) { w += sprintf (w, " %s", q); q += strlen (q) + 1; }
++    define_variable_cname ("MAKE_CLI", cli, o_override, 0)->export = v_export;
++    free (cli);
++  }
++
++  die (amk_child_run ());
++}
++
++/* The words become the goal list and run, as a served request's do; the result is make's exit status.  */
++int
++amk_run_goals (int n, char **words) {
++  int i;
++  amk_child_goals_reset ();
++  for (i = 0; i < n; ++i)
++    handle_non_switch_argument (words[i], o_command);
++  /* A job spawned while a recipe expands collected its goals in that target's
++     variable set; every target of the job reads them from the global one.  */
++  {
++    struct variable *gv = lookup_variable (STRING_SIZE_TUPLE ("MAKECMDGOALS"));
++    define_variable_global ("MAKECMDGOALS", 12, gv != 0 ? gv->value : "", o_default, 0, NILF);
++  }
++  amk_child_ready ();
++  return amk_child_run ();
++}
++
++#endif /* !WINDOWS32 */
++
++static void
+ clean_jobserver (int status)
+ {
+   /* Sanity: have we written all our jobserver tokens back?  If our
+@@ -3809,6 +4335,12 @@
+     {
+       int err;
+
++      if (amk_exit_status >= 0)
++        status = amk_exit_status;
++      else if (amk_halt)
++        status = AMK_HALT;
++      amk_sweep_spawned ();
++      amk_profile_report ();
+       dying = 1;
+
+       if (print_version_flag)
+@@ -3864,6 +4396,12 @@
+           _x = chdir (directory_before_chdir);
+         }
+     }
++
++#ifndef WINDOWS32
++  /* A dispatch child answers here, since a failing goal never returns.  */
++  if (amk_child && amk_conn >= 0)
++    amk_write_status (amk_conn, status);
++#endif
+
+   exit (status);
+ }

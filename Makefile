@@ -390,12 +390,15 @@ $(make.src): $(make.tarball) $(patch.dirs) $(patches) $(amk.sources)
 	rm -rf $@ && mkdir -p $@
 	tar xzf $(make.tarball) -C $@ --strip-components=1
 	cp $(amk.sources) $@/src/
-	for p in $(patches); do \
-	  $(call log, patch, applying $${p#$(HERE)}); \
-	  $(PATCH) -d $@ -p1 -l -i "$$p" \
-	    || $(call die, patch, $${p#$(HERE)} does not apply to make $(make.version) -- rerun after make clean); \
-	done
+	$(call apply.series,$@,$(patches),make $(make.version))
 	touch $@
+
+# One series into an unpacked tree, in order, each patch by its absolute path: the tree, the patches, and what the tree is, for the error.
+apply.series = for p in $(2); do \
+	  $(call log, patch, applying $$(basename $$p)); \
+	  $(PATCH) -d $(1) -p1 -l -i "$$p" \
+	    || $(call die, patch, $$(basename $$p) does not apply to $(3) -- rerun after make clean); \
+	done
 
 $(gawk.src): $(gawk.tarball)
 	$(call log, patch, unpacking $(gawk.tarball) into $@ unpatched)
@@ -417,11 +420,7 @@ $(micropython.src): $(micropython.tarball)
 $(wasm3.src): $(wasm3.tarball) $(wildcard patches/wasm3/*.patch)
 	$(call log, patch, unpacking $(wasm3.tarball) into $@ and applying patches/wasm3)
 	rm -rf $@ && mkdir -p src && tar xzf $(wasm3.tarball) -C src
-	for p in patches/wasm3/*.patch; do \
-	  $(call log, patch, applying $$p); \
-	  $(PATCH) -d $@ -p1 -l -i "$(HERE)$$p" \
-	    || $(call die, patch, $$p does not apply to wasm3 $(wasm3.version)); \
-	done
+	$(call apply.series,$@,$(abspath $(wildcard patches/wasm3/*.patch)),wasm3 $(wasm3.version))
 	touch $@
 $(sqlite.src): $(sqlite.tarball)
 	$(call log, patch, unpacking $(sqlite.tarball) into $@ unpatched)

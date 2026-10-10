@@ -1,0 +1,13 @@
+job.h: a recipe child carries its own call pair.
+
+--- a/src/job.h
++++ b/src/job.h
+@@ -56,6 +56,8 @@
+
+     pid_t pid;                  /* Child process's ID number.  */
+
++    struct amk_chan *amk_chan;  /* The recipe's own call pair, this side.  */
++
+     unsigned int  remote:1;     /* Nonzero if executing remotely.  */
+     unsigned int  noerror:1;    /* Nonzero if commands contained a '-'.  */
+     unsigned int  good_stdin:1; /* Nonzero if this child has a good stdin.  */

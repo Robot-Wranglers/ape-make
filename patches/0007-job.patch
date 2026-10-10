@@ -1,0 +1,256 @@
+Hooks in job.c. A spawned child forgets its parent's children. The blocking wait answers
+call requests, and an unknown child that dies is parked for the spawn api. A recursive
+make that halts halts this one, and a halted process runs no more lines and leaves once
+the recipe is collected. Every hook hears a recipe start and end. An imported target's job
+is a fork of make that runs its engine, which stays here since it uses this file's child
+setup. Each recipe child gets its own call pair and its line's stdin pipe, and gives both
+back when it is freed.
+
+--- a/src/job.c
++++ b/src/job.c
+@@ -28,6 +28,19 @@
+ #include "dep.h"
+ #include "shuffle.h"
+
++static struct child *waiting_jobs;
++
++/* A spawned child forgets the children its parent had, which are not its own to wait for.  */
++void
++amk_forget_children (void)
++{
++  children = 0;
++  waiting_jobs = 0;
++  job_slots_used = 0;
++}
++
++#include "amk.h"
++
+ /* Default shell to use.  */
+ #ifdef WINDOWS32
+ # include <windows.h>
+@@ -759,7 +772,8 @@
+                 pid = WAIT_NOHANG (&status);
+               else
+ #endif
+-                EINTRLOOP (pid, wait (&status));
++                /* The blocking wait answers call requests while it waits.  */
++                pid = amk_wait_any (&status);
+ #endif /* !VMS */
+             }
+           else
+@@ -903,9 +917,11 @@
+           break;
+
+       if (c == 0)
+-        /* An unknown child died.
+-           Ignore it; it was inherited from our invoker.  */
+-        continue;
++        {
++          /* An unknown child died: a spawned one is parked for amk_wait_child, any other was inherited from our invoker.  */
++          amk_reap_foreign (pid, exit_code, exit_sig);
++          continue;
++        }
+
+       DB (DB_JOBS, (exit_sig == 0 && exit_code == 0
+                     ? _("Reaping winning child %p PID %s %s\n")
+@@ -949,8 +965,16 @@
+
+       /* Determine the failure status: 0 for success, 1 for updating target in
+          question mode, 2 for anything else.  */
+-      if (exit_sig == 0 && exit_code == 0)
++      if (exit_sig == 0 && exit_code == AMK_HALT && c->recursive)
++        {
++          /* A recursive make halted, so this one halts with it, as a success.  */
++          amk_halt = 1;
++          child_failed = MAKE_SUCCESS;
++        }
++      else if (amk_halt && exit_sig != 0)
+         child_failed = MAKE_SUCCESS;
++      else if (exit_sig == 0 && exit_code == 0)
++        child_failed = MAKE_SUCCESS;
+       else if (exit_sig == 0 && exit_code == 1 && question_flag && c->recursive)
+         child_failed = MAKE_TROUBLE;
+       else
+@@ -1007,8 +1031,8 @@
+               child_failed = 0;
+             }
+
+-          /* If there are more commands to run, try to start them.  */
+-          if (job_next_command (c))
++          /* If there are more commands to run, try to start them; a halted process runs none.  */
++          if (!amk_halt && job_next_command (c))
+             {
+               if (handling_fatal_signal)
+                 {
+@@ -1057,6 +1081,14 @@
+       /* Synchronize any remaining parallel output.  */
+       output_dump (&c->output);
+
++      /* Every hook hears the recipe end with the last command's exit and the file's verdict.  */
++      {
++        struct amk_event_info info = { c->file->name, 0, exit_code, exit_sig, c->pid };
++        info.status = c->file->update_status == us_success ? "success"
++                      : c->file->update_status == us_question ? "question" : "failed";
++        amk_hook_fire (AMK_EVENT_RECIPE_END, &info);
++      }
++
+       /* At this point c->file->update_status is success or failed.  But
+          c->file->command_state is still cs_running if all the commands
+          ran; notice_finished_file looks for cs_running to tell it that
+@@ -1095,6 +1127,10 @@
+
+       unblock_sigs ();
+
++      /* A halted process leaves once the recipe that asked is collected.  */
++      if (amk_halt && !handling_fatal_signal)
++        die (AMK_HALT);
++
+       /* If the job failed, and the -k flag was not given, die,
+          unless we are already in the process of dying.  */
+       if (!err && child_failed && !dontcare && !keep_going_flag &&
+@@ -1125,6 +1161,54 @@
+   free (child->cmd_name);
+ }
+
++/* An imported target's job: a fork of make with no exec, so the engine runs inside the parsed image with the handle live. The child takes the program as written, its goal references replaced by their values, runs the engine's main over it, and leaves with the engine's status. A value file takes the output; a name prints its kept value, or with none kept runs the program on the job's own standard output.  */
++static pid_t
++amk_engine_job (struct child *child)
++{
++  struct file *file = child->file;
++  const int fdin = child->good_stdin ? FD_STDIN : get_bad_stdin ();
++  struct variable *v;
++  char *program;
++  pid_t pid;
++  int r;
++
++  pid = fork ();
++  if (pid != 0)
++    return pid;
++
++  unblock_all_sigs ();
++  signal (SIGINT, SIG_DFL);
++  signal (SIGTERM, SIG_DFL);
++  signal (SIGHUP, SIG_DFL);
++  signal (SIGQUIT, SIG_DFL);
++  if (fdin >= 0 && fdin != FD_STDIN)
++    EINTRLOOP (r, dup2 (fdin, FD_STDIN));
++  if (child->output.syncout && child->output.err >= 0)
++    EINTRLOOP (r, dup2 (child->output.err, FD_STDERR));
++  if (child->output.syncout && child->output.out >= 0)
++    EINTRLOOP (r, dup2 (child->output.out, FD_STDOUT));
++  environ = child->environment;
++  amk_fork_settle ();
++  /* The job's own pair, so a workspace call from the engine goes up to the owner rather than into this fork's copy.  */
++  {
++    int creq, crep, creq_at, crep_at;
++    if (amk_call_child_fds (&creq, &crep, &creq_at, &crep_at))
++      amk_call_dispatch (creq, crep);
++  }
++
++  if (file->amk_value != NULL && !streq (file->amk_value, file->name))
++    _exit ((program = amk_goal_value (file->amk_value)) == NULL || puts (program) < 0 || fflush (stdout) != 0);
++  v = lookup_variable (file->amk_program, strlen (file->amk_program));
++  program = amk_goal_splice (file, v != NULL ? v->value : "");
++  if (file->amk_value != NULL && freopen (file->name, "w", stdout) == NULL)
++    {
++      fprintf (stderr, "amk: %s: cannot write: %s\n", file->name, strerror (errno));
++      _exit (127);
++    }
++  amk_engine_program (file->amk_engine, file->amk_flags, program);
++  _exit (127);
++}
++
+ static void
+ free_child (struct child *child)
+ {
+@@ -1155,7 +1239,9 @@
+       for (i = 0; i < child->file->cmds->ncommand_lines; ++i)
+         free (child->command_lines[i]);
+       free (child->command_lines);
++      amk_stdin_drop (child);
+     }
++  amk_call_child_drop (child);
+
+   free_childbase ((struct childbase*)child);
+
+@@ -1473,8 +1559,19 @@
+
+       jobserver_pre_child (ANY_SET (flags, COMMANDS_RECURSE));
+
+-      child->pid = child_execute_job ((struct childbase *)child,
+-                                      child->good_stdin, argv);
++      if (child->file->amk_engine)
++        {
++          amk_call_child_pending ();
++          child->pid = amk_engine_job (child);
++          amk_call_child_spawned (child);
++        }
++      else
++        {
++          amk_call_child_pending ();
++          child->pid = child_execute_job ((struct childbase *)child,
++                                          child->good_stdin, argv);
++          amk_call_child_spawned (child);
++        }
+
+       jobserver_post_child (ANY_SET (flags, COMMANDS_RECURSE));
+
+@@ -1955,6 +2052,12 @@
+         }
+     }
+
++  /* The recipe is about to run: every hook hears it before the first line starts.  */
++  {
++    struct amk_event_info info = { c->file->name, "running", 0, 0, 0 };
++    amk_hook_fire (AMK_EVENT_RECIPE_START, &info);
++  }
++
+   /* The job is now primed.  Start it running.
+      (This will notice if there is in fact no recipe.)  */
+   start_waiting_job (c);
+@@ -1991,6 +2094,7 @@
+     }
+
+   child->file->cmds->fileinfo.offset = child->command_line - 1;
++  amk_stdin_pending (child);
+   return 1;
+ }
+
+@@ -2311,11 +2415,13 @@
+ pid_t
+ child_execute_job (struct childbase *child, int good_stdin, char **argv)
+ {
+-  const int fdin = good_stdin ? FD_STDIN : get_bad_stdin ();
++  const int fdin = amk_stdin_fd (child) >= 0 ? amk_stdin_fd (child) : good_stdin ? FD_STDIN : get_bad_stdin ();
+   int fdout = FD_STDOUT;
+   int fderr = FD_STDERR;
+   pid_t pid = -1;
+   int r;
++  int creq = -1, crep = -1, creq_at = -1, crep_at = -1;
++  const int call = amk_call_child_fds (&creq, &crep, &creq_at, &crep_at);
+ #if defined(USE_POSIX_SPAWN)
+   char *cmd;
+   posix_spawnattr_t attr;
+@@ -2362,6 +2468,11 @@
+     EINTRLOOP (r, dup2 (fdout, FD_STDOUT));
+   if (fderr != FD_STDERR)
+     EINTRLOOP (r, dup2 (fderr, FD_STDERR));
++  if (call)
++    {
++      EINTRLOOP (r, dup2 (creq, creq_at));
++      EINTRLOOP (r, dup2 (crep, crep_at));
++    }
+
+   /* Run the command.  */
+   exec_command (argv, child->environment);
+@@ -2406,6 +2517,10 @@
+   if (fderr != FD_STDERR)
+     if ((r = posix_spawn_file_actions_adddup2 (&fa, fderr, FD_STDERR)) != 0)
+       goto cleanup;
++  if (call)
++    if ((r = posix_spawn_file_actions_adddup2 (&fa, creq, creq_at)) != 0
++        || (r = posix_spawn_file_actions_adddup2 (&fa, crep, crep_at)) != 0)
++      goto cleanup;
+
+   /* We can't use the POSIX_SPAWN_RESETIDS flag: when make is invoked under
+      restrictive environments like unshare it will fail with EINVAL.  */
