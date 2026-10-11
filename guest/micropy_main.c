@@ -325,6 +325,61 @@ amk_call_begin_fn (size_t n_args, const mp_obj_t *args)
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR (amk_call_begin_obj, 1, amk_call_begin_fn);
 
+/* A store defines a recursive variable with the text as written, as a define does. */
+static void
+amk_var_raw_store (const char *name, mp_obj_t value)
+{
+  vstr_t vstr = { 0 };
+  amk_need_make ();
+  amk_var_raw_set (name, amk_obj_text (value, &vstr));
+  vstr_clear (&vstr);
+}
+
+static mp_obj_t
+amk_var_raw_load (const char *name)
+{
+  amk_need_make ();
+  return amk_take_str (amk_var_raw_get (name));
+}
+
+/* amk.var.raw.name reads a variable's text as stored, never expanded, or assigns it; deleting one is refused. */
+static void
+amk_var_raw_attr (mp_obj_t self_in, qstr attr, mp_obj_t *dest)
+{
+  (void) self_in;
+  if (dest[0] == MP_OBJ_NULL)
+    dest[0] = amk_var_raw_load (qstr_str (attr));
+  else if (dest[1] != MP_OBJ_NULL)
+    {
+      amk_var_raw_store (qstr_str (attr), dest[1]);
+      dest[0] = MP_OBJ_NULL;
+    }
+}
+
+/* amk.var.raw[name] reads or assigns a variable whose name attribute syntax cannot spell. */
+static mp_obj_t
+amk_var_raw_subscr (mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
+{
+  (void) self_in;
+  if (value == MP_OBJ_SENTINEL)
+    return amk_var_raw_load (mp_obj_str_get_str (index));
+  if (value == MP_OBJ_NULL)
+    return MP_OBJ_NULL;
+  amk_var_raw_store (mp_obj_str_get_str (index), value);
+  return mp_const_none;
+}
+
+static MP_DEFINE_CONST_OBJ_TYPE (amk_var_raw_type, MP_QSTR_raw, MP_TYPE_FLAG_NONE,
+                                 attr, amk_var_raw_attr, subscr, amk_var_raw_subscr);
+static const mp_obj_base_t amk_var_raw_obj = { &amk_var_raw_type };
+
+/* A read of raw is the raw proxy in every engine; a write of raw defines the variable. */
+static mp_obj_t
+amk_var_read (const char *name)
+{
+  return strcmp (name, "raw") == 0 ? MP_OBJ_FROM_PTR (&amk_var_raw_obj) : amk_var_load (name);
+}
+
 /* A store defines a simple variable with the literal text of the value. */
 static void
 amk_var_store (const char *name, mp_obj_t value)
@@ -341,7 +396,7 @@ amk_var_attr (mp_obj_t self_in, qstr attr, mp_obj_t *dest)
 {
   (void) self_in;
   if (dest[0] == MP_OBJ_NULL)
-    dest[0] = amk_var_load (qstr_str (attr));
+    dest[0] = amk_var_read (qstr_str (attr));
   else if (dest[1] != MP_OBJ_NULL)
     {
       amk_var_store (qstr_str (attr), dest[1]);
@@ -355,7 +410,7 @@ amk_var_subscr (mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
 {
   (void) self_in;
   if (value == MP_OBJ_SENTINEL)
-    return amk_var_load (mp_obj_str_get_str (index));
+    return amk_var_read (mp_obj_str_get_str (index));
   if (value == MP_OBJ_NULL)
     return MP_OBJ_NULL;
   amk_var_store (mp_obj_str_get_str (index), value);

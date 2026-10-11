@@ -99,6 +99,8 @@ libs:
 	$(if $(filter dkjson,$(libs)),test "$(wildcard /zip/lib/dkjson.lua)" = /zip/lib/dkjson.lua)
 	$(if $(filter dkjson,$(libs)),test '$(strip $(lua ${lua.dkjson}))' = '{"k":42}')
 	$(if $(filter dkjson,$(libs)),echo "dkjson: $(strip $(lua print(require("dkjson").version)))")
+	$(if $(filter utemplate,$(libs)),test "$(wildcard /zip/lib/utemplate/source.py)" = /zip/lib/utemplate/source.py)
+	$(if $(filter utemplate,$(libs)),echo "utemplate: $(strip $(micropy from utemplate.source import Compiler; print(Compiler.__name__)))")
 	$(if $(libs),,test -z "$(wildcard /zip/lib/gmsl)")
 	echo "libs: $(or $(libs),none)"
 

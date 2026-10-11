@@ -173,6 +173,43 @@ js_amk_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
   return JS_UNDEFINED;
 }
 
+static JSValue
+js_amk_raw_get (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name;
+  char *s;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  s = amk_var_raw_get (name);
+  JS_FreeCString (ctx, name);
+  if (s == NULL)
+    return JS_UNDEFINED;
+  r = JS_NewString (ctx, s);
+  gmk_free (s);
+  return r;
+}
+
+static JSValue
+js_amk_raw_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name, *value;
+  (void) this_val;
+  if (argc < 2 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  value = JS_ToCString (ctx, argv[1]);
+  if (value == NULL)
+    {
+      JS_FreeCString (ctx, name);
+      return JS_EXCEPTION;
+    }
+  amk_var_raw_set (name, value);
+  JS_FreeCString (ctx, value);
+  JS_FreeCString (ctx, name);
+  return JS_UNDEFINED;
+}
+
 /* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
 static char *
 js_func_call (void *state, const char *nm, unsigned int argc, char **argv)
@@ -258,6 +295,8 @@ js_bind_amk (JSContext *ctx)
   JS_SetPropertyStr (ctx, raw, "callEnd", JS_NewCFunction (ctx, js_amk_call_end, "callEnd", 1));
   JS_SetPropertyStr (ctx, raw, "get", JS_NewCFunction (ctx, js_amk_get, "get", 1));
   JS_SetPropertyStr (ctx, raw, "set", JS_NewCFunction (ctx, js_amk_set, "set", 2));
+  JS_SetPropertyStr (ctx, raw, "rawGet", JS_NewCFunction (ctx, js_amk_raw_get, "rawGet", 1));
+  JS_SetPropertyStr (ctx, raw, "rawSet", JS_NewCFunction (ctx, js_amk_raw_set, "rawSet", 2));
   JS_SetPropertyStr (ctx, raw, "func", JS_NewCFunction (ctx, js_amk_func, "func", 2));
   JS_SetPropertyStr (ctx, g, "__amk", raw);
   JS_FreeValue (ctx, g);
@@ -268,6 +307,11 @@ static const char *js_amk_prelude =
   "globalThis.amk = (function (raw) {\n"
   "  const need = () => { if (!raw.has()) throw new Error('amk: no make database, running outside a makefile'); };\n"
   "  const text = (v) => v == null ? '' : String(v);\n"
+  "  const unexpanded = new Proxy({}, {\n"
+  "    get: (_, k) => { need(); return raw.rawGet(String(k)); },\n"
+  "    set: (_, k, v) => { need(); raw.rawSet(String(k), text(v)); return true; },\n"
+  "    has: (_, k) => { need(); return raw.rawGet(String(k)) !== undefined; },\n"
+  "  });\n"
   "  return {\n"
   "    expand: (t) => { need(); return raw.expand(String(t)); },\n"
   "    eval: (t) => { need(); raw.eval(String(t)); },\n"
@@ -279,7 +323,7 @@ static const char *js_amk_prelude =
   "      })); },\n"
   "    func: (name, fn) => { need(); raw.func(String(name), fn); },\n"
   "    var: new Proxy({}, {\n"
-  "      get: (_, k) => { need(); return raw.get(String(k)); },\n"
+  "      get: (_, k) => { if (k === 'raw') return unexpanded; need(); return raw.get(String(k)); },\n"
   "      set: (_, k, v) => { need(); raw.set(String(k), text(v)); return true; },\n"
   "      has: (_, k) => { need(); return raw.get(String(k)) !== undefined; },\n"
   "    }),\n"

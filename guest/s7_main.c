@@ -174,12 +174,51 @@ s7_amk_var (s7_scheme *sc, s7_pointer args)
   if (err != NULL)
     return err;
   name = s7_amk_name (sc, args, "amk-var");
+  if (strcmp (name, "raw") == 0)
+    return s7_name_to_value (sc, "amk-var-raw");
   s = amk_var_get (name);
   if (s == NULL)
     return s7_f (sc);
   r = s7_make_string (sc, s);
   gmk_free (s);
   return r;
+}
+
+/* ((amk-var 'raw) name): the variable's text as stored, never expanded, or #f when make has never seen the name. */
+static s7_pointer
+s7_amk_var_raw (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var-raw");
+  const char *name;
+  char *s;
+  s7_pointer r;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var-raw");
+  s = amk_var_raw_get (name);
+  if (s == NULL)
+    return s7_f (sc);
+  r = s7_make_string (sc, s);
+  gmk_free (s);
+  return r;
+}
+
+/* (set! ((amk-var 'raw) name) value) defines a recursive variable with the value's text as written; #f is the empty string. */
+static s7_pointer
+s7_amk_var_raw_set (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var-raw");
+  const char *name;
+  s7_pointer value;
+  char *text;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var-raw");
+  value = s7_cadr (args);
+  text = s7_amk_text (sc, value);
+  amk_var_raw_set (name, text ? text : "");
+  free (text);
+  return value;
 }
 
 /* (set! (amk-var name) value) defines a simple variable with the value's text; #f is the empty string. */
@@ -319,6 +358,8 @@ s7_bind_amk (s7_scheme *sc)
   s7_define_function (sc, "amk-func", s7_amk_func, 2, 0, false, "(amk-func name fn) defines a make function");
   s7_dilambda (sc, "amk-var", s7_amk_var, 1, 0, s7_amk_var_set, 2, 0,
                "(amk-var name) a make variable expanded, or #f; (set! (amk-var name) value) defines it");
+  s7_dilambda (sc, "amk-var-raw", s7_amk_var_raw, 1, 0, s7_amk_var_raw_set, 2, 0,
+               "((amk-var 'raw) name) a make variable as stored, or #f; (set! ((amk-var 'raw) name) value) defines it recursive");
   s7_dilambda (sc, "amk-on", s7_amk_on, 1, 0, s7_amk_on_set, 2, 0,
                "(amk-on event) the hook for the event, or #f; (set! (amk-on event) fn) subscribes");
   s7_eval_c_string (sc, s7_amk_prelude);

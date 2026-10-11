@@ -42,9 +42,11 @@ pid_t amk_call_begin (const char *name, unsigned int argc, const char **args, in
 int amk_call_end (pid_t pid, char **text, const char **err);
 char *amk_call (const char *name, unsigned int argc, const char **args, const char **err);
 char *amk_var_get (const char *name);
+char *amk_var_raw_get (const char *name);
 int amk_has_db (void);
 int amk_function_exists (const char *name);
 void amk_var_set (const char *name, const char *value);
+void amk_var_raw_set (const char *name, const char *value);
 void amk_eval (const char *text);
 extern int amk_queue_fd;
 char *amk_collect (int *out, size_t *outlen, int *q, int *in, const char *feed, size_t feedlen);

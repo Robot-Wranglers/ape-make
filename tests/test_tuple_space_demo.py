@@ -13,7 +13,7 @@ import pytest
 from conftest import sh
 
 REPO = __import__("pathlib").Path(__file__).resolve().parent.parent
-DEMO = REPO / "demos" / "tuple-space.mk"
+DEMO = REPO / "demos" / "tuple-space.amk"
 PRIMES = [n for n in range(2, 61) if all(n % d for d in range(2, int(n ** 0.5) + 1))]
 
 

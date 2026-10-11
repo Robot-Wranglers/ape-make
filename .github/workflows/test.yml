@@ -65,7 +65,7 @@ jobs:
       - name: Version
         run: sh ./amk --version
       - name: Builtins
-        run: sh ./amk -f smoke.mk builtins engines='awk jq lua s7 micropy wasm js' wasm.test=test.wasm
+        run: sh ./amk -f smoke.mk builtins wasm.test=test.wasm
       - name: Guests by flag
         run: |
           sh ./amk --awk 'BEGIN { print "awk by flag: ok" }'

@@ -36,6 +36,19 @@ amk_var_get (const char *name)
   return recursively_expand (v);
 }
 
+/* The value a guest reads through its raw variable proxy: the text as stored, never expanded, and null for a name make has never seen.  */
+char *
+amk_var_raw_get (const char *name)
+{
+  struct variable *v;
+  if (!amk_has_db ())
+    return NULL;
+  v = lookup_variable (name, strlen (name));
+  if (v == NULL)
+    return NULL;
+  return xstrdup (v->value);
+}
+
 static void
 amk_queue_write (int fd, const char *s, size_t n)
 {
@@ -79,6 +92,20 @@ amk_var_set (const char *name, const char *value)
   define_variable_global (name, strlen (name), value, o_file, 0, NILF);
 }
 
+/* A recursive variable with the text as written, as a define makes one, at file origin; queued from a forked guest.  */
+void
+amk_var_raw_set (const char *name, const char *value)
+{
+  if (amk_queue_fd >= 0)
+    {
+      amk_queue_record ('D', name, value);
+      return;
+    }
+  if (!amk_has_db ())
+    return;
+  define_variable_global (name, strlen (name), value, o_file, 1, NILF);
+}
+
 /* Text read as makefile syntax; queued from a forked guest.  */
 void
 amk_eval (const char *text)
@@ -115,6 +142,8 @@ amk_queue_apply (const char *buf, size_t len)
       pos += la + lb;
       if (kind == 'V')
         amk_var_set (a, b);
+      else if (kind == 'D')
+        amk_var_raw_set (a, b);
       else if (kind == 'E')
         amk_eval (a);
       free (a);

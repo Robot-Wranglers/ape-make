@@ -59,7 +59,7 @@ make smoke
 # what is built here, and which of it is an artifact
 make stat
 
-# ./amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
+# out/bin/amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
 make install
 ```
 

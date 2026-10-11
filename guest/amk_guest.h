@@ -35,6 +35,8 @@ extern int amk_has_db (void);
 extern int amk_function_exists (const char *name);
 extern char *amk_var_get (const char *name);
 extern void amk_var_set (const char *name, const char *value);
+extern char *amk_var_raw_get (const char *name);
+extern void amk_var_raw_set (const char *name, const char *value);
 extern void amk_eval (const char *text);
 extern char *amk_call (const char *name, unsigned int argc, const char **args, const char **err);
 

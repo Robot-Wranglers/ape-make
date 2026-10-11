@@ -415,13 +415,19 @@ lua_amk_eval (lua_State *L)
   return 0;
 }
 
-/* amk.var[name] reads a variable, expanded, or nil when make has never seen the name. */
+/* amk.var[name] reads a variable, expanded, or nil when make has never seen the name; a read of raw is the raw proxy, its upvalue. */
 static int
 lua_amk_var_index (lua_State *L)
 {
   char *s;
+  const char *name = luaL_checkstring (L, 2);
+  if (strcmp (name, "raw") == 0)
+    {
+      lua_pushvalue (L, lua_upvalueindex (1));
+      return 1;
+    }
   lua_need_make (L, "amk.var");
-  s = amk_var_get (luaL_checkstring (L, 2));
+  s = amk_var_get (name);
   if (s == NULL)
     lua_pushnil (L);
   else
@@ -430,6 +436,39 @@ lua_amk_var_index (lua_State *L)
       gmk_free (s);
     }
   return 1;
+}
+
+/* amk.var.raw[name] reads a variable's text as stored, never expanded, or nil when make has never seen the name. */
+static int
+lua_amk_var_raw_index (lua_State *L)
+{
+  char *s;
+  lua_need_make (L, "amk.var.raw");
+  s = amk_var_raw_get (luaL_checkstring (L, 2));
+  if (s == NULL)
+    lua_pushnil (L);
+  else
+    {
+      lua_pushstring (L, s);
+      gmk_free (s);
+    }
+  return 1;
+}
+
+/* amk.var.raw[name] = value defines a recursive variable with the text as written; nil is the empty string. */
+static int
+lua_amk_var_raw_newindex (lua_State *L)
+{
+  const char *name = luaL_checkstring (L, 2);
+  lua_need_make (L, "amk.var.raw");
+  if (lua_isnoneornil (L, 3))
+    amk_var_raw_set (name, "");
+  else
+    {
+      amk_var_raw_set (name, luaL_tolstring (L, 3, NULL));
+      lua_pop (L, 1);
+    }
+  return 0;
 }
 
 /* amk.var[name] = value defines a simple variable with the literal text of the value; nil is the empty string. */
@@ -735,7 +774,14 @@ lua_push_amk (lua_State *L)
       lua_setfield (L, -2, "on");
       lua_newtable (L);
       lua_newtable (L);
-      lua_pushcfunction (L, lua_amk_var_index);
+      lua_newtable (L);
+      lua_newtable (L);
+      lua_pushcfunction (L, lua_amk_var_raw_index);
+      lua_setfield (L, -2, "__index");
+      lua_pushcfunction (L, lua_amk_var_raw_newindex);
+      lua_setfield (L, -2, "__newindex");
+      lua_setmetatable (L, -2);
+      lua_pushcclosure (L, lua_amk_var_index, 1);
       lua_setfield (L, -2, "__index");
       lua_pushcfunction (L, lua_amk_var_newindex);
       lua_setfield (L, -2, "__newindex");

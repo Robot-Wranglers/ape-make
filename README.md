@@ -116,7 +116,7 @@ serve: mip.install
 	$(serve $(PORT))
 ```
 
-Run it with `amk -f demos/json-rpc.mk serve`, then post a request:
+Run it with `amk -f demos/json-rpc.amk serve`, then post a request:
 
 ```bash
 curl -s -X POST \
@@ -125,14 +125,14 @@ curl -s -X POST \
 # {"jsonrpc": "2.0", "id": 1, "result": {"sorted": [1, 2, 3], "total": 6}}
 ```
 
-A toy example, but what do you think?  Not so far away from useful FAAS or MCP, eh?  The whole thing is in the repo [here](demos/json-rpc.mk), runnable from a checkout.  Highlights:
+A toy example, but what do you think?  Not so far away from useful FAAS or MCP, eh?  The whole thing is in the repo [here](demos/json-rpc.amk), runnable from a checkout.  Highlights:
 
 * Optional [extended grammar](#extended-grammar) with `@micropy.import` and friends
 * [Simple reflection](docs/FFI.md#reflection) with `amk.fxns?`
 * [Bundled builtin libs](#builtin-libraries), via `include /zip/..`
 * [Guest handle](#bridge-mode), as seen in `amk.var`, `amk.acall`
 
-For smaller demos jump to [this section](#misc-examples), and for a larger one more in the notebook / dataflow style, see [here](demos/dataflow-1.mk).  With that out of the way.. back to the docs.
+For smaller demos jump to [this section](#misc-examples), and for a larger one more in the notebook / dataflow style, see [here](demos/dataflow-1.amk).  With that out of the way.. back to the docs.
 
 <a id="overview"></a><br/>
 
@@ -712,7 +712,7 @@ The wasm3 command line, repl included, is `amk --wasm`:
 
 The repl takes a module from its input rather than a path, as `:load-hex <bytes>` followed
 by the module in hex, and then one call per line. A make variable holds the hex, so the
-module never has to touch disk; [demos/wasm-1.mk](demos/wasm-1.mk) compiles one in a
+module never has to touch disk; [demos/wasm-1.amk](demos/wasm-1.amk) compiles one in a
 container and calls it three times this way.
 
 ```Makefile
@@ -753,7 +753,7 @@ n := $(edges.get --arg a 3 SELECT count(*) AS n FROM e WHERE a = :a)
 ```
 
 A recipe reaches the same database over the call channel, so shell stages and engine
-stages share one store. [demos/tuple-space.mk](demos/tuple-space.mk) builds a Linda tuple
+stages share one store. [demos/tuple-space.amk](demos/tuple-space.amk) builds a Linda tuple
 space on it, with workers in four languages under `-j4`. The `sqlite3` command line is
 `amk --sqlite`, one in-memory database for its arguments and then stdin.
 

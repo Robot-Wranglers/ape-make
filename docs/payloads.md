@@ -78,6 +78,14 @@
 
 ### Turning it off
 
+With `AMK_NO_PATH` set to any value, amk leaves `PATH` as it found it and unpacks nothing
+into the cache. A recipe then finds only the host's tools, and with no bash on the host
+the prelude falls back to `/bin/sh`.
+
+```bash
+AMK_NO_PATH=1 amk -f Makefile
+```
+
 <a id="tools-are-apes"></a>
 
 ### Tools are apes
@@ -138,7 +146,7 @@ knob: `SHELL` from `AMK_SHELL` else bash, `.SHELLFLAGS` from `AMK_SHELLFLAGS` el
 `-euo pipefail -c`, `MAKEFLAGS` as silent, stop on error and warn on undefined variables,
 `.DEFAULT_GOAL` from `AMK_GOAL` when set, a `__file__` naming the entry
 makefile, and `amk` to run it again. With patch 0035, a `__main__` target is the default goal whenever the makefile
-names none itself, wherever it sits in the file. A host with no bash on `PATH` gets `/bin/sh` with `-eu -c` instead. Once read,
+names none itself, wherever it sits in the file. A host with no bash on `PATH` gets `/bin/sh` instead. The default flags follow `SHELL`: `-euo pipefail -c` while it names bash, `-eu -c` for any other shell, including one a makefile sets. Once read,
 the prelude leaves `MAKEFILE_LIST` again, so the first word of that list still names the
 entry makefile and a bundle or a distribution that spells it that way sees no change.
 `AMK_NO_PRELUDE` skips it.

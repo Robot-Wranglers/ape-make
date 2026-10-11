@@ -186,6 +186,8 @@ $(lua.exec amk.on.goals = function(e) io.stderr:write("goals\n") end)
 | --- | --- | --- | --- | --- |
 | read | `amk.var.CC`, `amk.var["a.b"]` | `amk.var.CC`, `amk.var["a.b"]` | `(amk-var 'CC)`, `(amk-var "a.b")` | `amk.var.CC`, `amk.var["a.b"]` |
 | write | `amk.var.CC = "cc"` | `amk.var.CC = "cc"` | `(set! (amk-var 'CC) "cc")` | `amk.var.CC = "cc"` |
+| read raw | `amk.var.raw.CC` | `amk.var.raw.CC` | `((amk-var 'raw) 'CC)` | `amk.var.raw.CC` |
+| write raw | `amk.var.raw.CC = "$(cc)"` | `amk.var.raw.CC = "$(cc)"` | `(set! ((amk-var 'raw) 'CC) "$(cc)")` | `amk.var.raw.CC = "$(cc)"` |
 | expand | `amk.expand(text)` | `amk.expand(text)` | `(amk-expand text)` | `amk.expand(text)` |
 | eval | `amk.eval(text)` | `amk.eval(text)` | `(amk-eval text)` | `amk.eval(text)` |
 | call | `amk.call(name, ...)` | `amk.call(name, *values)` | `(amk-call 'name value ...)` | `amk.call(name, ...values)` |
@@ -193,6 +195,9 @@ $(lua.exec amk.on.goals = function(e) io.stderr:write("goals\n") end)
 | define a function | `amk.func(name, fn)` | `amk.func(name, fn)` | `(amk-func 'name fn)` | `amk.func(name, fn)` |
 | events | `amk.on[event]` | `amk.on[event]` | `(amk-on 'event)` | `amk.on[event]` |
 | undefined | `nil` | `None` | `#f` | `undefined` |
+
+A raw read returns the text as stored, never expanded, and a raw write defines a recursive
+variable, as a define does; `amk.var` expands on read and stores its value literally.
 
 lua's handle also has `amk.spawn`, `amk.wait`, `amk.kill`, `amk.foreground`, `amk.send` and
 `amk.exit_code`.

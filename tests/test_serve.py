@@ -2,7 +2,7 @@
 
 Pinned: the server listens while the recipe runs, a request reaches lua, js, and s7 functions
 through amk.expand, and a goal chain fed per request answers fresh for each input in one
-process. demos/json-rpc.mk shows the same pieces over HTTP; this file does not read it.
+process. demos/json-rpc.amk shows the same pieces over HTTP; this file does not read it.
 """
 
 import json

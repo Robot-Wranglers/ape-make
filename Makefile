@@ -95,6 +95,8 @@ gmsl.files   := gmsl __gmsl
 payload.files := payload/__init__.mk
 # The mip library needs the micropython and jq engines, so it ships only in a build that has both.
 payload.mip = $(if $(filter-out $(engines),micropython jq),,payload/lib/mip.mk)
+# The utmpl library needs the micropython engine and the utemplate library.
+payload.utmpl = $(if $(and $(filter micropython,$(engines)),$(filter utemplate,$(libs))),payload/lib/utmpl.mk)
 
 # dkjson is one lua file, and its "tarball" is that file; it lands in the payload for require.
 dkjson.version := 2.8
@@ -102,7 +104,13 @@ dkjson.tarball := dkjson-$(dkjson.version).lua
 dkjson.url     := http://dkolf.de/dkjson-lua/$(dkjson.tarball)
 dkjson.sha256  := eb3bf160688fb395a2db6bc52eeff4f7855a6321d2b41bdc754554d13f4e7d44
 dkjson.files   := dkjson.lua
-libs.all     := gmsl dkjson
+# utemplate is a micropython package from its PyPI sdist, the one release archive it publishes; it lands in the payload for import.
+utemplate.version := 1.4.1
+utemplate.tarball := utemplate-$(utemplate.version).tar.gz
+utemplate.url     := https://files.pythonhosted.org/packages/ba/93/5eca962e6d576b8f50bb11bc9506becc11ce4587a56b707095c3073bda06/$(utemplate.tarball)
+utemplate.sha256  := 43fde7c8b38dda1ff9c82cd829d22ec445f1e9d631455de705873051f83a0b20
+utemplate.files   := utemplate/source.py utemplate/compiled.py utemplate/recompile.py
+libs.all     := gmsl dkjson utemplate
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
 engines.all   := gawk jq lua s7 micropython wasm3 quickjs sqlite
@@ -178,6 +186,7 @@ quickjs.src := src/quickjs-$(quickjs.version)
 sqlite.src := src/sqlite-amalgamation-$(sqlite.release)
 gmsl.src  := src/gmsl-$(gmsl.version)
 dkjson.src := src/dkjson-$(dkjson.version)
+utemplate.src := src/utemplate-$(utemplate.version)
 # The native make is the debug loop by default; pass native.cflags=-O2 to compare it fairly.
 native.cflags ?= -O0 -g
 
@@ -318,10 +327,10 @@ install: install.user
 	@# The user's bin by default; install.global takes the system bin and asks for sudo when it needs it.
 install.user install.global: install.%:
 	$(call log, install, $(deliverable) into $(bindir.$*) on $(os))
-	[ -x $(deliverable) ] || $(call die, install, no ./$(deliverable) here -- run make $(deliverable) first)
+	[ -x $(artifact.ape) ] || $(call die, install, no $(artifact.ape) here -- run make build first)
 	[ -n "$(install.os)" ] || $(call die, install, $(os) is not a system this knows -- pass bindir.$*=DIR to say where)
 	as=; [ -w "$(bindir.$*)" ] || [ -w "$$(dirname "$(bindir.$*)")" ] || { [ $* = global ] && as=sudo; }; \
-	$$as mkdir -p "$(bindir.$*)" && $$as install -m 0755 $(deliverable) "$(bindir.$*)/$(notdir $(deliverable))" \
+	$$as mkdir -p "$(bindir.$*)" && $$as install -m 0755 $(artifact.ape) "$(bindir.$*)/$(notdir $(deliverable))" \
 	  || $(call die, install, could not write $(bindir.$*)/$(notdir $(deliverable)))
 	case ":$$PATH:" in *":$(bindir.$*):"*) ;; *) $(call log, install, $(bindir.$*) is not on PATH -- add it in the shell rc);; esac
 	$(call log, install, $(bindir.$*)/$(notdir $(deliverable)) is ready)
@@ -345,6 +354,7 @@ $(bash.file): url := $(bash.url)
 $(jb.file): url := $(jb.url)
 $(gmsl.tarball): url := $(gmsl.url)
 $(dkjson.tarball): url := $(dkjson.url)
+$(utemplate.tarball): url := $(utemplate.url)
 $(cosmocc.zip): url := $(cosmocc.url)
 $(deps.files):
 	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
@@ -430,6 +440,9 @@ $(gmsl.src): $(gmsl.tarball)
 $(dkjson.src): $(dkjson.tarball)
 	$(call log, patch, placing $(dkjson.tarball) into $@ unpatched)
 	mkdir -p $@ && install -m 0644 $(dkjson.tarball) $@/dkjson.lua && touch $@
+$(utemplate.src): $(utemplate.tarball)
+	$(call log, patch, unpacking $(utemplate.tarball) into $@ unpatched)
+	mkdir -p src && tar xzf $(utemplate.tarball) -C src && touch $@
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -620,7 +633,7 @@ FORCE:
 
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree.
-$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.mip) guest/amk.sh
+$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.mip) $(payload.utmpl) guest/amk.sh
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix) $(bin)
 	cd build/ape$(suffix) \
@@ -632,10 +645,10 @@ $(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) 
 	$(foreach t,$(tools),$(foreach n,$(call tool.names,$(t)),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(n);))
 	@# The call channel's shell side rides in bin/ too, so a recipe sources it by name from PATH.
 	install -m 0644 guest/amk.sh build/payload$(suffix)/bin/amk.sh
-	$(foreach l,$(libs),$(foreach f,$($(l).files),install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
+	$(foreach l,$(libs),$(foreach f,$($(l).files),mkdir -p $(dir build/payload$(suffix)/lib/$(f)) && install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
 	$(if $(filter micropython,$(engines)),$(foreach p,$(micropython.pylib),mkdir -p $(dir build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)))) && install -m 0644 $(micropython.src)/$(lastword $(subst :, ,$(p))) build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)));))
 	$(foreach f,$(payload.files),install -m 0644 $(f) build/payload$(suffix)/$(notdir $(f));)
-	$(foreach f,$(payload.mip),install -m 0644 $(f) build/payload$(suffix)/lib/$(notdir $(f));)
+	$(foreach f,$(payload.mip) $(payload.utmpl),install -m 0644 $(f) build/payload$(suffix)/lib/$(notdir $(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
 	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython,$(engines)),lib) $(notdir $(payload.files))
@@ -716,8 +729,8 @@ smoke: $(artifact.ape) smoke.demos
 	case "$$served" in 'served by pid '*) ;; *) echo "bundle: the zygote did not serve the request" >&2; exit 1;; esac
 	$(call log, smoke, every check passed)
 # The wasm demo needs the opt-in engine and docker, so a build without wasm3 leaves it out.
-demos.skip := $(if $(filter wasm3,$(engines)),,demos/wasm-1.mk)
-demos := $(filter-out $(demos.skip),$(wildcard demos/*.mk))
+demos.skip := $(if $(filter wasm3,$(engines)),,demos/wasm-1.amk)
+demos := $(filter-out $(demos.skip),$(wildcard demos/*.amk))
 smoke.demos: $(artifact.ape)
 	@# Every makefile under demos/ runs its default goal and must exit zero; each demo checks itself.
 	$(call log, smoke.demos, running $(words $(demos)) demos$(if $(demos.skip), and skipping $(demos.skip)))
@@ -762,7 +775,7 @@ docker.tag    ?= $(amk.version)$(suffix)$(foreach e,$(filter $(engines.optin),$(
 assimilate.amd64 := -x
 assimilate.arm64 := -a
 # Inside the image the artifact is the installed one; the wasm demo builds its module with docker, which the image does not carry.
-docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.mk \
+docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.amk \
   $(foreach v,amk.version with without flavor patch.dirs,$(v)='$($(v))')
 
 build.docker: $(docker.dir)/.context
