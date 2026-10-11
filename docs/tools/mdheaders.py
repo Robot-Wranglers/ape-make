@@ -18,10 +18,17 @@ from pathlib import Path
 EPILOG = """\
 A header is one comment line that declares it and one that closes it:
 
-  <!-- header engine-api "Engine API" | Literals #engine-literals | Grammar #extended-grammar -->
+  <!-- header ### engine-api "Engine API" | Literals #engine-literals | Grammar #extended-grammar -->
   <!-- /header -->
 
-The id is lowercase letters, digits, and dashes, and becomes the anchor. Each link is a
+The leading hashes set the heading level as in markdown, and default to ## when left out.
+The title is the heading's text, so it shows in GitHub's outline; the links are buttons
+on the right of the same line, and levels 3 and below get a rule underneath, where GitHub
+draws none of its own.
+
+The id is lowercase letters, digits, and dashes, and becomes the anchor, written into the
+heading so links survive a change of title. Every other heading needs a permalink of its
+own, an <a id> on a line before it; --check fails on one without. Each link is a
 label and a target separated by its last space, and a header may have none. Everything
 between the two lines belongs to the tool and is rewritten on every run; the rest of the
 page is left byte for byte. Markers inside fenced code are ignored.
@@ -43,11 +50,12 @@ ROW = 40
 EM = {**dict.fromkeys("iljtf.,:;!|' ", 0.3), **dict.fromkeys("mwMW", 0.85)}
 
 OPEN = re.compile(r"<!--\s*header(?:\s+(?P<spec>.*?))?\s*-->$")
-SPEC = re.compile(r'(?P<id>[a-z0-9][a-z0-9-]*)\s+"(?P<title>[^"]+)"\s*(?P<links>\|.*)?$')
+SPEC = re.compile(r'(?:(?P<level>#{1,6})\s+)?(?P<id>[a-z0-9][a-z0-9-]*)\s+"(?P<title>[^"]+)"\s*(?P<links>\|.*)?$')
 CLOSE = re.compile(r"<!--\s*/header\s*-->$")
 FENCE = re.compile(r"^ {0,3}(?P<mark>`{3,}|~{3,})(?P<info>.*)$")
 HEADING = re.compile(r"^ {0,3}#{1,6}\s+(?P<text>.+?)\s*#*\s*$")
-SYNTAX = 'expected <!-- header ID "Title" | Label target ... -->'
+ANCHOR = re.compile(r'<a\s+(?:id|name)=')
+SYNTAX = 'expected <!-- header [##] ID "Title" | Label target ... -->'
 
 
 class SpecError(Exception):
@@ -59,6 +67,7 @@ class Header:
   id: str
   title: str
   links: list[tuple[str, str]]
+  level: int
   open: int
   close: int = -1
 
@@ -82,13 +91,6 @@ def svg(w, h, body, stretch=False):
   ratio = ' preserveAspectRatio="none"' if stretch else ""
   return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h}" viewBox="0 0 {w:.0f} {h}"{ratio}>'
           f'{SIGNATURE}{body}</svg>\n')
-
-
-def title_svg(text, t):
-  # Natural spacing with room to spare: the width estimate is rough and empty space on the right is invisible.
-  size = 24
-  return svg(text_width(text, size) * 1.15, ROW,
-             f'<text x="0" y="29" font-family="{FONT}" font-size="{size}" font-weight="600" fill="{t["fg"]}">{escape(text)}</text>')
 
 
 def button_svg(text, t):
@@ -132,7 +134,7 @@ def parse_spec(spec, where):
     if not label.strip() or not target:
       raise SpecError(f"{where}: link {part.strip()!r} needs a label and a target")
     links.append((label.strip(), target))
-  return m["id"], m["title"].strip(), links
+  return m["id"], m["title"].strip(), links, len(m["level"] or "##")
 
 
 def parse(path, root):
@@ -195,6 +197,21 @@ def warnings(page):
       yield f"{page.name}:{h.close + 2}: warning: leave a blank line after the closing marker, or this line joins the header's html"
 
 
+def unanchored(page):
+  """Every markdown heading outside the generated headers and fenced code whose last non-blank line before it holds no anchor: a link to it breaks when its text changes."""
+  lines, owned = [line.rstrip("\r\n") for line in lines_of(page.text)], set(page.code)
+  for h in page.headers:
+    owned.update(range(h.open, h.close + 1))
+  prev = ""
+  for n, line in enumerate(lines):
+    if n in owned:
+      continue
+    if (m := HEADING.match(line)) and not ANCHOR.search(prev):
+      yield f'{page.name}:{n + 1}: heading has no permalink: put <a id="{github_slug(m["text"])}"></a> on a line before it'
+    if line.strip():
+      prev = line
+
+
 def picture(src, alt, attrs=""):
   dark = src.replace(".svg", ".dark.svg")
   return (f'<picture><source media="(prefers-color-scheme: dark)" srcset="{dark}">'
@@ -202,19 +219,20 @@ def picture(src, alt, attrs=""):
 
 
 def render(page, h, img):
-  # Inline buttons in a right-aligned paragraph wrap in reading order, where right floats would stack reversed.
+  # Right floats stack in reverse, so the buttons go in last first to read left to right.
   src = lambda name: Path(os.path.relpath(img / name, page.path.parent)).as_posix()
   base = f"{page.slug}.{h.id}"
-  title = f'<a href="#{h.id}">{picture(src(f"{base}.title.svg"), h.title, " align=left")}</a>'
-  buttons = "".join(f'<a href="{escape(target)}">{picture(src(f"{base}.{i}.svg"), label)}</a>'
-                    for i, (label, target) in enumerate(h.links))
-  rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1")
-  return [f'<p align="right"><a id="{h.id}"></a>{title}{buttons}<br clear="all">{rule}</p>']
+  anchor = f'<a id="{h.id}"></a>'
+  buttons = "".join(f'<a href="{escape(target)}">{picture(src(f"{base}.{i}.svg"), label, " align=right")}</a>'
+                    for i, (label, target) in reversed(list(enumerate(h.links))))
+  rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1") if h.level > 2 else ""
+  tag = f"h{h.level}"
+  return [f'<{tag}>{anchor}{escape(h.title)}{buttons}<br clear="all">{rule}</{tag}>']
 
 
 def images(page, h):
   base = f"{page.slug}.{h.id}"
-  out = themed(f"{base}.title", lambda t: title_svg(h.title, t))
+  out = {}
   for i, (label, _) in enumerate(h.links):
     out |= themed(f"{base}.{i}", lambda t, label=label: button_svg(label, t))
   return out
@@ -256,9 +274,13 @@ def main(argv=None):
   except SpecError as e:
     print(f"mdheaders: {e}", file=sys.stderr)
     return 2
+  bare = []
   for page in pages:
     for w in warnings(page):
       print(f"mdheaders: {w}", file=sys.stderr)
+    bare += list(unanchored(page))
+  for b in bare:
+    print(f"mdheaders: {b}", file=sys.stderr)
   img = args.img if args.img.is_absolute() else root / args.img
   files, stale = plan(pages, img)
   todo = [p for p, body in files.items() if changed(p, body)]
@@ -268,7 +290,7 @@ def main(argv=None):
       print(f"mdheaders: out of date: {rel(p)}", file=sys.stderr)
     for p in stale:
       print(f"mdheaders: stale image: {rel(p)}", file=sys.stderr)
-    return 1 if todo or stale else 0
+    return 1 if todo or stale or bare else 0
   img.mkdir(parents=True, exist_ok=True)
   for p in todo:
     p.write_bytes(files[p].encode("utf-8"))

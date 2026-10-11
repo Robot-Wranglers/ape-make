@@ -52,7 +52,7 @@ handles = "\n".join([
 ])
 
 unregistered = "\n".join([
-  "$(info exec=[$(jq.exec .)] import=[$(jq.import .)] take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] get=[$(lua.get .)] persistent=[$(lua.persistent x = 1)])",
+  "$(info take=[$(jq.take .)] dump=[$(jq.dump .)] filter=[$(jq.filter .)] persistent=[$(lua.persistent x = 1)])",
   "all:",
   "\ttrue",
   "",
@@ -90,7 +90,7 @@ def test_the_grammar_leaves_these_names_unregistered(amk, tmp_path):
   mk.write_text(unregistered)
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "exec=[] import=[] take=[] dump=[] filter=[] get=[] persistent=[]" in r.stdout, r.stdout
+  assert "take=[] dump=[] filter=[] persistent=[]" in r.stdout, r.stdout
 
 
 languages = {
@@ -154,7 +154,7 @@ def test_a_language_namespace_keeps_its_own_state(amk, engines, tmp_path, engine
   ("$(jq.ns s, create, .)", "expected a backing, one of run, owned PATH, shared PATH"),
   ("$(lua.ns s, create, run)", "create takes no program"),
   ("$(jq.ns w, create)\n$(lua.ns w, create)", "namespace w belongs to jq"),
-  ("$(jq.ns jq, create)", "jq.get is a make function already"),
+  ("$(jq.ns jq, create)", "jq.exec is a make function already"),
   ("$(micropy.ns w, create)", "create is not supported for micropy"),
 ])
 def test_a_bad_namespace_call_is_fatal(amk, tmp_path, line, message):

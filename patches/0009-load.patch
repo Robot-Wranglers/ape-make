@@ -1,0 +1,14 @@
+load.c: -load answers that the object will never be rebuilt, since an ape cannot dlopen.
+
+--- a/src/load.c
++++ b/src/load.c
+@@ -250,7 +250,8 @@
+     O (fatal, flocp,
+        _("The 'load' operation is not supported on this platform"));
+
+-  return 0;
++  /* Nothing is ever loadable here, so take the do-not-rebuild contract.  */
++  return -1;
+ }
+
+ int

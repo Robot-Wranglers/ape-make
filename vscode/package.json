@@ -21,6 +21,12 @@
     "vscode-textmate": "^9.0.0"
   },
   "contributes": {
+    "languages": [
+      {
+        "id": "makefile",
+        "extensions": [".amk"]
+      }
+    ],
     "grammars": [
       {
         "scopeName": "source.makefile.amk-engines",

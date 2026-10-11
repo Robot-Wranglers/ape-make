@@ -2,7 +2,7 @@
 
 Pinned: the mip.install target publishes the package under its version with a stamp, micropy
 imports it with no path setup of its own, a second run fetches nothing, and a wrong digest stops the build with the right one
-named and nothing published. These reach GitHub. demos/json-rpc.mk uses mip; this file does not read it.
+named and nothing published. These reach GitHub. demos/json-rpc.amk uses mip; this file does not read it.
 """
 
 import pytest

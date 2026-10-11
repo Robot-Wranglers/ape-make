@@ -53,6 +53,13 @@ quickjs.tarball := quickjs-$(quickjs.version).tar.xz
 quickjs.url     := https://bellard.org/quickjs/$(quickjs.tarball)
 quickjs.sha256  := b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a
 
+# sqlite is the amalgamation, one C file; its guest is a workspace row whose state is an in-memory database.
+sqlite.version := 3.53.4
+sqlite.release := 3530400
+sqlite.tarball := sqlite-amalgamation-$(sqlite.release).zip
+sqlite.url     := https://sqlite.org/2026/$(sqlite.tarball)
+sqlite.sha256  := 1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d
+
 cosmocc.version := 4.0.2
 cosmocc.zip     := cosmocc-$(cosmocc.version).zip
 cosmocc.url     := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
@@ -88,6 +95,8 @@ gmsl.files   := gmsl __gmsl
 payload.files := payload/__init__.mk
 # The mip library needs the micropython and jq engines, so it ships only in a build that has both.
 payload.mip = $(if $(filter-out $(engines),micropython jq),,payload/lib/mip.mk)
+# The utmpl library needs the micropython engine and the utemplate library.
+payload.utmpl = $(if $(and $(filter micropython,$(engines)),$(filter utemplate,$(libs))),payload/lib/utmpl.mk)
 
 # dkjson is one lua file, and its "tarball" is that file; it lands in the payload for require.
 dkjson.version := 2.8
@@ -95,11 +104,17 @@ dkjson.tarball := dkjson-$(dkjson.version).lua
 dkjson.url     := http://dkolf.de/dkjson-lua/$(dkjson.tarball)
 dkjson.sha256  := eb3bf160688fb395a2db6bc52eeff4f7855a6321d2b41bdc754554d13f4e7d44
 dkjson.files   := dkjson.lua
-libs.all     := gmsl dkjson
+# utemplate is a micropython package from its PyPI sdist, the one release archive it publishes; it lands in the payload for import.
+utemplate.version := 1.4.1
+utemplate.tarball := utemplate-$(utemplate.version).tar.gz
+utemplate.url     := https://files.pythonhosted.org/packages/ba/93/5eca962e6d576b8f50bb11bc9506becc11ce4587a56b707095c3073bda06/$(utemplate.tarball)
+utemplate.sha256  := 43fde7c8b38dda1ff9c82cd829d22ec445f1e9d631455de705873051f83a0b20
+utemplate.files   := utemplate/source.py utemplate/compiled.py utemplate/recompile.py
+libs.all     := gmsl dkjson utemplate
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
-engines.all   := gawk jq lua s7 micropython wasm3 quickjs
-engines.optin := wasm3
+engines.all   := gawk jq lua s7 micropython wasm3 quickjs sqlite
+engines.optin :=
 with          ?=
 without       ?=
 ifneq ($(filter-out $(engines.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))),)
@@ -121,6 +136,7 @@ s7.define   := AMK_ENGINE_S7
 micropython.define := AMK_ENGINE_MICROPY
 wasm3.define := AMK_ENGINE_WASM3
 quickjs.define := AMK_ENGINE_QUICKJS
+sqlite.define := AMK_ENGINE_SQLITE
 gawk.feature := awk
 jq.feature   := jq
 lua.feature  := lua
@@ -128,14 +144,12 @@ s7.feature   := s7
 micropython.feature := micropy
 wasm3.feature := wasm
 quickjs.feature := js
-# Only the ones that carry a cli answer to a name of their own; the binary holds the others as libraries.
-gawk.alias := awk
-jq.alias   := jq
-wasm3.alias := wasm3
+sqlite.feature := sqlite
 engines.defs     = $(foreach e,$(engines),-D$($(e).define)=$($(e).version))
 version.defs     = -DAMK_VERSION=$(amk.version) $(if $(flavor),-DAMK_FLAVOR=$(flavor))
 engines.features = $(foreach e,$(engines),$($(e).feature))
-engines.aliases  = $(foreach e,$(engines),$(if $(filter-out undefined,$(origin $(e).alias)),$($(e).alias)))
+# The names the given binary answers to, every engine's own and its aliases, as its engine listing reports them.
+engines.names    = $(1) --list-engines | awk -F'"' '/"(name|aliases)":/ { for (i = 4; i < NF; i += 2) print $$i }'
 
 tools.files := $(foreach t,$(tools),$($(t).file))
 libs.tarballs := $(foreach l,$(libs),$($(l).tarball))
@@ -169,8 +183,10 @@ s7.src   := src/s7-$(s7.version)
 micropython.src := src/micropython-$(micropython.version)
 wasm3.src := src/wasm3-$(wasm3.version)
 quickjs.src := src/quickjs-$(quickjs.version)
+sqlite.src := src/sqlite-amalgamation-$(sqlite.release)
 gmsl.src  := src/gmsl-$(gmsl.version)
 dkjson.src := src/dkjson-$(dkjson.version)
+utemplate.src := src/utemplate-$(utemplate.version)
 # The native make is the debug loop by default; pass native.cflags=-O2 to compare it fairly.
 native.cflags ?= -O0 -g
 
@@ -201,6 +217,7 @@ wasm3.cflags   := -fno-strict-aliasing -fomit-frame-pointer -fno-stack-check -fn
                   -Dd_m3PreferStaticAlloc -Dd_m3HasTypedRefs=1 -Dd_m3HasWASI
 # quickjs ships a Makefile that only builds its cli, so its rule compiles the engine and its std library by hand, less the programs with a main.
 quickjs.objdirs := .
+sqlite.objdirs := .
 quickjs.cflags  := -D_GNU_SOURCE -DCONFIG_VERSION=\"$(quickjs.version)\" -fwrapv
 quickjs.exclude := qjs.c qjsc.c run-test262.c unicode_gen.c
 # cosmocc refuses an argument with a space, and jq passes its package string on the command line.
@@ -213,6 +230,7 @@ s7.objcheck   := *.o
 micropython.objcheck := py/*.o
 wasm3.objcheck := *.o
 quickjs.objcheck := *.o
+sqlite.objcheck := *.o
 # Per-guest hooks on the partial link and the guest compile: extra ld flags, compile flags in place of the shared ones, objcopy renames, and objects to leave out as alternatives appended to the conftest filter.
 gawk.ldflags   :=
 jq.ldflags     :=
@@ -221,6 +239,7 @@ s7.ldflags     :=
 micropython.ldflags :=
 wasm3.ldflags  :=
 quickjs.ldflags :=
+sqlite.ldflags :=
 gawk.guestflags :=
 jq.guestflags   :=
 lua.guestflags  :=
@@ -228,6 +247,7 @@ s7.guestflags   :=
 micropython.guestflags :=
 wasm3.guestflags :=
 quickjs.guestflags :=
+sqlite.guestflags :=
 gawk.objrename :=
 jq.objrename   :=
 lua.objrename  :=
@@ -235,6 +255,7 @@ s7.objrename   :=
 micropython.objrename :=
 wasm3.objrename :=
 quickjs.objrename :=
+sqlite.objrename :=
 gawk.objskip   :=
 jq.objskip     :=
 lua.objskip    :=
@@ -242,14 +263,16 @@ s7.objskip     :=
 micropython.objskip :=
 wasm3.objskip  :=
 quickjs.objskip :=
+sqlite.objskip :=
 # A file of amk's own compiled beside a configured guest's objects, so the partial link takes it; the compiler is the argument.
 gawk.extra  =
-jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -c $(HERE)guest/jq_main.c -o src/jq_main.o
+jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -I$(HERE)guest -c $(HERE)guest/jq_main.c -o src/jq_main.o
 lua.extra   =
 s7.extra    =
 micropython.extra =
 wasm3.extra =
 quickjs.extra =
+sqlite.extra =
 
 # out/bin and out/bin-native each hold one artifact beside its argv[0] aliases; everything rebuildable stays under build/.
 guests.ape    := build/guests/ape
@@ -304,10 +327,10 @@ install: install.user
 	@# The user's bin by default; install.global takes the system bin and asks for sudo when it needs it.
 install.user install.global: install.%:
 	$(call log, install, $(deliverable) into $(bindir.$*) on $(os))
-	[ -x $(deliverable) ] || $(call die, install, no ./$(deliverable) here -- run make $(deliverable) first)
+	[ -x $(artifact.ape) ] || $(call die, install, no $(artifact.ape) here -- run make build first)
 	[ -n "$(install.os)" ] || $(call die, install, $(os) is not a system this knows -- pass bindir.$*=DIR to say where)
 	as=; [ -w "$(bindir.$*)" ] || [ -w "$$(dirname "$(bindir.$*)")" ] || { [ $* = global ] && as=sudo; }; \
-	$$as mkdir -p "$(bindir.$*)" && $$as install -m 0755 $(deliverable) "$(bindir.$*)/$(notdir $(deliverable))" \
+	$$as mkdir -p "$(bindir.$*)" && $$as install -m 0755 $(artifact.ape) "$(bindir.$*)/$(notdir $(deliverable))" \
 	  || $(call die, install, could not write $(bindir.$*)/$(notdir $(deliverable)))
 	case ":$$PATH:" in *":$(bindir.$*):"*) ;; *) $(call log, install, $(bindir.$*) is not on PATH -- add it in the shell rc);; esac
 	$(call log, install, $(bindir.$*)/$(notdir $(deliverable)) is ready)
@@ -325,11 +348,13 @@ $(s7.tarball): url := $(s7.url)
 $(micropython.tarball): url := $(micropython.url)
 $(wasm3.tarball): url := $(wasm3.url)
 $(quickjs.tarball): url := $(quickjs.url)
+$(sqlite.tarball): url := $(sqlite.url)
 $(sed.file): url := $(sed.url)
 $(bash.file): url := $(bash.url)
 $(jb.file): url := $(jb.url)
 $(gmsl.tarball): url := $(gmsl.url)
 $(dkjson.tarball): url := $(dkjson.url)
+$(utemplate.tarball): url := $(utemplate.url)
 $(cosmocc.zip): url := $(cosmocc.url)
 $(deps.files):
 	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
@@ -363,17 +388,23 @@ $(HERE)cosmocc/bin/cosmocc: $(cosmocc.zip)
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 patch: $(make.src)
-	@# Unpack make and apply the patch series in order, into a fresh tree.
-$(make.src): $(make.tarball) $(patch.dirs) $(patches)
+	@# Unpack make, add amk's own sources, and apply the patch series in order, into a fresh tree.
+# amk's own sources have no stock counterpart, so they are copied in whole rather than carried as patches.
+amk.sources := $(wildcard src/amk/*)
+$(make.src): $(make.tarball) $(patch.dirs) $(patches) $(amk.sources)
 	$(call log, patch, unpacking $(make.tarball) into $@$(if $(flavor), for flavor $(flavor)))
 	rm -rf $@ && mkdir -p $@
 	tar xzf $(make.tarball) -C $@ --strip-components=1
-	for p in $(patches); do \
-	  $(call log, patch, applying $${p#$(HERE)}); \
-	  $(PATCH) -d $@ -p1 -l -i "$$p" \
-	    || $(call die, patch, $${p#$(HERE)} does not apply to make $(make.version) -- rerun after make clean); \
-	done
+	cp $(amk.sources) $@/src/
+	$(call apply.series,$@,$(patches),make $(make.version))
 	touch $@
+
+# One series into an unpacked tree, in order, each patch by its absolute path: the tree, the patches, and what the tree is, for the error.
+apply.series = for p in $(2); do \
+	  $(call log, patch, applying $$(basename $$p)); \
+	  $(PATCH) -d $(1) -p1 -l -i "$$p" \
+	    || $(call die, patch, $$(basename $$p) does not apply to $(3) -- rerun after make clean); \
+	done
 
 $(gawk.src): $(gawk.tarball)
 	$(call log, patch, unpacking $(gawk.tarball) into $@ unpatched)
@@ -395,12 +426,11 @@ $(micropython.src): $(micropython.tarball)
 $(wasm3.src): $(wasm3.tarball) $(wildcard patches/wasm3/*.patch)
 	$(call log, patch, unpacking $(wasm3.tarball) into $@ and applying patches/wasm3)
 	rm -rf $@ && mkdir -p src && tar xzf $(wasm3.tarball) -C src
-	for p in patches/wasm3/*.patch; do \
-	  $(call log, patch, applying $$p); \
-	  $(PATCH) -d $@ -p1 -l -i "$(HERE)$$p" \
-	    || $(call die, patch, $$p does not apply to wasm3 $(wasm3.version)); \
-	done
+	$(call apply.series,$@,$(abspath $(wildcard patches/wasm3/*.patch)),wasm3 $(wasm3.version))
 	touch $@
+$(sqlite.src): $(sqlite.tarball)
+	$(call log, patch, unpacking $(sqlite.tarball) into $@ unpatched)
+	mkdir -p src && unzip -q -o $(sqlite.tarball) -d src && touch $@
 $(quickjs.src): $(quickjs.tarball)
 	$(call log, patch, unpacking $(quickjs.tarball) into $@ unpatched)
 	mkdir -p src && tar xJf $(quickjs.tarball) -C src && touch $@
@@ -410,6 +440,9 @@ $(gmsl.src): $(gmsl.tarball)
 $(dkjson.src): $(dkjson.tarball)
 	$(call log, patch, placing $(dkjson.tarball) into $@ unpatched)
 	mkdir -p $@ && install -m 0644 $(dkjson.tarball) $@/dkjson.lua && touch $@
+$(utemplate.src): $(utemplate.tarball)
+	$(call log, patch, unpacking $(utemplate.tarball) into $@ unpatched)
+	mkdir -p src && tar xzf $(utemplate.tarball) -C src && touch $@
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -485,7 +518,7 @@ build/%-ape/.built: build/%-ape/Makefile
 	  || $(call die, guest, $*'s extra file did not compile -- see the tail of $(@D)/build.log))
 	touch $@
 # The extra file is a build input of its guest.
-build/jq-ape/.built build/jq-native/.built: guest/jq_main.c
+build/jq-ape/.built build/jq-native/.built: guest/jq_main.c guest/amk_guest.h
 
 build/lua-native/.built: $(lua.src) guest/lua_main.c guest/amk_guest.h
 	$(call log, guest, compiling lua for the host compiler -- log at $(@D)/build.log)
@@ -552,6 +585,25 @@ build/quickjs-ape/.built: $(quickjs.src) guest/js_main.c guest/amk_guest.h $(cos
 	  || $(call die, guest, quickjs did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
+# The amalgamation, the guest file, and sqlite's own shell, size-optimized with the extensions and the shared cache left out; the shell's main is renamed so the guest file can wrap it.
+sqlite.cflags := -Os -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_DQS=0 -DSQLITE_OMIT_PROGRESS_CALLBACK -DSQLITE_DEFAULT_MEMSTATUS=0
+sqlite.compile = for c in $(HERE)$(sqlite.src)/sqlite3.c $(HERE)guest/sqlite_main.c; do \
+                   $(1) $(call guest.cflags,sqlite) $(sqlite.cflags) -I$(HERE)$(sqlite.src) -I$(HERE)guest -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
+                 done && \
+                 $(1) $(call guest.cflags,sqlite_shell) $(sqlite.cflags) -I$(HERE)$(sqlite.src) -c $(HERE)$(sqlite.src)/shell.c -o shell.o
+build/sqlite-native/.built: $(sqlite.src) guest/sqlite_main.c guest/amk_guest.h
+	$(call log, guest, compiling sqlite for the host compiler -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && $(call sqlite.compile,$${CC:-cc}) >build.log 2>&1 \
+	  || $(call die, guest, sqlite did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+build/sqlite-ape/.built: $(sqlite.src) guest/sqlite_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling sqlite for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) sh -c '$(call sqlite.compile,cosmocc)' >build.log 2>&1 \
+	  || $(call die, guest, sqlite did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+
 # Apple ld -r localizes hidden symbols on its own; the cosmo pair needs objcopy, once per architecture.
 $(guests.host)/%.o: build/%-native/.built
 	$(call log, link, partial-linking $* into link input $@)
@@ -581,7 +633,7 @@ FORCE:
 
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree.
-$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.mip) guest/amk.sh
+$(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) build/.libs $(foreach e,$(engines),$(guests.ape)/$(e).o) $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.mip) $(payload.utmpl) guest/amk.sh
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix) $(bin)
 	cd build/ape$(suffix) \
@@ -593,16 +645,16 @@ $(artifact.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) 
 	$(foreach t,$(tools),$(foreach n,$(call tool.names,$(t)),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(n);))
 	@# The call channel's shell side rides in bin/ too, so a recipe sources it by name from PATH.
 	install -m 0644 guest/amk.sh build/payload$(suffix)/bin/amk.sh
-	$(foreach l,$(libs),$(foreach f,$($(l).files),install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
+	$(foreach l,$(libs),$(foreach f,$($(l).files),mkdir -p $(dir build/payload$(suffix)/lib/$(f)) && install -m 0644 $($(l).src)/$(f) build/payload$(suffix)/lib/$(f);))
 	$(if $(filter micropython,$(engines)),$(foreach p,$(micropython.pylib),mkdir -p $(dir build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)))) && install -m 0644 $(micropython.src)/$(lastword $(subst :, ,$(p))) build/payload$(suffix)/lib/$(firstword $(subst :, ,$(p)));))
 	$(foreach f,$(payload.files),install -m 0644 $(f) build/payload$(suffix)/$(notdir $(f));)
-	$(foreach f,$(payload.mip),install -m 0644 $(f) build/payload$(suffix)/lib/$(notdir $(f));)
+	$(foreach f,$(payload.mip) $(payload.utmpl),install -m 0644 $(f) build/payload$(suffix)/lib/$(notdir $(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
 	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython,$(engines)),lib) $(notdir $(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
-	$(foreach n,$(engines.aliases),ln -sf amk $(bin)/$(n);)
-	$(call log, build, artifact $@ is ready -- $(bin) holds the $(engines.aliases) names for it)
+	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
+	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
 
 build.native: $(artifact.host)
 	@# The same with the host compiler, unoptimized, for the fast loop.
@@ -614,8 +666,8 @@ $(artifact.host): $(make.src) build/.engines$(suffix) $(foreach e,$(engines),$(g
 	  && $(HERE)$(make.src)/configure --disable-dependency-tracking CFLAGS="$(native.cflags)" CPPFLAGS="$(engines.defs) $(version.defs)" \
 	  && make -j$(jobs) LIBS="$(foreach e,$(engines),$(HERE)$(guests.host)/$(e).o) -lm"
 	rm -f $@ && install -m 0755 build/native$(suffix)/make $@
-	$(foreach n,$(engines.aliases),ln -sf amk $(bin.host)/$(n);)
-	$(call log, build.native, artifact $@ is ready -- $(bin.host) holds the $(engines.aliases) names for it)
+	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin.host)/$$n; done
+	$(call log, build.native, artifact $@ is ready -- $(bin.host) holds every engine name and alias for it)
 
 # The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so it runs without this file's undefined-variable warnings.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
@@ -677,8 +729,8 @@ smoke: $(artifact.ape) smoke.demos
 	case "$$served" in 'served by pid '*) ;; *) echo "bundle: the zygote did not serve the request" >&2; exit 1;; esac
 	$(call log, smoke, every check passed)
 # The wasm demo needs the opt-in engine and docker, so a build without wasm3 leaves it out.
-demos.skip := $(if $(filter wasm3,$(engines)),,demos/wasm-1.mk)
-demos := $(filter-out $(demos.skip),$(wildcard demos/*.mk))
+demos.skip := $(if $(filter wasm3,$(engines)),,demos/wasm-1.amk)
+demos := $(filter-out $(demos.skip),$(wildcard demos/*.amk))
 smoke.demos: $(artifact.ape)
 	@# Every makefile under demos/ runs its default goal and must exit zero; each demo checks itself.
 	$(call log, smoke.demos, running $(words $(demos)) demos$(if $(demos.skip), and skipping $(demos.skip)))
@@ -723,7 +775,7 @@ docker.tag    ?= $(amk.version)$(suffix)$(foreach e,$(filter $(engines.optin),$(
 assimilate.amd64 := -x
 assimilate.arm64 := -a
 # Inside the image the artifact is the installed one; the wasm demo builds its module with docker, which the image does not carry.
-docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.mk \
+docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip=demos/wasm-1.amk \
   $(foreach v,amk.version with without flavor patch.dirs,$(v)='$($(v))')
 
 build.docker: $(docker.dir)/.context
@@ -737,7 +789,7 @@ $(docker.dir)/.context: $(artifact.ape) $(cosmocc.dir)/bin/cosmocc
 	$(foreach a,$(docker.arches), \
 	  sh $(cosmocc.dir)/bin/assimilate -e $(assimilate.$(a)) -o $(docker.dir)/$(a)/amk $(artifact.ape) >/dev/null \
 	  && chmod 0755 $(docker.dir)/$(a)/amk \
-	  $(foreach n,$(engines.aliases),&& ln -sf amk $(docker.dir)/$(a)/$(n));)
+	  && for n in $$($(call engines.names,$(artifact.ape))); do ln -sf amk $(docker.dir)/$(a)/$$n; done;)
 	touch $@
 
 smoke.docker: build.docker
@@ -815,7 +867,7 @@ release.watch:
 	$(call log, release, streaming run $$rid); gh run watch "$$rid" --exit-status
 
 clean:
-	@# Drop the landed deliverable, the unpacked sources, build trees, and outputs.
+	@# Drop the landed deliverable, the unpacked sources, build trees, and outputs; src/amk is amk's own source and stays.
 	$(call log, clean, dropping $(deliverable) src build out -- this costs a full rebuild)
-	$(call log, clean, the downloads and $(cosmocc.dir) stay)
-	rm -rf $(deliverable) src build out
+	$(call log, clean, the downloads, $(cosmocc.dir) and src/amk stay)
+	rm -rf $(deliverable) $(filter-out src/amk,$(wildcard src/*)) build out

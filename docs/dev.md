@@ -1,7 +1,11 @@
+<a id="developers"></a>
+
 # Developers
 
 Building, releasing, and the layout of the build tree. Testing, payload internals,
 dependencies, and patches stay in the [README](../README.md#dev).
+
+<a id="building"></a>
 
 ## Building
 
@@ -18,8 +22,8 @@ make
 Opting in and out:
 
 ```bash
-# the default engines plus $(wasm)
-make amk with=wasm3
+# the default engines plus kv
+make amk with=kv
 
 # no $(s7), and no s7 download
 make amk without=s7
@@ -34,7 +38,7 @@ build, and leaving out every engine stops it too. An engine left out is absent, 
 stubbed: its builtin does not exist, its name is not in `.FEATURES`, its multi-call alias
 is not created, and `make deps` does not download it. The engines, what each gives, and
 its size are in the table under [Special guests](../README.md#special-guests). Of the default build's
-14.1 MB, the two payload tools are about 5 MB. An engine's size is that build against the
+20.1 MB, the two payload tools are about 4 MB. An engine's size is that build against the
 same build without it, or with it for one that is off.
 
 Development flow:
@@ -55,13 +59,15 @@ make smoke
 # what is built here, and which of it is an artifact
 make stat
 
-# ./amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
+# out/bin/amk into ~/.local/bin, or into /usr/local/bin with install.global; bindir.user= and bindir.global= override
 make install
 ```
 
 Additionally `make build.native` builds the same sources with the host compiler, make at `-O0 -g`,
 as `out/bin-native/amk`; `make smoke.native` runs the builtins through it. Guests build
 on their own with `make guests` and `make guests.native`.
+
+<a id="testing"></a>
 
 ## Testing
 
@@ -89,6 +95,8 @@ AMK_BIN=/usr/local/bin/amk pytest tests
 Docker Desktop's Rosetta layer segfaults every ape, so `--platform linux/amd64`
 containers on an arm64 Mac are not a test of the x86_64 half; `arch -x86_64` on the
 host is.
+
+<a id="profiling"></a>
 
 ## Profiling
 
@@ -137,6 +145,8 @@ A sub-make inherits the setting and appends its own table to the same file, so a
 recursive build leaves one table per process. With profiling off, the cost is one check
 per expansion. The profiler is patch `0070`, and the flag is patch `0071`.
 
+<a id="dependencies"></a>
+
 ## Dependencies
 
 Every input is pinned by version and sha256 in the Makefile. Upstream ships no
@@ -160,6 +170,8 @@ toolchain unpacks to `cosmocc/` on first use; set `cosmocc.dir=/opt/cosmocc` to 
 an installed copy instead. Invoke cosmocc through `PATH`, never through a symlink:
 it locates `mktemper` and its siblings beside its own path.
 
+<a id="patches"></a>
+
 ## Patches
 
 Only make is patched; guests stay pristine. `patches/` is a numbered series applied in
@@ -178,6 +190,8 @@ make build flavor=cmk patch.dirs='patches ../ape/patches'
 
 Both must be given together. The overlay's patches are written against the tree this series
 leaves, so they say which amk version they apply to and are rebased when it moves.
+
+<a id="releases"></a>
 
 ## Releases
 
@@ -205,6 +219,8 @@ platforms, and pushes nothing. Every push and pull request runs the same build t
 keeps the result as a workflow artifact. A weekly `Pins` workflow fetches every input cold
 and verifies it, so a digest that moved upstream surfaces before it breaks a release.
 
+<a id="layout"></a>
+
 ## Layout
 
 `out/` holds artifacts only. Everything else this directory produces stays under
@@ -229,6 +245,8 @@ is reported.
 `make clean` drops `./amk` along with `src build out`, which discards those relocatables
 and costs a full rebuild. The downloads and the unpacked toolchain always stay.
 
+<a id="payload-internals"></a>
+
 ## Payload Internals
 
 The payload tools are the released cosmos binaries, unchanged, as the payload members
@@ -248,6 +266,8 @@ directory is kept, new members are appended stored, and a new directory drops an
 they replace. `--ape-unpack` and `--bundle` both write beside the destination and rename
 into place. A zygote started from a bundle holds the entry among its own options, so its
 clients match it.
+
+<a id="the-ape-loader"></a>
 
 ## The APE Loader
 

@@ -1,0 +1,44 @@
+posixos.c: the wait for a jobserver token also serves the children's call requests, so a
+child blocked on a request never holds a token make is waiting for.
+
+--- a/src/posixos.c
++++ b/src/posixos.c
+@@ -40,6 +40,7 @@
+ #include "debug.h"
+ #include "job.h"
+ #include "os.h"
++#include "amk.h"
+
+ #define STREAM_OK(_s) ((fcntl (fileno (_s), F_GETFD) != -1) || (errno != EBADF))
+
+@@ -475,13 +476,17 @@
+   while (1)
+     {
+       fd_set readfds;
+-      int r;
++      int r, top;
+       char intake;
+
+       FD_ZERO (&readfds);
+       FD_SET (job_fds[0], &readfds);
++      /* The children's call requests are answered from this wait too, or a child blocked on one never frees its token.  */
++      top = amk_call_fdset (&readfds);
++      if (top < job_fds[0])
++        top = job_fds[0];
+
+-      r = pselect (job_fds[0]+1, &readfds, NULL, NULL, specp, &empty);
++      r = pselect (top+1, &readfds, NULL, NULL, specp, &empty);
+       if (r < 0)
+         switch (errno)
+           {
+@@ -501,6 +506,10 @@
+       if (r == 0)
+         /* Timeout.  */
+         return 0;
++
++      amk_call_ready (&readfds);
++      if (!FD_ISSET (job_fds[0], &readfds))
++        continue;
+
+       /* The read FD is ready: read it!  This is non-blocking.  */
+       EINTRLOOP (r, read (job_fds[0], &intake, 1));

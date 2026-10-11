@@ -173,6 +173,43 @@ js_amk_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
   return JS_UNDEFINED;
 }
 
+static JSValue
+js_amk_raw_get (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name;
+  char *s;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  s = amk_var_raw_get (name);
+  JS_FreeCString (ctx, name);
+  if (s == NULL)
+    return JS_UNDEFINED;
+  r = JS_NewString (ctx, s);
+  gmk_free (s);
+  return r;
+}
+
+static JSValue
+js_amk_raw_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name, *value;
+  (void) this_val;
+  if (argc < 2 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  value = JS_ToCString (ctx, argv[1]);
+  if (value == NULL)
+    {
+      JS_FreeCString (ctx, name);
+      return JS_EXCEPTION;
+    }
+  amk_var_raw_set (name, value);
+  JS_FreeCString (ctx, value);
+  JS_FreeCString (ctx, name);
+  return JS_UNDEFINED;
+}
+
 /* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
 static char *
 js_func_call (void *state, const char *nm, unsigned int argc, char **argv)
@@ -258,6 +295,8 @@ js_bind_amk (JSContext *ctx)
   JS_SetPropertyStr (ctx, raw, "callEnd", JS_NewCFunction (ctx, js_amk_call_end, "callEnd", 1));
   JS_SetPropertyStr (ctx, raw, "get", JS_NewCFunction (ctx, js_amk_get, "get", 1));
   JS_SetPropertyStr (ctx, raw, "set", JS_NewCFunction (ctx, js_amk_set, "set", 2));
+  JS_SetPropertyStr (ctx, raw, "rawGet", JS_NewCFunction (ctx, js_amk_raw_get, "rawGet", 1));
+  JS_SetPropertyStr (ctx, raw, "rawSet", JS_NewCFunction (ctx, js_amk_raw_set, "rawSet", 2));
   JS_SetPropertyStr (ctx, raw, "func", JS_NewCFunction (ctx, js_amk_func, "func", 2));
   JS_SetPropertyStr (ctx, g, "__amk", raw);
   JS_FreeValue (ctx, g);
@@ -268,6 +307,11 @@ static const char *js_amk_prelude =
   "globalThis.amk = (function (raw) {\n"
   "  const need = () => { if (!raw.has()) throw new Error('amk: no make database, running outside a makefile'); };\n"
   "  const text = (v) => v == null ? '' : String(v);\n"
+  "  const unexpanded = new Proxy({}, {\n"
+  "    get: (_, k) => { need(); return raw.rawGet(String(k)); },\n"
+  "    set: (_, k, v) => { need(); raw.rawSet(String(k), text(v)); return true; },\n"
+  "    has: (_, k) => { need(); return raw.rawGet(String(k)) !== undefined; },\n"
+  "  });\n"
   "  return {\n"
   "    expand: (t) => { need(); return raw.expand(String(t)); },\n"
   "    eval: (t) => { need(); raw.eval(String(t)); },\n"
@@ -279,7 +323,7 @@ static const char *js_amk_prelude =
   "      })); },\n"
   "    func: (name, fn) => { need(); raw.func(String(name), fn); },\n"
   "    var: new Proxy({}, {\n"
-  "      get: (_, k) => { need(); return raw.get(String(k)); },\n"
+  "      get: (_, k) => { if (k === 'raw') return unexpanded; need(); return raw.get(String(k)); },\n"
   "      set: (_, k, v) => { need(); raw.set(String(k), text(v)); return true; },\n"
   "      has: (_, k) => { need(); return raw.get(String(k)) !== undefined; },\n"
   "    }),\n"
@@ -617,9 +661,9 @@ js_export_globals (JSContext *ctx, JSValueConst before, struct amk_sink *out)
   return rc;
 }
 
-/* The open primitive: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
+/* The create member: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
 __attribute__ ((visibility ("default"))) void *
-js_open (void)
+js_create (void)
 {
   struct js_state *s = calloc (1, sizeof *s);
   if (s == NULL)
@@ -635,9 +679,9 @@ js_open (void)
   return s;
 }
 
-/* The run primitive: exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
+static int
+js_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   struct js_state *s = state;
   struct amk_capture capture;
@@ -646,11 +690,6 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
   JSValue before;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "js: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "js.%s: no chunk\n", op);
@@ -673,6 +712,18 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
     rc = js_export_globals (ctx, before, out);
   JS_FreeValue (ctx, before);
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+js_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+js_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a function there, is called with the event as an object. Its print goes to stderr, and an error reports there and is otherwise ignored. */

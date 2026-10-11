@@ -313,7 +313,7 @@ def test_awk_and_jq_imported_targets_take_their_program_their_own_way(amk, tmp_p
     "define words",
     'BEGIN { print "a b c" }',
     "endef",
-    "@jq.import.target",
+    "@jq.import.target --null-input",
     "define count",
     '"@words@" | split(" ") | length',
     "endef",
@@ -501,3 +501,29 @@ def test_a_reference_must_name_exactly_one_target(amk, tmp_path):
   r = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
   assert r.returncode != 0, r.stdout
   assert "names both" in r.stderr and "'Value'" in r.stderr and "'VALUE'" in r.stderr, r.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="0315c37c59: @goal@ under the default mode")
+@pytest.mark.engines("awk")
+def test_default_mode_writes_nothing_in_the_tree(amk, tmp_path):
+  def text(n):
+    return "\n".join([
+      "@awk.import.target",
+      "define base",
+      f"BEGIN {{ print {n} }}",
+      "endef",
+      "@awk.import.target",
+      "define show",
+      "BEGIN { print @base@ }",
+      "endef",
+      "",
+    ])
+  mk = tmp_path / "plain.mk"
+  mk.write_text(text(1))
+  before = set(tmp_path.iterdir())
+  r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0 and r.stdout.strip() == "1", r.stdout + r.stderr
+  assert set(tmp_path.iterdir()) == before, "a value was kept in the working directory"
+  mk.write_text(text(2))
+  r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
+  assert r.stdout.strip() == "2", "a value survived a change to its program"

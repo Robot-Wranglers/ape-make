@@ -1,0 +1,156 @@
+Hooks in read.c. The payload's prelude is read before any makefile. The at line above a
+define applies a builtin's star twin to the define that follows. The goal make picks from
+the first rule is remembered, so a __main__ target can still take its place. The rule
+behind an imported target stays here, since it evaluates text through this file's reader.
+
+--- a/src/read.c
++++ b/src/read.c
+@@ -15,6 +15,7 @@
+ this program.  If not, see <https://www.gnu.org/licenses/>.  */
+
+ #include "makeint.h"
++#include "amk.h"
+
+ #include <assert.h>
+
+@@ -208,6 +209,13 @@
+     free (value);
+   }
+
++  /* The payload's prelude, read like an entry of the list above, then taken back out of the list so the first word still names the entry makefile.  */
++  if (!getenv ("AMK_NO_PRELUDE"))
++    {
++      eval_makefile (strcache_add (AMK_PRELUDE_MK), RM_NO_DEFAULT_GOAL|RM_INCLUDED|RM_DONTCARE);
++      define_variable_cname ("MAKEFILE_LIST", "", o_file, 0);
++    }
++
+   /* Read makefiles specified with -f switches.  */
+
+   if (makefiles != 0)
+@@ -587,6 +595,8 @@
+   const char *pattern_percent;
+   floc *fstart;
+   floc fi;
++  char *at_fn = NULL, *at_rest = NULL;
++  floc at_floc;
+
+ #define record_waiting_files()                                                \
+   do                                                                          \
+@@ -721,10 +731,43 @@
+       /* Get rid if starting space (including formfeed, vtab, etc.)  */
+       p = collapsed;
+       NEXT_TOKEN (p);
++
++      /* An at sign and the name of a builtin with a star twin apply that twin to the define that follows, as if called after its endef.  */
++      if (!ignoring && line[0] == '@')
++        {
++          char *n = p + 1;
++          size_t nlen = 0;
++          while (STOP_SET (n[nlen], MAP_USERFUNC))
++            nlen++;
++          if (nlen > 0 && (n[nlen] == '\0' || ISBLANK (n[nlen])))
++            {
++              char *star = xmalloc (nlen + 2);
++              memcpy (star, n, nlen);
++              strcpy (star + nlen, "*");
++              if (amk_function_exists (star))
++                {
++                  char *rest = n + nlen, *end;
++                  if (at_fn)
++                    OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
++                  NEXT_TOKEN (rest);
++                  end = rest + strlen (rest);
++                  while (end > rest && ISSPACE (end[-1]))
++                    *--end = '\0';
++                  at_fn = xstrndup (n, nlen);
++                  at_rest = xstrdup (rest);
++                  at_floc = *fstart;
++                  free (star);
++                  continue;
++                }
++              free (star);
++            }
++        }
+
+       /* See if this is a variable assignment.  We need to do this early, to
+          allow variables with names like 'ifdef', 'export', 'private', etc.  */
+       p = parse_var_assignment (p, 0, &vmod);
++      if (at_fn && !ignoring && !vmod.define_v && *p != '\0')
++        OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
+       if (vmod.assign_v)
+         {
+           struct variable *v;
+@@ -747,7 +790,19 @@
+             continue;
+           }
+           else if (vmod.define_v)
+-            v = do_define (p, origin, ebuf);
++            {
++              v = do_define (p, origin, ebuf);
++              if (at_fn)
++                {
++                  char *call = xmalloc (strlen (at_fn) + strlen (v->name) + strlen (at_rest) + 16);
++                  sprintf (call, "$(if $(%s* %s%s%s),)", at_fn, v->name, *at_rest ? "," : "", at_rest);
++                  eval_buffer (call, &at_floc);
++                  free (call);
++                  free (at_fn);
++                  free (at_rest);
++                  at_fn = at_rest = NULL;
++                }
++            }
+           else
+             v = try_variable_definition (fstart, p, origin, 0);
+
+@@ -1350,6 +1405,8 @@
+
+   if (conditionals->if_cmds)
+     O (fatal, fstart, _("missing 'endif'"));
++  if (at_fn)
++    OS (fatal, &at_floc, _("@%s needs a define after it"), at_fn);
+
+   /* At eof, record the last rule.  */
+   record_waiting_files ();
+@@ -1975,8 +2032,12 @@
+             }
+
+           if (!reject)
+-            define_variable_global (".DEFAULT_GOAL", 13, t->name,
+-                                    o_file, 0, NILF);
++            {
++              define_variable_global (".DEFAULT_GOAL", 13, t->name,
++                                      o_file, 0, NILF);
++              free (amk_goal_autofill);
++              amk_goal_autofill = xstrdup (t->name);
++            }
+         }
+     }
+ }
+@@ -3547,3 +3608,28 @@
+   *stringp = p;
+   return new;
+ }
++
++/* The rule behind an imported target, never the default goal: a phony target of the name that records its engine, its program, the flags its engine takes before the program, and the goals its body references. The job launcher runs the program in a fork of make, so the recipe line only names it, and nothing of the value directory is touched here.  */
++void
++amk_import_target (const char *name, const char *engine, const char *body,
++                   const char *flags, const floc *flocp)
++{
++  static const char shape[] = ".PHONY: %s\n%s:; @: %s %s\n";
++  int no_goal_yet = default_goal_var->value[0] == '\0';
++  char *text = xmalloc (sizeof shape + 3 * strlen (name) + strlen (engine));
++  struct file *f;
++
++  sprintf (text, shape, name, name, engine, name);
++  eval_buffer (text, flocp);
++  free (text);
++  f = lookup_file (name);
++  if (f == NULL)
++    OS (fatal, flocp, _("%s: the imported target left no rule"), name);
++  f->amk_engine = amk_engine_by_name (engine);
++  f->amk_program = strcache_add (name);
++  f->amk_flags = flags != NULL && *flags != '\0' ? strcache_add (flags) : NULL;
++  f->amk_refs = amk_goal_refs (body);
++
++  if (no_goal_yet)
++    define_variable_global (".DEFAULT_GOAL", 13, "", o_file, 0, NILF);
++}

@@ -28,6 +28,8 @@ Running updates for WIP is actively harmful for documentation!  Wait until featu
 
 If you're asked to write documentation, remember: prose paired with fenced code is good, and encouraged.  But prose is for describing concepts, and not for describing code.  Let the code describe itself.  Syntax in prose is discouraged -- that just means we need a fenced example.
 
+Every heading gets a permalink: an `<a id="..."></a>` on a line before it, and links target that id, never the heading's text.  A heading can then be renamed without breaking a link; keep its id when you do.  A generated header gets its id from its marker.  `make -f docs.mk` checks the rule and fails on a heading without one.
+
 ## Testing
 
 Read `tests/README.md`, and use the `tests` skill in `.claude/skills/tests/` for every run. Run tests unfiltered in the background and read the task's own output file; a run piped through tail or a narrow grep loses failures. A failure on a clean checkout has a ticket; search the tracker for the test's name before calling it a regression.

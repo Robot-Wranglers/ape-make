@@ -35,6 +35,8 @@ extern int amk_has_db (void);
 extern int amk_function_exists (const char *name);
 extern char *amk_var_get (const char *name);
 extern void amk_var_set (const char *name, const char *value);
+extern char *amk_var_raw_get (const char *name);
+extern void amk_var_raw_set (const char *name, const char *value);
 extern void amk_eval (const char *text);
 extern char *amk_call (const char *name, unsigned int argc, const char **args, const char **err);
 
@@ -97,6 +99,49 @@ amk_capture_end (struct amk_capture *c, struct amk_sink *out)
       out->write (out, buf, (size_t) r);
     }
   fclose (c->file);
+}
+
+/* One word off a request line as a shell would read it, quotes honored and the escapes amk.words writes undone; the word is written into buf and p moves past it. */
+static inline int
+amk_word (const char **p, char *buf, size_t size)
+{
+  const char *s = *p;
+  size_t n = 0;
+  char quote = 0;
+  while (*s == ' ' || *s == '\t')
+    ++s;
+  if (*s == '\0')
+    {
+      *p = s;
+      return 0;
+    }
+  while (*s && (quote || (*s != ' ' && *s != '\t')))
+    {
+      if (!quote && (*s == '\'' || *s == '"'))
+        quote = *s++;
+      else if (*s == quote)
+        {
+          quote = 0;
+          ++s;
+        }
+      else if (quote == '"' && *s == '\\' && s[1] == 'n')
+        {
+          if (n + 1 < size)
+            buf[n++] = '\n';
+          s += 2;
+        }
+      else
+        {
+          if (*s == '\\' && s[1] && (!quote || (quote == '"' && (s[1] == '"' || s[1] == '\\'))))
+            ++s;
+          if (n + 1 < size)
+            buf[n++] = *s;
+          ++s;
+        }
+    }
+  buf[n] = '\0';
+  *p = s;
+  return 1;
 }
 
 #endif

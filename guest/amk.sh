@@ -22,9 +22,30 @@ amk.words() {
   for a ; do a=${a//\\/\\\\} ; a=${a//\"/\\\"} ; a=${a//$'\n'/\\n} ; printf '"%s" ' "$a" ; done
 }
 
-# A pipeline stage: the tool's options then the jq program, over stdin in the make process; the program rides raw as the rest of the line.
-jq.pipe() {
+# One operation on a workspace: the operation, the namespace, the engine's options, then the program after a double dash; a bound value is quoted for the line, and the program rides raw with its newlines made spaces.
+amk.ns() {
+  local line="$1 $2"
+  shift 2
+  while [ $# -gt 0 ] && [ "$1" != -- ]; do
+    case "$1" in
+      --arg|--argjson|--rawfile|--slurpfile) line="$line $1 $2 $(amk.words "$3")" ; shift 3 ;;
+      *) line="$line $1" ; shift ;;
+    esac
+  done
+  [ $# -eq 0 ] || shift
+  line="$line $*"
+  amk.call "${line//$'\n'/ }"
+}
+
+# A pipeline stage: the engine, its options, then the program, over stdin in the make process; the program rides raw as the rest of the line.
+amk.filter() {
+  local engine=$1 ; shift
   local -a lines
   mapfile -t lines
-  amk.call "filter ${#lines[@]} $(amk.words "${@:1:$#-1}")${@: -1}" "${lines[@]}"
+  amk.call "filter $engine ${#lines[@]} $(amk.words "${@:1:$#-1}")${@: -1}" "${lines[@]}"
+}
+
+# The same stage through jq.
+jq.pipe() {
+  amk.filter jq "$@"
 }

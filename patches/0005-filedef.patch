@@ -1,0 +1,34 @@
+filedef.h: an imported target's fields on the file, and the goal reference type and its
+functions, which the file's fields name.
+
+--- a/src/filedef.h
++++ b/src/filedef.h
+@@ -113,7 +113,28 @@
+                                     --shuffle passes through the graph.  */
+     unsigned int snapped:1;     /* True if the deps of this file have been
+                                    secondary expanded.  */
++    /* An imported target's engine, the variable that holds its program, the flags its engine takes before the program, and the goals its body references; null for every other file.  */
++    const struct amk_engine *amk_engine;
++    const char *amk_program;
++    const char *amk_flags;
++    struct amk_goal_ref *amk_refs;
++    /* The value file of an imported target some body references, on its name and on the file itself; null when no value is kept.  */
++    const char *amk_value;
+   };
++
++/* A goal reference in an imported body: the name as written, and the value file it resolved to once the makefiles were read.  */
++struct amk_goal_ref
++  {
++    struct amk_goal_ref *next;
++    const char *word;
++    const char *path;
++  };
++
++struct amk_goal_ref *amk_goal_refs (const char *body);
++void amk_goal_refs_settle (void);
++char *amk_goal_splice (const struct file *file, const char *body);
++char *amk_goal_value (const char *path);
++char *amk_goal_dir (void);
+
+
+ extern struct file *default_file;

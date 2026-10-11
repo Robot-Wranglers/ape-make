@@ -112,6 +112,14 @@ def test_a_main_imported_target_is_the_default(amk, tmp_path):
   assert r.stdout.strip() == "from an import"
 
 
+def test_the_flags_follow_a_shell_the_makefile_names(amk, tmp_path):
+  mk = tmp_path / "a.mk"
+  mk.write_text("SHELL := /bin/sh\n__main__:\n\t@echo flags=$(.SHELLFLAGS)\n")
+  r = sh(amk, ["-f", str(mk)], cwd=tmp_path)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "flags=-eu -c"
+
+
 def test_a_makefile_assignment_overrides_the_prelude(amk, tmp_path):
   mk = tmp_path / "a.mk"
   mk.write_text("\n".join([

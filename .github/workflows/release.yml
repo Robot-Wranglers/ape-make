@@ -17,30 +17,19 @@ jobs:
 
   # The image for amd64 and arm64 from the context build.yml smoked; a manual run on a branch builds both and pushes nothing.
   image:
-    name: Publish image (${{ matrix.name }})
+    name: Publish image
     needs: test
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        name: [ default, wasm3 ]
-        include:
-          - name: default
-            suffix: ''
-            latest: latest
-          - name: wasm3
-            suffix: -wasm3
-            latest: wasm3
     steps:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Download the image context
         uses: actions/download-artifact@v8
         with:
-          name: docker-context-${{ matrix.name }}
+          name: docker-context-default
       - name: Unpack the image context
         run: mkdir -p context && tar -C context -xf docker-context.tar
       # The Dockerfile copies a prebuilt executable per platform and runs nothing, so a multi-platform build needs no emulation.
@@ -56,8 +45,6 @@ jobs:
       - name: Build and push
         env:
           PUSH: ${{ startsWith(github.ref, 'refs/tags/v') && '--push' || '' }}
-          SUFFIX: ${{ matrix.suffix }}
-          LATEST: ${{ matrix.latest }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/amk"
           version="${GITHUB_REF_NAME#v}"
@@ -66,8 +53,8 @@ jobs:
             --target amk \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.version=${version}" \
-            -t "${image}:${version}${SUFFIX}" \
-            -t "${image}:${LATEST}" \
+            -t "${image}:${version}" \
+            -t "${image}:latest" \
             -f Dockerfile context
 
   # A manual run on a branch is a dry run: it builds and tests, and this job is skipped.
