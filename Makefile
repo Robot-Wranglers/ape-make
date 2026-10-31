@@ -63,6 +63,7 @@ sqlite.sha256  := 1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e8
 cosmocc.version := 4.0.2
 cosmocc.zip     := cosmocc-$(cosmocc.version).zip
 cosmocc.url     := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
+cosmocc.mirror  := https://github.com/jart/cosmopolitan/releases/download/$(cosmocc.version)/$(cosmocc.zip)
 cosmocc.sha256  := 85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44
 
 # Tools are released cosmos binaries, zipped into the payload unchanged; patch 0012 puts them first on PATH.
@@ -413,7 +414,7 @@ $(dkjson.tarball): url := $(dkjson.url)
 $(lxsc.tarball): url := $(lxsc.url)
 $(utemplate.tarball): url := $(utemplate.url)
 $(effection.tarball): url := $(effection.url)
-$(cosmocc.zip): url := $(cosmocc.url)
+$(cosmocc.zip): url := $(cosmocc.url) $(cosmocc.mirror)
 $(deps.files):
 	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
 	$(call log, deps, fetching $@ from $(firstword $(url)))
