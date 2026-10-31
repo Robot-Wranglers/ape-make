@@ -23,9 +23,10 @@ wasm._where = $(wasm.dir)/$(1)/$(call wasm._key,$(1),$(2))
 wasm._module = $(call wasm._where,$(1),$(2))/$(basename $(2)).wasm
 wasm._goal = $(1).build/$(notdir $(call wasm._where,$(1),$(2)))/$(basename $(2))
 
-# The container the command runs in, cwd mounted at its own path, or none.
+# The container the command runs in, as the caller with cwd mounted, or none.
 wasm._in = $(if $(call wasm._env,$(1)), \
-  docker run -i --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
+  docker run -i --rm -u "`id -u`:`id -g`" -e HOME=/tmp \
+    -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
     `docker build -q - < $(2)/Dockerfile`)
 
 # The command with the source and the module in place of its dollars.
