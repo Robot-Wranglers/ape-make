@@ -71,9 +71,11 @@ amk.stacked.missing = $(error stacked engine $(1) does not define $(2))
 amk.stacked.stub = $$(call amk.stacked.missing,$(1),@$(2))
 amk.stacked.alias = $(if $(call amk.stacked.has.dec,$(1),.$(2)),, \
   $(eval $(1).$(2)_star = $(value $(1).$(3)_star)))
+# A stub is unexported, since exporting it to a recipe would expand it.
 amk.stacked.fill.dec = $(if $(call amk.stacked.has.dec,$(1),$(2)),, \
   $(eval $(call amk.stacked.name,$(1),$(2))_star = \
-    $(call amk.stacked.stub,$(1),$(call amk.stacked.name,$(1),$(2)))))
+    $(call amk.stacked.stub,$(1),$(call amk.stacked.name,$(1),$(2)))) \
+  $(eval unexport $(call amk.stacked.name,$(1),$(2))_star))
 amk.stacked.fill.fn = $(if $(call amk.stacked.has.fn,$(1),$(2)),, \
   $(amk.fxn! $(call amk.stacked.name,$(1),$(2)),amk.stacked.missing,$(1), \
     $(call amk.stacked.name,$(1),$(2))))

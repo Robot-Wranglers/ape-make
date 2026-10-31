@@ -719,7 +719,7 @@ smoke: $(artifact.ape) smoke.demos
 	rm -rf build/bundle && mkdir -p build/bundle/away
 	cd tests/fixtures/bundle && sh -c "$(abspath $(artifact.ape)) --bundle main.mk lib/ --out $(HERE)build/bundle/b.amk"
 	unzip -Z1 $(artifact.ape) | sort > build/bundle/base.list && unzip -Z1 build/bundle/b.amk | sort > build/bundle/b.list
-	test "$$(comm -13 build/bundle/base.list build/bundle/b.list | tr '\n' ' ')" = "__main__.mk lib/greet.mk lib/sub/deep.mk "
+	test "$$(comm -13 build/bundle/base.list build/bundle/b.list | tr '\n' ' ')" = "__main__.mk lib/greet.mk lib/js/dup.js lib/lua/dup.lua lib/sub/deep.mk "
 	unzip -tq build/bundle/b.amk
 	cd build/bundle/away && sh -c "../b.amk entry" && sh -c "../b.amk recurse"
 	cd build/bundle/away && env -i HOME="$$HOME" AMK_NO_PATH=1 PATH=/nonexistent /bin/sh -c "../b.amk entry"
