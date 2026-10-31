@@ -1,0 +1,54 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/utmpl-docflow.amk:
+#  templates fed by goals, dataflow style: a word on the decorator
+#  line names a goal, and the goal's value is the name's. The goals are
+#  a shell recipe, an imported target, and a rendered template; each
+#  runs once, however many templates read it.
+#
+
+load utmpl
+
+# A plain recipe target: what it prints is its value.
+engines.list:
+	echo $(.ENGINES)
+
+# An imported target: a goal word in its body is the same substitution.
+@micropy.target
+define longest
+  print(max(">>ENGINES.LIST<<".split(), key=len))
+endef
+
+# A goal word: the goal becomes a prerequisite and its value the name's.
+@utmpl.target project=myproject engines=>>ENGINES.LIST<< longest=>>LONGEST<<
+define summary.md
+  {{project}} runs on {{ len(engines.split()) }} engines, {{longest}} longest
+endef
+
+# Two templates may read the same goal; it still runs once per run.
+@utmpl.target engines=>>ENGINES.LIST<<
+define banner.md
+  == {{ engines.replace(" ", " | ") }} ==
+endef
+
+# A rendered template is a goal too, so a page can be built from parts.
+@utmpl.target title=Release summary=>>SUMMARY.MD<< banner=>>BANNER.MD<<
+define page.md
+  {{title}} notes
+  Summary: {{summary}}
+  Banner: {{banner}}
+endef
+
+check.summary:
+	test "$$(${amk} summary.md | cut -d' ' -f1,2,3)" = "myproject runs on"
+	${amk} summary.md
+
+check.banner:
+	test "$$(${amk} banner.md | cut -d' ' -f1)" = "=="
+	${amk} banner.md
+
+check.page:
+	test "$$(${amk} page.md | wc -l | tr -d ' ')" = "3"
+	${amk} page.md
+
+__main__: check.summary check.banner check.page

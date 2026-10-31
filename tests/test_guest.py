@@ -1,6 +1,6 @@
 """Pins the guest input path.
 
-`$(awk program,input)` and the other builtins with input feed it to the guest's stdin
+`$(awk program, input)` and the other builtins with input feed it to the guest's stdin
 through a pipe the parent drives beside the guest's stdout. Pinned: an input past any
 pipe buffer round-trips whole, a guest that exits without reading its input leaves make
 standing, and the call leaves no file in the temp directory.
@@ -16,7 +16,7 @@ from conftest import sh
 makefile = "\n".join([
   "big := $(shell head -c 300000 /dev/zero | tr '\\0' x)",
   "$(info [$(strip $(awk { n += length($$0) } END { print n },$(big)))])",
-  "$(info [$(strip $(awk BEGIN { print \"early\" ; exit },$(big)))])",
+  "$(info [$(strip $(awk BEGIN { print \"early\" ; exit }, $(big)))])",
   "all:",
   "\ttrue",
   "",

@@ -71,9 +71,9 @@ s7_amk_expand (s7_scheme *sc, s7_pointer args)
 
 /* (amk-call name value ...): the make function or macro of that name, each value one whole argument, never expanded. */
 static s7_pointer
-s7_amk_call (s7_scheme *sc, s7_pointer args)
+s7_amk_call_kind (s7_scheme *sc, s7_pointer args, int kind, const char *who)
 {
-  s7_pointer err = s7_amk_need_make (sc, "amk-call");
+  s7_pointer err = s7_amk_need_make (sc, who);
   const char *why = NULL, **vals;
   char *name, *s;
   s7_pointer p, r;
@@ -81,14 +81,14 @@ s7_amk_call (s7_scheme *sc, s7_pointer args)
   if (err != NULL)
     return err;
   if (!s7_is_string (s7_car (args)) && !s7_is_symbol (s7_car (args)))
-    return s7_wrong_type_arg_error (sc, "amk-call", 1, s7_car (args), "a string or a symbol");
+    return s7_wrong_type_arg_error (sc, who, 1, s7_car (args), "a string or a symbol");
   name = s7_amk_text (sc, s7_car (args));
   for (p = s7_cdr (args); s7_is_pair (p); p = s7_cdr (p))
     n++;
   vals = malloc ((n + 1) * sizeof *vals);
   for (i = 0, p = s7_cdr (args); i < n; i++, p = s7_cdr (p))
     vals[i] = s7_amk_text (sc, s7_car (p));
-  s = amk_call (name, n, vals, &why);
+  s = amk_call_kind (kind, name, n, vals, &why);
   for (i = 0; i < n; i++)
     free ((char *) vals[i]);
   free (vals);
@@ -100,11 +100,16 @@ s7_amk_call (s7_scheme *sc, s7_pointer args)
   return r;
 }
 
-/* (amk-call-begin name value ...): the call begun in a fork, as a list of its pid and the fd that reads as done when the result is in. */
+/* (amk-call name value ...): the cascade, a make function, the name under amk., a macro; amk-fxn and amk-macro take one layer by its full name. */
+static s7_pointer s7_amk_call (s7_scheme *sc, s7_pointer args) { return s7_amk_call_kind (sc, args, AMK_AS_ANY, "amk-call"); }
+static s7_pointer s7_amk_fxn (s7_scheme *sc, s7_pointer args) { return s7_amk_call_kind (sc, args, AMK_AS_FXN, "amk-fxn"); }
+static s7_pointer s7_amk_macro (s7_scheme *sc, s7_pointer args) { return s7_amk_call_kind (sc, args, AMK_AS_MACRO, "amk-macro"); }
+
+/* (amk-call-begin name value ...): the call begun in a fork, as a list of its pid and the fd that reads as done when the result is in; amk-afxn and amk-amacro the same over one layer. */
 static s7_pointer
-s7_amk_call_begin (s7_scheme *sc, s7_pointer args)
+s7_amk_call_begin_kind (s7_scheme *sc, s7_pointer args, int kind, const char *who)
 {
-  s7_pointer err = s7_amk_need_make (sc, "amk-call-begin");
+  s7_pointer err = s7_amk_need_make (sc, who);
   const char **vals;
   char *name;
   s7_pointer p;
@@ -114,21 +119,31 @@ s7_amk_call_begin (s7_scheme *sc, s7_pointer args)
   if (err != NULL)
     return err;
   if (!s7_is_string (s7_car (args)) && !s7_is_symbol (s7_car (args)))
-    return s7_wrong_type_arg_error (sc, "amk-call-begin", 1, s7_car (args), "a string or a symbol");
+    return s7_wrong_type_arg_error (sc, who, 1, s7_car (args), "a string or a symbol");
   name = s7_amk_text (sc, s7_car (args));
   for (p = s7_cdr (args); s7_is_pair (p); p = s7_cdr (p))
     n++;
   vals = malloc ((n + 1) * sizeof *vals);
   for (i = 0, p = s7_cdr (args); i < n; i++, p = s7_cdr (p))
     vals[i] = s7_amk_text (sc, s7_car (p));
-  pid = amk_call_begin (name, n, vals, &fd);
+  pid = amk_call_begin (kind, name, n, vals, &fd);
   for (i = 0; i < n; i++)
     free ((char *) vals[i]);
   free (vals);
   free (name);
   if (pid < 0)
-    return s7_error (sc, s7_make_symbol (sc, "amk-error"), s7_list (sc, 1, s7_make_string (sc, "amk-call-begin: fork failed")));
+    return s7_error (sc, s7_make_symbol (sc, "amk-error"), s7_list (sc, 2, s7_make_string (sc, "~A: fork failed"), s7_make_string (sc, who)));
   return s7_list (sc, 2, s7_make_integer (sc, pid), s7_make_integer (sc, fd));
+}
+static s7_pointer s7_amk_call_begin (s7_scheme *sc, s7_pointer args) { return s7_amk_call_begin_kind (sc, args, AMK_AS_ANY, "amk-call-begin"); }
+static s7_pointer s7_amk_afxn (s7_scheme *sc, s7_pointer args) { return s7_amk_call_begin_kind (sc, args, AMK_AS_FXN, "amk-afxn"); }
+static s7_pointer s7_amk_amacro (s7_scheme *sc, s7_pointer args) { return s7_amk_call_begin_kind (sc, args, AMK_AS_MACRO, "amk-amacro"); }
+
+/* (amk-agoal name): amk-call-begin of the goal function, the goal run in a fork as (pid fd). */
+static s7_pointer
+s7_amk_agoal (s7_scheme *sc, s7_pointer args)
+{
+  return s7_amk_call_begin (sc, s7_cons (sc, s7_make_string (sc, "amk.goal"), args));
 }
 
 /* (amk-call-end pid): the call collected, its text, or its error raised. */
@@ -144,6 +159,61 @@ s7_amk_call_end (s7_scheme *sc, s7_pointer args)
   if (!s7_is_integer (s7_car (args)))
     return s7_wrong_type_arg_error (sc, "amk-call-end", 1, s7_car (args), "an integer");
   if (amk_call_end ((pid_t) s7_integer (s7_car (args)), &s, &why) < 0)
+    return s7_error (sc, s7_make_symbol (sc, "amk-error"), s7_list (sc, 1, s7_make_string (sc, why)));
+  r = s7_make_string (sc, s);
+  free (s);
+  return r;
+}
+
+/* (amk-ask-begin op namespace value ...): one request sent to the owner, as its id; the process goes on until amk-ask-end, and in the owner a request that would park is an error. */
+static s7_pointer
+s7_amk_ask_begin (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-ask-begin");
+  const char **vals;
+  char *op, *ns, *line;
+  s7_pointer p;
+  unsigned int n = 0, i;
+  long id;
+  if (err != NULL)
+    return err;
+  if (!s7_is_string (s7_car (args)) && !s7_is_symbol (s7_car (args)))
+    return s7_wrong_type_arg_error (sc, "amk-ask-begin", 1, s7_car (args), "a string or a symbol");
+  if (!s7_is_pair (s7_cdr (args)) || (!s7_is_string (s7_cadr (args)) && !s7_is_symbol (s7_cadr (args))))
+    return s7_wrong_type_arg_error (sc, "amk-ask-begin", 2, s7_is_pair (s7_cdr (args)) ? s7_cadr (args) : s7_nil (sc), "a string or a symbol");
+  op = s7_amk_text (sc, s7_car (args));
+  ns = s7_amk_text (sc, s7_cadr (args));
+  for (p = s7_cddr (args); s7_is_pair (p); p = s7_cdr (p))
+    n++;
+  vals = malloc ((n + 1) * sizeof *vals);
+  for (i = 0, p = s7_cddr (args); i < n; i++, p = s7_cdr (p))
+    vals[i] = s7_amk_text (sc, s7_car (p));
+  line = amk_ask_line (op, ns, n, vals);
+  for (i = 0; i < n; i++)
+    free ((char *) vals[i]);
+  free (vals);
+  free (op);
+  free (ns);
+  id = amk_ask_begin (line);
+  free (line);
+  if (id < 0)
+    return s7_error (sc, s7_make_symbol (sc, "amk-error"), s7_list (sc, 1, s7_make_string (sc, "amk-ask-begin: " AMK_ASK_PARKED)));
+  return s7_make_integer (sc, id);
+}
+
+/* (amk-ask-end id): the reply waited for, its text, or its error raised. */
+static s7_pointer
+s7_amk_ask_end (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-ask-end");
+  const char *why = NULL;
+  char *s;
+  s7_pointer r;
+  if (err != NULL)
+    return err;
+  if (!s7_is_integer (s7_car (args)))
+    return s7_wrong_type_arg_error (sc, "amk-ask-end", 1, s7_car (args), "an integer");
+  if (amk_ask_result (amk_ask_collect ((unsigned long) s7_integer (s7_car (args))), &s, &why) < 0)
     return s7_error (sc, s7_make_symbol (sc, "amk-error"), s7_list (sc, 1, s7_make_string (sc, why)));
   r = s7_make_string (sc, s);
   free (s);
@@ -174,12 +244,51 @@ s7_amk_var (s7_scheme *sc, s7_pointer args)
   if (err != NULL)
     return err;
   name = s7_amk_name (sc, args, "amk-var");
+  if (strcmp (name, "raw") == 0)
+    return s7_name_to_value (sc, "amk-var-raw");
   s = amk_var_get (name);
   if (s == NULL)
     return s7_f (sc);
   r = s7_make_string (sc, s);
   gmk_free (s);
   return r;
+}
+
+/* ((amk-var 'raw) name): the variable's text as stored, never expanded, or #f when make has never seen the name. */
+static s7_pointer
+s7_amk_var_raw (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var-raw");
+  const char *name;
+  char *s;
+  s7_pointer r;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var-raw");
+  s = amk_var_raw_get (name);
+  if (s == NULL)
+    return s7_f (sc);
+  r = s7_make_string (sc, s);
+  gmk_free (s);
+  return r;
+}
+
+/* (set! ((amk-var 'raw) name) value) defines a recursive variable with the value's text as written; #f is the empty string. */
+static s7_pointer
+s7_amk_var_raw_set (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer err = s7_amk_need_make (sc, "amk-var-raw");
+  const char *name;
+  s7_pointer value;
+  char *text;
+  if (err != NULL)
+    return err;
+  name = s7_amk_name (sc, args, "amk-var-raw");
+  value = s7_cadr (args);
+  text = s7_amk_text (sc, value);
+  amk_var_raw_set (name, text ? text : "");
+  free (text);
+  return value;
 }
 
 /* (set! (amk-var name) value) defines a simple variable with the value's text; #f is the empty string. */
@@ -207,17 +316,31 @@ s7_amk_table (s7_scheme *sc, const char *name)
   return s7_symbol_value (sc, s7_make_symbol (sc, name));
 }
 
-/* A procedure applied under a catch: an error reports on stderr with the caller's name and answers the guest error symbol. */
+/* A procedure applied under a catch: an error answers the guest error symbol, reported on stderr with the caller's name, or kept in *amk-guest-why* when raises is set so the caller can raise it. */
 static s7_pointer
-s7_amk_apply (s7_scheme *sc, const char *who, s7_pointer fn, s7_pointer args)
+s7_amk_apply (s7_scheme *sc, const char *who, int raises, s7_pointer fn, s7_pointer args)
 {
   s7_define_variable (sc, "*amk-call-who*", s7_make_string (sc, who));
+  s7_define_variable (sc, "*amk-call-raises*", s7_make_boolean (sc, raises));
   s7_define_variable (sc, "*amk-call-fn*", fn);
   s7_define_variable (sc, "*amk-call-args*", args);
   return s7_call_with_catch (sc, s7_t (sc), s7_amk_table (sc, "amk-call-thunk"), s7_amk_table (sc, "amk-call-handler"));
 }
 
-/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
+/* s7 calls this at the start of every body of more than one form, and it raises on each call once the process's deadline has passed, so a catch inside the run cannot keep it going. */
+static void
+s7_deadline_hook (s7_scheme *sc, bool *val)
+{
+  char msg[64];
+  (void) val;
+  if (amk_deadline_expired ())
+    {
+      snprintf (msg, sizeof msg, "deadline: %ld ms", amk_deadline_budget ());
+      s7_error (sc, s7_make_symbol (sc, "deadline"), s7_list (sc, 1, s7_make_string (sc, msg)));
+    }
+}
+
+/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error raised to whoever made the call. */
 static char *
 s7_func_call (void *state, const char *nm, unsigned int argc, char **argv)
 {
@@ -234,9 +357,16 @@ s7_func_call (void *state, const char *nm, unsigned int argc, char **argv)
   for (i = argc; i > 0; i--)
     args = s7_cons (sc, s7_make_string (sc, argv[i - 1]), args);
   snprintf (who, sizeof who, "$(%s ...)", nm);
-  result = s7_amk_apply (sc, who, fn, args);
+  if (amk_deadline_active ())
+    s7_set_begin_hook (sc, s7_deadline_hook);
+  result = s7_amk_apply (sc, who, 1, fn, args);
+  s7_set_begin_hook (sc, amk_deadline_active () ? s7_deadline_hook : NULL);
   if (s7_is_eq (result, s7_make_symbol (sc, "amk-guest-error")))
-    return NULL;
+    {
+      if (!amk_deadline_expired ())
+        amk_func_raise ("s7", nm, s7_string (s7_name_to_value (sc, "*amk-guest-why*")));
+      return NULL;
+    }
   text = s7_amk_text (sc, result);
   out = gmk_alloc ((unsigned int) strlen (text) + 1);
   strcpy (out, text);
@@ -290,7 +420,31 @@ s7_amk_on_set (s7_scheme *sc, s7_pointer args)
   return s7_cadr (args);
 }
 
-/* The handle: expand, eval, func, and the two dilambdas, so generalized set! reaches their setters; the call, chunk, and hook plumbing lives beside them in the rootlet, and a chunk is read in the rootlet so its defines persist. */
+/* (amk-deadline-push ms): the tighter of ms and the process's deadline takes effect, and the one it replaced comes back for amk-deadline-pop. */
+static s7_pointer
+s7_amk_deadline_push (s7_scheme *sc, s7_pointer args)
+{
+  struct amk_deadline saved;
+  s7_int ms;
+  if (!s7_is_integer (s7_car (args)) || (ms = s7_integer (s7_car (args))) < 0)
+    return s7_wrong_type_arg_error (sc, "amk-deadline", 1, s7_car (args), "a non-negative integer");
+  amk_deadline_push ((long) ms, &saved);
+  s7_set_begin_hook (sc, s7_deadline_hook);
+  return s7_list (sc, 2, s7_make_real (sc, saved.at), s7_make_integer (sc, saved.ms));
+}
+
+/* (amk-deadline-pop saved): the deadline before the push back in force, answering the budget that had run out, or #f. */
+static s7_pointer
+s7_amk_deadline_pop (s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer list = s7_car (args);
+  struct amk_deadline saved = { s7_real (s7_car (list)), (long) s7_integer (s7_cadr (list)) };
+  long hit = amk_deadline_pop (&saved);
+  s7_set_begin_hook (sc, amk_deadline_active () ? s7_deadline_hook : NULL);
+  return hit >= 0 ? s7_make_integer (sc, hit) : s7_f (sc);
+}
+
+/* The handle: expand, eval, func, and the two dilambdas, so generalized set! reaches their setters; the call, chunk, and hook plumbing lives beside them in the rootlet, and a chunk is read in the rootlet so its defines persist; an unbound amk-name-... loads the payload module name/init.scm once. */
 static const char *s7_amk_prelude =
   "(begin"
   " (define *amk-funcs* (make-hash-table))"
@@ -301,12 +455,56 @@ static const char *s7_amk_prelude =
   " (define *amk-call-args* ())"
   " (define *amk-chunk* \"\")"
   " (define (amk-chunk-thunk) (eval-string (string-append \"(begin \" *amk-chunk* \"\\n)\") (rootlet)))"
-  " (define (amk-call-thunk) (apply *amk-call-fn* *amk-call-args*))"
-  " (define (amk-call-handler type info)"
-  "   (if (string=? *amk-call-who* \"\")"
-  "       (format *stderr* \"s7: ~A~%\" (cons type info))"
-  "       (format *stderr* \"s7 ~A: ~A~%\" *amk-call-who* (cons type info)))"
-  "   'amk-guest-error))";
+  " (define (amk-call-thunk)"
+  "   (let ((who *amk-call-who*) (raises *amk-call-raises*) (fn *amk-call-fn*) (args *amk-call-args*))"
+  "     (catch #t (lambda () (apply fn args)) (lambda (type info) (amk-call-report who raises type info)))))"
+  " (define (amk-deadline ms fn . args)"
+  "   (let ((saved (amk-deadline-push ms)))"
+  "     (catch #t"
+  "       (lambda () (let ((r (apply fn args))) (amk-deadline-pop saved) r))"
+  "       (lambda (type info)"
+  "         (let ((hit (amk-deadline-pop saved)))"
+  "           (if hit (error 'deadline (format #f \"deadline: ~A ms\" hit)) (apply error type info)))))))"
+  " (define *amk-guest-why* \"\")"
+  " (define *amk-call-raises* #f)"
+  " (define (amk-call-report who raises type info)"
+  "   (cond (raises (set! *amk-guest-why* (format #f \"~A\" (cons type info))))"
+  "         ((string=? who \"\") (format *stderr* \"s7: ~A~%\" (cons type info)))"
+  "         (else (format *stderr* \"s7 ~A: ~A~%\" who (cons type info))))"
+  "   'amk-guest-error)"
+  " (define (amk-call-handler type info) (amk-call-report *amk-call-who* *amk-call-raises* type info))"
+  " (define *amk-modules* (make-hash-table))"
+  " (define (amk-module-path name)"
+  "   (let* ((s (symbol->string name)) (end (and (> (length s) 4) (string=? (substring s 0 4) \"amk-\") (char-position #\\- s 4))))"
+  "     (and end (let ((path (string-append \"/zip/lib/\" (substring s 4 end) \"/init.scm\")))"
+  "                (and (not (*amk-modules* path))"
+  "                     (catch #t (lambda () (close-input-port (open-input-file path)) path) (lambda args #f)))))))"
+  " (define (amk-dotted name)"
+  "   (let ((s (copy (symbol->string name))))"
+  "     (and (> (length s) 4) (string=? (substring s 0 4) \"amk-\")"
+  "          (do ((i 4 (+ i 1))) ((= i (length s)) (substring s 4))"
+  "            (when (char=? (string-ref s i) #\\-) (string-set! s i #\\.))))))"
+  " (set! (hook-functions *unbound-variable-hook*)"
+  "   (cons (lambda (h)"
+  "           (let ((path (amk-module-path (h 'variable))))"
+  "             (if path"
+  "                 (begin"
+  "                   (set! (*amk-modules* path) #t)"
+  "                   (load path (rootlet))"
+  "                   (set! (h 'result) (symbol->value (h 'variable) (rootlet))))"
+  "                 (let ((dotted (amk-dotted (h 'variable))))"
+  "                   (when (and dotted (amk-call? dotted))"
+  "                     (set! (h 'result) (lambda args (apply amk-call dotted args))))))))"
+  "         (hook-functions *unbound-variable-hook*))))";
+
+/* (amk-call? name): whether the cascade answers for the name, so an unbound amk-a-b may stand for a.b. */
+static s7_pointer
+s7_amk_call_p (s7_scheme *sc, s7_pointer args)
+{
+  char full[512];
+  const char *err;
+  return s7_make_boolean (sc, s7_is_string (s7_car (args)) && amk_resolve (s7_string (s7_car (args)), full, sizeof full, &err) >= 0);
+}
 
 static void
 s7_bind_amk (s7_scheme *sc)
@@ -314,11 +512,23 @@ s7_bind_amk (s7_scheme *sc)
   s7_define_function (sc, "amk-expand", s7_amk_expand, 1, 0, false, "(amk-expand text) the text expanded by make");
   s7_define_function (sc, "amk-eval", s7_amk_eval, 1, 0, false, "(amk-eval text) the text read by make as makefile syntax");
   s7_define_function (sc, "amk-call", s7_amk_call, 1, 0, true, "(amk-call name value ...) the make function or macro, each value one whole argument");
+  s7_define_function (sc, "amk-fxn", s7_amk_fxn, 1, 0, true, "(amk-fxn name value ...) the make function of that name, each value one whole argument");
+  s7_define_function (sc, "amk-macro", s7_amk_macro, 1, 0, true, "(amk-macro name value ...) the macro of that name, each value one whole argument");
+  s7_define_function (sc, "amk-call?", s7_amk_call_p, 1, 0, false, "(amk-call? name) whether the cascade answers for the name");
   s7_define_function (sc, "amk-call-begin", s7_amk_call_begin, 1, 0, true, "(amk-call-begin name value ...) the call begun in a fork, as (pid fd)");
+  s7_define_function (sc, "amk-afxn", s7_amk_afxn, 1, 0, true, "(amk-afxn name value ...) the make function begun in a fork, as (pid fd)");
+  s7_define_function (sc, "amk-amacro", s7_amk_amacro, 1, 0, true, "(amk-amacro name value ...) the macro begun in a fork, as (pid fd)");
   s7_define_function (sc, "amk-call-end", s7_amk_call_end, 1, 0, false, "(amk-call-end pid) the call collected");
+  s7_define_function (sc, "amk-agoal", s7_amk_agoal, 1, 0, false, "(amk-agoal name) the goal begun in a fork, as (pid fd)");
+  s7_define_function (sc, "amk-ask-begin", s7_amk_ask_begin, 2, 0, true, "(amk-ask-begin op namespace value ...) one request to the owner, as its id");
+  s7_define_function (sc, "amk-ask-end", s7_amk_ask_end, 1, 0, false, "(amk-ask-end id) the reply waited for");
   s7_define_function (sc, "amk-func", s7_amk_func, 2, 0, false, "(amk-func name fn) defines a make function");
+  s7_define_function (sc, "amk-deadline-push", s7_amk_deadline_push, 1, 0, false, "(amk-deadline-push ms) puts a deadline in force");
+  s7_define_function (sc, "amk-deadline-pop", s7_amk_deadline_pop, 1, 0, false, "(amk-deadline-pop saved) restores the deadline before it");
   s7_dilambda (sc, "amk-var", s7_amk_var, 1, 0, s7_amk_var_set, 2, 0,
                "(amk-var name) a make variable expanded, or #f; (set! (amk-var name) value) defines it");
+  s7_dilambda (sc, "amk-var-raw", s7_amk_var_raw, 1, 0, s7_amk_var_raw_set, 2, 0,
+               "((amk-var 'raw) name) a make variable as stored, or #f; (set! ((amk-var 'raw) name) value) defines it recursive");
   s7_dilambda (sc, "amk-on", s7_amk_on, 1, 0, s7_amk_on_set, 2, 0,
                "(amk-on event) the hook for the event, or #f; (set! (amk-on event) fn) subscribes");
   s7_eval_c_string (sc, s7_amk_prelude);
@@ -330,6 +540,7 @@ s7_run_chunk (s7_scheme *sc, const char *src)
 {
   s7_pointer result;
   s7_define_variable (sc, "*amk-call-who*", s7_make_string (sc, ""));
+  s7_define_variable (sc, "*amk-call-raises*", s7_f (sc));
   s7_define_variable (sc, "*amk-chunk*", s7_make_string (sc, src));
   result = s7_call_with_catch (sc, s7_t (sc), s7_amk_table (sc, "amk-chunk-thunk"), s7_amk_table (sc, "amk-call-handler"));
   return s7_is_eq (result, s7_make_symbol (sc, "amk-guest-error")) ? 1 : 0;
@@ -364,7 +575,7 @@ s7_guest_slurp_stdin (void)
   return buf;
 }
 
-/* An interpreter with the handle bound, or null. */
+/* An interpreter with the handle bound and the payload's s7 packages on its load path, or null. */
 static s7_scheme *
 s7_state_open (void)
 {
@@ -374,6 +585,7 @@ s7_state_open (void)
       fprintf (stderr, "s7: cannot create interpreter\n");
       return NULL;
     }
+  s7_add_to_load_path (sc, "/zip/lib/s7");
   s7_bind_amk (sc);
   return sc;
 }
@@ -605,7 +817,7 @@ s7_export_globals (s7_scheme *sc, struct amk_sink *out)
   qsort (bindings, n, sizeof *bindings, s7_binding_cmp);
   for (i = 0; i < n && rc == 0; i++)
     {
-      s7_pointer r = s7_amk_apply (sc, "import", s7_amk_table (sc, "amk-export-one"),
+      s7_pointer r = s7_amk_apply (sc, "import", 0, s7_amk_table (sc, "amk-export-one"),
                                    s7_list (sc, 2, s7_make_string (sc, bindings[i].name), bindings[i].value));
       (void) r;
       if (s7_is_eq (r, s7_make_symbol (sc, "amk-guest-error")))
@@ -636,9 +848,9 @@ s7_amk_export_one (s7_scheme *sc, s7_pointer args)
   return r;
 }
 
-/* The open primitive: a kept interpreter, which make holds for the life of the process, with the handle bound and the export helper defined. */
+/* The create member: a kept interpreter, which make holds for the life of the process, with the handle bound and the export helper defined. */
 __attribute__ ((visibility ("default"))) void *
-s7_open (void)
+s7_create (void)
 {
   s7_scheme *sc = s7_state_open ();
   if (sc == NULL)
@@ -648,20 +860,15 @@ s7_open (void)
   return sc;
 }
 
-/* The run primitive: exec runs the chunk in the interpreter with what it prints to the sink; import runs it with output on stderr, then hands make what it left in the rootlet and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-s7_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the interpreter with what it prints to the sink; import runs it with output on stderr, then hands make what it left in the rootlet and the sink their names. */
+static int
+s7_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   s7_scheme *sc = state;
   struct amk_capture capture;
   int export = strcmp (op, "import") == 0;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "s7: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "s7.%s: no chunk\n", op);
@@ -670,7 +877,7 @@ s7_run (void *state, struct amk_sink *out, const char *op, const char *prog)
 
   if (!export)
     {
-      amk_capture_begin (&capture);
+      amk_capture_begin_to (&capture, out);
       rc = s7_run_chunk (sc, prog);
       amk_capture_end (&capture, out);
       return rc;
@@ -683,6 +890,18 @@ s7_run (void *state, struct amk_sink *out, const char *op, const char *prog)
   if (rc == 0)
     rc = s7_export_globals (sc, out);
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+s7_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return s7_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+s7_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return s7_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: (amk-on event), when the interpreter holds a procedure there, is called with the event as a let. Its output goes to stderr, and an error reports there and is otherwise ignored. */
@@ -706,6 +925,6 @@ s7_hook (void *state, const char *event, const char *target, const char *status,
                              s7_make_symbol (sc, "pid"), s7_make_integer (sc, pid)));
   snprintf (who, sizeof who, "hook %s", event);
   amk_capture_begin (&capture);
-  s7_amk_apply (sc, who, fn, s7_list (sc, 1, e));
+  s7_amk_apply (sc, who, 0, fn, s7_list (sc, 1, e));
   amk_capture_end (&capture, &amk_sink_stderr);
 }

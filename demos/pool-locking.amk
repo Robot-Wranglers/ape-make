@@ -1,0 +1,63 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/pool-locking.amk:
+#  locks made of pools: a named mutex and a horcrux, a lock in pieces,
+#  from the factories the dsys topic brings; pool-basic is the same on the
+#  pool's own verbs. three jobs spawned from lua serialize through the
+#  mutex as micropy workers; then readers share the horcrux's pieces
+#  while a writer waits for all of them.
+#
+
+load dsys/locks
+load dsys/jobman
+
+__main__: show.locks run.workers run.readers
+
+door := $(amk.mutex )
+book := $(amk.horcrux 3)
+
+show.locks:
+	@echo "pools: $(amk.pool )"
+	@echo "door: size=$(amk.pool.size door) book: size=$(amk.pool.size book)"
+
+# A worker: the mutex taken before the work and given back after.
+@micropy.target
+define worker
+  import amk, time
+  me = amk.sys("pid")
+  amk.mutex.door.lock()
+  print("worker %s: in" % me)
+  time.sleep(0.2)
+  print("worker %s: out" % me)
+  amk.mutex.door.unlock()
+endef
+
+# A reader holds one piece; the writer in the parent waits for all three.
+@micropy.target
+define reader
+  import amk, time
+  amk.horcrux.book.rlock()
+  print("reader %s: reading" % amk.sys("pid"))
+  time.sleep(0.2)
+  amk.horcrux.book.runlock()
+endef
+
+# Three forks run the worker; a fork keeps the pool, so they contend.
+@lua.target
+define run.workers
+  local jobman, jobs = amk.jobman.__jobs__, {}
+  for i = 1, 3 do jobs[i] = jobman.spawn.goal('worker') end
+  for i = 1, 3 do jobman.wait(jobs[i]) end
+endef
+
+# Three readers at once; the writer waits until it holds all three pieces.
+@lua.target
+define run.readers
+  local jobman, jobs = amk.jobman.__jobs__, {}
+  for i = 1, 3 do jobs[i] = jobman.spawn.goal('reader') end
+  os.execute("sleep 0.1")
+  amk.horcrux.book.wlock()
+  print("writer: every piece held")
+  amk.horcrux.book.wunlock()
+  for i = 1, 3 do jobman.wait(jobs[i]) end
+endef

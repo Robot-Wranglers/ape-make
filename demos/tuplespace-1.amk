@@ -1,0 +1,80 @@
+#!/usr/bin/env -S amk --silent -j4 -f
+#
+# demos/tuplespace-1.amk:
+#  a Linda tuple space shared by workers in 4 langs under -j.
+#  each takes typed candidates through one atomic pattern match,
+#  with formals spelled in its own language's types.
+#
+
+load tspace
+
+N ?= 60
+
+__main__: report
+
+# The master outs candidates, workers take them, the report reads the rest.
+@tuplespace.amk
+define candidates
+  for n in $$(seq 2 ${N}); do tspace out candidate $$n ; done
+endef
+
+workers: lua.loop micropy.loop js.loop s7.loop
+lua.loop micropy.loop js.loop s7.loop: candidates
+
+@tuplespace.amk: workers
+define report
+  p=$$(tspace read prime ?int ?str | jq.pipe -r '.t[1]' | sort -n | tr '\n' ' ')
+  printf 'primes: %s\n' "$$p"
+  tspace read prime ?int ?str | jq.pipe -r '.t[2]' | sort | uniq -c
+  printf 'left: %s\n' "$$(tspace read candidate ? | wc -l | tr -d ' ')"
+endef
+
+# Each engine worker takes and outs through its own binding, with no shell.
+@lua.target
+define lua.loop
+  local ts = amk.tspace
+  local function prime(n)
+    if n < 2 then return false end
+    for d = 2, math.floor(math.sqrt(n)) do
+      if n % d == 0 then return false end
+    end
+    return true
+  end
+  for t in function() return ts.inp("candidate", "integer") end do
+    if prime(t[2]) then ts.out("prime", t[2], "lua") end
+  end
+endef
+
+@micropy.target
+define micropy.loop
+  import amk
+  def prime(n):
+      return n > 1 and all(n % d for d in range(2, int(n ** 0.5) + 1))
+  while t := amk.tspace.inp("candidate", int):
+      if prime(t[1]):
+          amk.tspace.out("prime", t[1], "micropy")
+endef
+
+@js.target
+define js.loop
+  const ts = amk.tspace;
+  const prime = n => {
+    if (n < 2) return false;
+    for (let d = 2; d * d <= n; d++) if (n % d === 0) return false;
+    return true;
+  };
+  for (let t; (t = ts.inp("candidate", Number.isInteger)); )
+    if (prime(t[1])) ts.out("prime", t[1], "js");
+endef
+
+@s7.target
+define s7.loop
+  (define (prime? n)
+    (and (> n 1)
+         (let loop ((d 2))
+           (or (> (* d d) n) (and (not (= 0 (modulo n d))) (loop (+ d 1)))))))
+  (let loop ((t (amk-tspace-inp "candidate" integer?)))
+    (when t
+      (when (prime? (cadr t)) (amk-tspace-out "prime" (cadr t) "s7"))
+      (loop (amk-tspace-inp "candidate" integer?))))
+endef

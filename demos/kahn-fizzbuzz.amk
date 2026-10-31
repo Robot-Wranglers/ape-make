@@ -1,0 +1,81 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/kahn-fizzbuzz.amk:
+#  FizzBuzz as a Kahn network under @kahn: a lua generator counts from one
+#  to fb.limit on a channel it reads and writes, a micropy classifier sends
+#  each multiple of three or five to one of three channels, and each
+#  channel's reader is another guest, js, lua and s7. One writer and one
+#  reader per channel keep it fixed: fizzbuzz 15, fizz 3 6 9 12, buzz 5 10.
+#
+
+load dsys/kahn
+
+__main__: fb.__main__ show.after
+
+fb.limit ?= 15
+
+@kahn
+define fb
+  {
+    channels: {
+      // the generator's state: the next number to emit
+      next: ["1"],
+      numbers: [],
+      // one output channel per answer, empty until classify writes
+      fizzbuzz: [], fizz: [], buzz: [],
+    },
+    processes: {
+      // gen emits its number and puts back the next, until the limit
+      gen: { run: "gen", reads: ["next"], writes: ["next", "numbers"] },
+      // classify writes a multiple of three or five to one channel
+      classify: { run: "classify", reads: ["numbers"],
+                  writes: ["fizzbuzz", "fizz", "buzz"] },
+      say_fizzbuzz: { run: "on_fizzbuzz", reads: ["fizzbuzz"] },
+      say_fizz:     { run: "on_fizz", reads: ["fizz"] },
+      say_buzz:     { run: "on_buzz", reads: ["buzz"] },
+    },
+    // every channel drained at the end
+    final: { next: 0, numbers: 0, fizzbuzz: 0, fizz: 0, buzz: 0 },
+  }
+endef
+
+# The generator: its token is its state, and it stops by not putting one back.
+@lua.target
+define gen
+  local n = tonumber(amk.var["fb.gen.token"])
+  amk.pool.produce("fb.numbers", tostring(n))
+  if n < tonumber(amk.var["fb.limit"]) then
+    amk.pool.produce("fb.next", tostring(n + 1))
+  end
+endef
+
+# The one writer whose choice of channel depends on the number it read.
+@micropy.target
+define classify
+  import amk
+  n = int(amk.var["fb.classify.token"])
+  to = "fizzbuzz" if n % 15 == 0 else "fizz" if n % 3 == 0 \
+    else "buzz" if n % 5 == 0 else None
+  if to:
+      amk.pool.produce("fb." + to, str(n))
+  print(n, "->", to or "itself")
+endef
+
+@js.target
+define on_fizzbuzz
+  print("js fizzbuzz " + amk.var["fb.say_fizzbuzz.token"]);
+endef
+
+@lua.target
+define on_fizz
+  print("lua fizz " .. amk.var["fb.say_fizz.token"])
+endef
+
+@s7.target
+define on_buzz
+  (format #t "s7 buzz ~A~%" (amk-var "fb.say_buzz.token"))
+endef
+
+show.after:
+	@echo "marking: $(fb.marking )"
+	@echo "fired: $(words $(fb.trace)) firings"

@@ -36,9 +36,9 @@ counter = "\n".join([
   "  end",
   "  print(n)",
   "endef",
-  "$(info inline=[$(lua $(lua.count),$(words))])",
+  "$(info inline=[$(lua $(lua.count), $(words))])",
   "$(info named=[$(lua* lua.count, words)])",
-  "$(info literal=[$(lua* lua.count,one two)])",
+  "$(info literal=[$(lua* lua.count, one two)])",
   "all:",
   "\ttrue",
   "",
@@ -162,3 +162,45 @@ def test_a_ragged_indent_is_fatal(amk, tmp_path):
   r = run(amk, tmp_path, text)
   assert r.returncode != 0, r.stdout
   assert "lua* ragged: inconsistent indentation" in r.stderr, r.stderr
+
+
+@pytest.mark.engines("lua")
+def test_every_star_builtin_has_a_twin_macro(amk, tmp_path):
+  text = "\n".join([
+    "$(info origin=[$(origin lua.import_star)] [$(origin lua.import.target_star)] [$(origin amk.dedent_star)])",
+    "$(info flavor=[$(flavor lua.import_star)])",
+  ])
+  r = run(amk, tmp_path, text)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "origin=[default] [default] [default]" in r.stdout, r.stdout
+  assert "flavor=[recursive]" in r.stdout, r.stdout
+
+
+@pytest.mark.engines("lua")
+def test_a_twin_macro_calls_its_star_builtin(amk, tmp_path):
+  text = "\n".join([
+    body("chunk", imports["lua"]),
+    "names := $(call lua.import_star,chunk)",
+    "$(info [$(names)]=[$(x)])",
+    body("text", "a\n  b"),
+    "$(info dedent=[$(call amk.dedent_star,text)])",
+  ])
+  r = run(amk, tmp_path, text)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[x]=[42]" in r.stdout, r.stdout + r.stderr
+  assert "dedent=[a\n  b]" in r.stdout, r.stdout
+
+
+@pytest.mark.engines("lua")
+def test_a_twin_macro_passes_no_trailing_empty_argument(amk, tmp_path):
+  mk = tmp_path / "star.mk"
+  mk.write_text("\n".join([
+    body("greet", "print('hi from greet')"),
+    "$(call lua.import.target_star,greet)",
+    body("prog", "print('hi from hello')"),
+    "$(call lua.import.target_star,hello,prog)",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk), "greet", "hello"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.split("\n")[:2] == ["hi from greet", "hi from hello"], r.stdout + r.stderr

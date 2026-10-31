@@ -1,0 +1,13 @@
+makeint.h: whether this process is a served or spawned child, which file.c and job.c read.
+
+--- a/src/makeint.h
++++ b/src/makeint.h
+@@ -750,6 +750,8 @@
+
+ extern unsigned int no_intermediates;
+
++extern unsigned int amk_child;
++
+ #if HAVE_MKFIFO
+ /* It seems that mkfifo() is not working correctly, or at least not the way
+    GNU make wants it to work, on GNU/Hurd and Cygwin so don't use it there.  */

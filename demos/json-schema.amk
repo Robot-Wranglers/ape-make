@@ -1,0 +1,42 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/json-schema.amk:
+#  JSON defines under io/json: a schema written as JSON5, an order read
+#  as JSON5 and checked against the schema as the makefile is read, and a
+#  bad order whose errors are asked for on demand.
+#
+
+load io/json
+
+__main__: show
+
+# The schema, itself JSON5.
+define order.schema
+  {
+    type: "object",
+    required: ["item", "qty"],
+    additionalProperties: false,
+    properties: {
+      item: { enum: ["tea", "cake"] },
+      // at least one, and never a fraction
+      qty: { type: "integer", minimum: 1 },
+    },
+  }
+endef
+
+# Checked when read, then rewritten as plain JSON.
+@json.schema (order.schema)
+@json5
+define order
+  { item: 'tea', qty: 3, }
+endef
+
+# Never checked when read; its errors come from json.validate.
+define bad_order
+  { item: "coffee", qty: 0, gift: true }
+endef
+
+.PHONY: show
+show:
+	echo 'order: $(order)'
+	echo 'bad_order: $(json.validate bad_order, order.schema)'

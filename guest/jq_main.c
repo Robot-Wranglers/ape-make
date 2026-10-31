@@ -7,12 +7,7 @@
 
 #include "jq.h"
 #include "jv.h"
-
-/* make's sink, where a run's result goes: one write function, and make decides where the bytes land. */
-struct amk_sink
-{
-  void (*write) (struct amk_sink *, const char *, size_t);
-};
+#include "amk_guest.h"
 
 /* Compiled programs, keyed by the bound names and the program text. */
 struct jq_prog
@@ -34,54 +29,15 @@ jq_emit (struct amk_sink *out, const char *s, size_t n)
   out->write (out, s, n);
 }
 
-/* One word off the line as a shell would read it, quotes honored; the word is written into buf and p moves past it. */
-static int
-jq_word (const char **p, char *buf, size_t size)
-{
-  const char *s = *p;
-  size_t n = 0;
-  char quote = 0;
-  while (*s == ' ' || *s == '\t')
-    ++s;
-  if (*s == '\0')
-    {
-      *p = s;
-      return 0;
-    }
-  while (*s && (quote || (*s != ' ' && *s != '\t')))
-    {
-      if (!quote && (*s == '\'' || *s == '"'))
-        quote = *s++;
-      else if (*s == quote)
-        {
-          quote = 0;
-          ++s;
-        }
-      else if (quote == '"' && *s == '\\' && s[1] == 'n')
-        {
-          if (n + 1 < size)
-            buf[n++] = '\n';
-          s += 2;
-        }
-      else
-        {
-          if (*s == '\\' && s[1] && (!quote || (quote == '"' && (s[1] == '"' || s[1] == '\\'))))
-            ++s;
-          if (n + 1 < size)
-            buf[n++] = *s;
-          ++s;
-        }
-    }
-  buf[n] = '\0';
-  *p = s;
-  return 1;
-}
+/* The request line's word reader is the shared one, since the option words are the channel's grammar and not jq's. */
+#define jq_word amk_word
 
-/* The program compiled once per distinct text and set of bound names: the bindings ride in on the input beside the value, so a new value for a name is never a recompile. */
+/* The program compiled once per distinct text, set of bound names and library path: the bindings ride in on the input beside the value, so a new value for a name is never a recompile. A leading include or import stays ahead of the wrapper, where jq's grammar wants it. */
 static jq_state *
-jq_compiled (const char *prog, char **names, int nnames)
+jq_compiled (const char *prog, char **names, int nnames, const char *lib)
 {
-  size_t klen = strlen (prog) + 2, tlen = strlen (prog) + 64;
+  size_t klen = strlen (prog) + strlen (lib) + 3, tlen = strlen (prog) + 64;
+  const char *body = prog, *semi;
   char *key, *text, *w;
   jq_state *jq;
   int i;
@@ -93,6 +49,7 @@ jq_compiled (const char *prog, char **names, int nnames)
     }
   key = malloc (klen);
   w = key;
+  w += sprintf (w, "%s\n", lib);
   for (i = 0; i < nnames; i++)
     w += sprintf (w, "%s ", names[i]);
   sprintf (w, "\n%s", prog);
@@ -103,12 +60,20 @@ jq_compiled (const char *prog, char **names, int nnames)
         return progs[i].jq;
       }
 
+  while (isspace ((unsigned char) *body))
+    body++;
+  while ((strncmp (body, "include ", 8) == 0 || strncmp (body, "import ", 7) == 0) && (semi = strchr (body, ';')) != NULL)
+    for (body = semi + 1; isspace ((unsigned char) *body); body++)
+      ;
   text = malloc (tlen);
   w = text;
+  w += sprintf (w, "%.*s\n", (int) (body - prog), prog);
   for (i = 0; i < nnames; i++)
     w += sprintf (w, ".args.%s as $%s | ", names[i], names[i]);
-  sprintf (w, ".value | (\n%s\n)", prog);
+  sprintf (w, ".value | (\n%s\n)", body);
   jq = jq_init ();
+  if (jq != NULL && *lib != '\0')
+    jq_set_attr (jq, jv_string ("JQ_LIBRARY_PATH"), jv_array_append (jv_array (), jv_string (lib)));
   if (jq == NULL || !jq_compile (jq, text))
     {
       if (jq != NULL)
@@ -218,7 +183,7 @@ jq_run_op (jv *state, struct amk_sink *out, const char *op, const char *rest, co
   char *names[JQ_MAXARGS];
   jv values[JQ_MAXARGS];
   int nargs = 0, raw = 0, compact = state != NULL, slurp = 0, null_input = 0, exit_status = 0, i, rc, n = 0, ninputs;
-  char word[4096], key[256];
+  char word[4096], key[256], lib[1024] = "";
   const char *p = rest, *prog;
   jq_state *jq;
   jv inputs = jv_invalid (), result = jv_invalid (), kept = jv_invalid (), emitted = jv_invalid ();
@@ -238,10 +203,19 @@ jq_run_op (jv *state, struct amk_sink *out, const char *op, const char *rest, co
         null_input = 1;
       else if (strcmp (word, "-s") == 0)
         slurp = 1;
+      else if (strcmp (word, "-L") == 0)
+        {
+          if (!jq_word (&p, lib, sizeof lib))
+            {
+              fprintf (stderr, "jq.%s: -L takes a directory\n", op);
+              rc = JQ_STATUS_USAGE;
+              goto done;
+            }
+        }
       else if (word[0] == '-' && word[1] != '\0' && strcmp (word, "--arg") != 0 && strcmp (word, "--argjson") != 0
                && strcmp (word, "--slurpfile") != 0 && strcmp (word, "--rawfile") != 0)
         {
-          fprintf (stderr, "jq.%s: unsupported option %s; one of -r -c -e -n -s --arg --argjson --slurpfile --rawfile\n", op, word);
+          fprintf (stderr, "jq.%s: unsupported option %s; one of -r -c -e -n -s -L --arg --argjson --slurpfile --rawfile\n", op, word);
           rc = JQ_STATUS_USAGE;
           goto done;
         }
@@ -281,7 +255,7 @@ jq_run_op (jv *state, struct amk_sink *out, const char *op, const char *rest, co
       goto done;
     }
 
-  jq = jq_compiled (prog, names, nargs);
+  jq = jq_compiled (prog, names, nargs, lib);
   if (jq == NULL)
     {
       rc = JQ_STATUS_COMPILE;
@@ -333,6 +307,8 @@ jq_run_op (jv *state, struct amk_sink *out, const char *op, const char *rest, co
           rc = kind == JV_KIND_NULL || kind == JV_KIND_FALSE ? 1 : 0;
           jv_free (last);
         }
+      if (rc != 0)
+        amk_ns_answered ();
     }
 
   if (jv_is_valid (kept))
@@ -340,6 +316,7 @@ jq_run_op (jv *state, struct amk_sink *out, const char *op, const char *rest, co
       jv_free (*state);
       *state = kept;
       kept = jv_invalid ();
+      amk_ns_changed ();
     }
   n = jv_array_length (jv_copy (emitted));
   for (i = 0; i < n; i++)
@@ -357,11 +334,12 @@ done:
   return rc;
 }
 
-/* load: the one JSON text that is the program becomes the value. */
-static int
-jq_load (jv *state, const char *text)
+/* The load member: the one JSON text becomes the value, or the value is left as it was. */
+__attribute__ ((visibility ("default"))) int
+jq_load (void *vstate, const char *text)
 {
-  jv v = jv_parse (text);
+  jv *state = vstate;
+  jv v = jv_parse (text != NULL ? text : "");
   if (!jv_is_valid (v))
     {
       jv msg = jv_invalid_get_msg (v);
@@ -374,9 +352,9 @@ jq_load (jv *state, const char *text)
   return 0;
 }
 
-/* The open primitive: a fresh state holding null. */
+/* The create member: a fresh state holding null. */
 __attribute__ ((visibility ("default"))) void *
-jq_open (void)
+jq_create (void)
 {
   jv *state = malloc (sizeof *state);
   if (state == NULL)
@@ -385,16 +363,25 @@ jq_open (void)
   return state;
 }
 
-/* The run primitive: get, update or load on the state, with the output to the sink. */
+/* The get member: the program over the value, every output to the sink, the value kept as it was. */
 __attribute__ ((visibility ("default"))) int
-jq_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+jq_get (void *state, struct amk_sink *out, const char *prog)
 {
-  if (strcmp (op, "get") == 0 || strcmp (op, "update") == 0)
-    return jq_run_op (state, out, op, prog != NULL ? prog : "", NULL);
-  if (strcmp (op, "load") == 0)
-    return jq_load (state, prog != NULL ? prog : "");
-  fprintf (stderr, "jq: unknown operation %s; one of get, update, load\n", op);
-  return JQ_STATUS_USAGE;
+  return jq_run_op (state, out, "get", prog != NULL ? prog : "", NULL);
+}
+
+/* The update member: the program over the value, its first output kept as the new value and the rest to the sink. */
+__attribute__ ((visibility ("default"))) int
+jq_update (void *state, struct amk_sink *out, const char *prog)
+{
+  return jq_run_op (state, out, "update", prog != NULL ? prog : "", NULL);
+}
+
+/* The dump member: the whole value, as the JSON text load takes back. */
+__attribute__ ((visibility ("default"))) int
+jq_dump (void *state, struct amk_sink *out)
+{
+  return jq_run_op (state, out, "get", ".", NULL);
 }
 
 /* The filter primitive: the program over every JSON text in the input, with no state. */

@@ -1,0 +1,64 @@
+#
+# payload/lib/dsys/locks.amk:
+#  locks and channels made of pools: amk.mutex, amk.horcrux and
+#  amk.rendezvous, each a factory idempotent by name whose verbs reach
+#  every guest as fields. load dsys/locks brings them alone, with no
+#  engine needed. pool._ is private. A factory that is an immediate
+#  assignment's whole value takes its name from the variable and
+#  returns it, as in door := $(amk.mutex ) or book := $(amk.horcrux 3).
+#
+
+# A lock's verbs as functions of its name, amk.<lock>.<name>.<verb>
+pool._verbs = $(foreach v,$(m5[3]), \
+  $(amk.fxn! amk.$(m5[1]).$(m5[2]).$(v), pool._$(m5[1]), $(m5[2]), $(v)))
+$(amk.fxn! pool._verbs)
+
+# A mutex: a pool of one. lock waits, trylock answers at once, unlock gives back
+pool._mutex = $(strip \
+  $(if $(filter lock,$(m5[2])),$(amk.pool.acquire $(m5[1]))) \
+  $(if $(filter trylock,$(m5[2])),$(amk.pool.acquire $(m5[1]), 0)) \
+  $(if $(filter unlock,$(m5[2])),$(amk.pool.release $(m5[1]))))
+amk.mutex = $(strip $(let n,$(or $(m5[1]?),$(amk.lhs)), \
+  $(if $(amk.pool $(n)),,$(amk.pool $(n), 1) \
+    $(pool._verbs mutex, $(n), lock unlock trylock)) \
+  $(if $(amk.lhs),$(n))))
+$(amk.fxn! pool._mutex)
+$(amk.fxn! amk.mutex)
+
+# A horcrux: a reader takes one piece, a writer every piece behind its own mutex
+pool._drain = $(if \
+  $(filter $(amk.pool.size $(m5[1])),$(amk.pool.held $(m5[1]))),, \
+  $(if $(amk.pool.acquire $(m5[1])),)$(call pool._drain,$(m5[1])))
+pool._undrain = $(if $(filter 0,$(amk.pool.held $(m5[1]))),, \
+  $(amk.pool.release $(m5[1]))$(call pool._undrain,$(m5[1])))
+pool._horcrux = $(strip \
+  $(if $(filter rlock,$(m5[2])),$(amk.pool.acquire $(m5[1]))) \
+  $(if $(filter tryrlock,$(m5[2])),$(amk.pool.acquire $(m5[1]), 0)) \
+  $(if $(filter runlock,$(m5[2])),$(amk.pool.release $(m5[1]))) \
+  $(if $(filter wlock,$(m5[2])), \
+    $(if $(amk.pool.acquire $(m5[1]).w)$(call pool._drain,$(m5[1])),1)) \
+  $(if $(filter wunlock,$(m5[2])), \
+    $(call pool._undrain,$(m5[1]))$(amk.pool.release $(m5[1]).w)))
+amk.horcrux = $(strip $(let n s, \
+  $(if $(m5[2]?),$(m5[1]),$(amk.lhs)) $(or $(m5[2]?),$(m5[1])), \
+  $(if $(amk.pool $(n)),,$(amk.pool $(n), $(s))$(amk.pool $(n).w, 1) \
+    $(pool._verbs horcrux, $(n), rlock tryrlock runlock wlock wunlock)) \
+  $(if $(amk.lhs),$(n))))
+$(amk.fxn! pool._horcrux)
+$(amk.fxn! amk.horcrux)
+
+# A rendezvous: the value in name, its receipt in name.ack, one sender at a time
+pool._rendezvous = $(strip \
+  $(if $(filter send,$(m5[2])), \
+    $(if $(amk.pool.acquire $(m5[1]).s) \
+      $(amk.pool.produce $(m5[1]), $(m5[3])),) \
+    $(if $(amk.pool.consume $(m5[1]).ack),) \
+    $(amk.pool.release $(m5[1]).s)) \
+  $(if $(filter recv,$(m5[2])), \
+    $(let v,$(amk.pool.consume $(m5[1])),$(v)$(amk.pool.produce $(m5[1]).ack))))
+amk.rendezvous = $(if $(amk.pool $(m5[1])),,$(strip \
+  $(amk.pool $(m5[1]), labeled=true, strategy=open) \
+  $(amk.pool $(m5[1]).ack, size=0, strategy=open)$(amk.pool $(m5[1]).s, 1) \
+  $(pool._verbs rendezvous, $(m5[1]), send recv)))
+$(amk.fxn! pool._rendezvous)
+$(amk.fxn! amk.rendezvous)

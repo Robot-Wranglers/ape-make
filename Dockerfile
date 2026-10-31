@@ -1,4 +1,4 @@
-# amk as a container image: make build.docker fills the context with a native executable per arch beside its aliases, since docker execs an entrypoint without the shell an ape needs.
+# amk as a container image: make build.docker fills the context with an assimilated executable per arch beside its aliases, since docker execs an entrypoint without the shell an ape needs.
 ARG BASE=debian:bookworm-slim
 
 FROM ${BASE} AS amk

@@ -1,8 +1,10 @@
 /* The quickjs guest's entry point: amk links the engine and its std library, not the qjs cli, so it supplies this. */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "quickjs.h"
 #include "quickjs-libc.h"
@@ -54,48 +56,48 @@ js_amk_expand (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *ar
   return r;
 }
 
-/* The raw call: the name, then each value as one whole argument; the prelude has already made every argument a string. */
+/* The raw call: the kind, the name, then each value as one whole argument; the prelude has already made every argument a string. */
 static JSValue
 js_amk_call (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
   const char *err = NULL, **vals;
   char *s;
   JSValue r;
-  int i, n = argc - 1;
+  int i, n = argc - 2, kind = 0;
   (void) this_val;
-  if (argc < 1)
-    return JS_ThrowTypeError (ctx, "amk.call: a name is required");
+  if (argc < 2 || JS_ToInt32 (ctx, &kind, argv[0]) < 0)
+    return JS_ThrowTypeError (ctx, "amk.call: a kind and a name are required");
   vals = calloc ((size_t) argc + 1, sizeof *vals);
-  for (i = 0; i < argc; i++)
+  for (i = 1; i < argc; i++)
     if ((vals[i] = JS_ToCString (ctx, argv[i])) == NULL)
       break;
-  s = i == argc ? amk_call (vals[0], (unsigned int) n, vals + 1, &err) : NULL;
+  s = i == argc ? amk_call_kind (kind, vals[1], (unsigned int) n, vals + 2, &err) : NULL;
   r = s != NULL ? JS_NewString (ctx, s) : i == argc ? JS_ThrowTypeError (ctx, "amk.call: %s", err) : JS_EXCEPTION;
   gmk_free (s);
-  while (i-- > 0)
+  while (i-- > 1)
     JS_FreeCString (ctx, vals[i]);
   free (vals);
   return r;
 }
 
-/* The raw deferred call: the name and the values as for call, answered with the pid and the fd the prelude waits on. */
+/* The raw deferred call: the kind, the name and the values as for call, answered with the pid and the fd the prelude waits on. */
 static JSValue
 js_amk_call_begin (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
   const char **vals;
   JSValue r;
-  int i, n = argc - 1, fd = -1;
+  int i, n = argc - 2, fd = -1, kind = 0;
   pid_t pid = -1;
   (void) this_val;
-  if (argc < 1)
-    return JS_ThrowTypeError (ctx, "amk.acall: a name is required");
+  if (argc < 2 || JS_ToInt32 (ctx, &kind, argv[0]) < 0)
+    return JS_ThrowTypeError (ctx, "amk.acall: a kind and a name are required");
   vals = calloc ((size_t) argc + 1, sizeof *vals);
-  for (i = 0; i < argc; i++)
+  for (i = 1; i < argc; i++)
     if ((vals[i] = JS_ToCString (ctx, argv[i])) == NULL)
       break;
   if (i == argc)
-    pid = amk_call_begin (vals[0], (unsigned int) n, vals + 1, &fd);
-  while (i-- > 0)
+    pid = amk_call_begin (kind, vals[1], (unsigned int) n, vals + 2, &fd);
+  while (i-- > 1)
     JS_FreeCString (ctx, vals[i]);
   free (vals);
   if (pid < 0)
@@ -173,7 +175,65 @@ js_amk_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
   return JS_UNDEFINED;
 }
 
-/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error reported on stderr and answered empty. */
+static JSValue
+js_amk_raw_get (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name;
+  char *s;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  s = amk_var_raw_get (name);
+  JS_FreeCString (ctx, name);
+  if (s == NULL)
+    return JS_UNDEFINED;
+  r = JS_NewString (ctx, s);
+  gmk_free (s);
+  return r;
+}
+
+static JSValue
+js_amk_raw_set (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name, *value;
+  (void) this_val;
+  if (argc < 2 || (name = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  value = JS_ToCString (ctx, argv[1]);
+  if (value == NULL)
+    {
+      JS_FreeCString (ctx, name);
+      return JS_EXCEPTION;
+    }
+  amk_var_raw_set (name, value);
+  JS_FreeCString (ctx, value);
+  JS_FreeCString (ctx, name);
+  return JS_UNDEFINED;
+}
+
+/* The engine polls this on its own instruction count, and a true answer throws an error no catch inside the run can stop. */
+static int
+js_deadline_interrupt (JSRuntime *rt, void *opaque)
+{
+  (void) rt;
+  (void) opaque;
+  return amk_deadline_expired ();
+}
+
+/* fn called under the interrupt handler, which stays installed after only while a deadline is still in force. */
+static JSValue
+js_call_bounded (JSContext *ctx, JSValueConst fn, int argc, JSValueConst *argv)
+{
+  JSRuntime *rt = JS_GetRuntime (ctx);
+  JSValue r;
+  JS_SetInterruptHandler (rt, js_deadline_interrupt, NULL);
+  r = JS_Call (ctx, fn, JS_UNDEFINED, argc, argv);
+  JS_SetInterruptHandler (rt, amk_deadline_active () ? js_deadline_interrupt : NULL, NULL);
+  return r;
+}
+
+/* make's call into a defined function, in the state that defined it: the arguments as strings, the result as text, and an error raised to whoever made the call. */
 static char *
 js_func_call (void *state, const char *nm, unsigned int argc, char **argv)
 {
@@ -193,15 +253,24 @@ js_func_call (void *state, const char *nm, unsigned int argc, char **argv)
   args = malloc ((argc ? argc : 1) * sizeof *args);
   for (i = 0; i < argc; i++)
     args[i] = JS_NewString (ctx, argv[i]);
-  result = JS_Call (ctx, fn, JS_UNDEFINED, (int) argc, args);
+  result = amk_deadline_active () ? js_call_bounded (ctx, fn, (int) argc, args) : JS_Call (ctx, fn, JS_UNDEFINED, (int) argc, args);
   for (i = 0; i < argc; i++)
     JS_FreeValue (ctx, args[i]);
   free (args);
   JS_FreeValue (ctx, fn);
+  if (JS_IsException (result) && amk_deadline_expired ())
+    {
+      JS_FreeValue (ctx, JS_GetException (ctx));
+      return NULL;
+    }
   if (JS_IsException (result))
     {
-      fprintf (stderr, "js $(%s ...): ", nm);
-      js_std_dump_error (ctx);
+      JSValue e = JS_GetException (ctx);
+      const char *msg = JS_ToCString (ctx, e);
+      amk_func_raise ("js", nm, msg);
+      if (msg != NULL)
+        JS_FreeCString (ctx, msg);
+      JS_FreeValue (ctx, e);
       return NULL;
     }
   if (JS_IsUndefined (result) || JS_IsNull (result))
@@ -244,6 +313,197 @@ js_amk_func (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv
   return r;
 }
 
+/* A bare module name, with no leading slash or dot and not a builtin, is a package under lib/js/: its init.js, else the file of that name; a relative name resolves against the importing module as quickjs's default does. */
+static char *
+js_module_normalize (JSContext *ctx, const char *base, const char *name, void *opaque)
+{
+  char path[512];
+  char *out;
+  const char *r, *slash;
+  size_t len;
+  (void) opaque;
+  if (name[0] == '/' || strcmp (name, "std") == 0 || strcmp (name, "os") == 0)
+    return js_strdup (ctx, name);
+  if (name[0] != '.')
+    {
+      snprintf (path, sizeof path, "/zip/lib/js/%s/init.js", name);
+      if (access (path, R_OK) != 0)
+        snprintf (path, sizeof path, "/zip/lib/js/%s.js", name);
+      return js_strdup (ctx, access (path, R_OK) == 0 ? path : name);
+    }
+  slash = strrchr (base, '/');
+  len = slash != NULL ? (size_t) (slash - base) : 0;
+  out = js_malloc (ctx, len + strlen (name) + 2);
+  if (out == NULL)
+    return NULL;
+  memcpy (out, base, len);
+  out[len] = '\0';
+  for (r = name;;)
+    {
+      if (r[0] == '.' && r[1] == '/')
+        r += 2;
+      else if (r[0] == '.' && r[1] == '.' && r[2] == '/' && out[0] != '\0')
+        {
+          char *p = strrchr (out, '/');
+          *(p != NULL ? p : out) = '\0';
+          r += 3;
+        }
+      else
+        break;
+    }
+  if (out[0] != '\0')
+    strcat (out, "/");
+  strcat (out, r);
+  return out;
+}
+
+/* __amk.resolves(name): whether the cascade answers for the name, so a missing amk field may stand for it. */
+static JSValue
+js_amk_resolves (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name = argc > 0 ? JS_ToCString (ctx, argv[0]) : NULL, *err;
+  char full[512];
+  JSValue r;
+  (void) this_val;
+  if (name == NULL)
+    return JS_EXCEPTION;
+  r = JS_NewBool (ctx, amk_resolve (name, full, sizeof full, &err) >= 0);
+  JS_FreeCString (ctx, name);
+  return r;
+}
+
+/* A payload module, the name's lib/ directory and its init.js, loaded and evaluated now and answered as its namespace, or as its default export when it has one; undefined when the payload has none. */
+static JSValue
+js_amk_module (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *name = JS_ToCString (ctx, argv[0]);
+  char path[512];
+  FILE *f;
+  (void) this_val;
+  (void) argc;
+  if (name == NULL)
+    return JS_EXCEPTION;
+  snprintf (path, sizeof path, "/zip/lib/%s/init.js", name);
+  JS_FreeCString (ctx, name);
+  if ((f = fopen (path, "r")) == NULL)
+    return JS_UNDEFINED;
+  fclose (f);
+  return js_std_await (ctx, JS_LoadModule (ctx, "", path));
+}
+
+/* amk.send(text): a line to the job's parent, from inside a spawned job. */
+static JSValue
+js_amk_send (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  size_t len;
+  const char *s;
+  int rc;
+  (void) this_val;
+  if (argc < 1 || (s = JS_ToCStringLen (ctx, &len, argv[0])) == NULL)
+    return JS_EXCEPTION;
+  rc = amk_mail_send (s, len);
+  JS_FreeCString (ctx, s);
+  return JS_NewBool (ctx, rc == 0);
+}
+
+/* The descriptors make's own wait watches, the child pipe and every pair a child asks on, for the prelude to hand the reactor. */
+static JSValue
+js_amk_ask_fds (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  int fds[2 * 64 + 8], n, i;
+  JSValue r = JS_NewArray (ctx);
+  (void) this_val;
+  (void) argc;
+  (void) argv;
+  n = amk_ask_fds (fds, (int) (sizeof fds / sizeof fds[0]));
+  for (i = 0; i < n; i++)
+    JS_SetPropertyUint32 (ctx, r, (uint32_t) i, JS_NewInt32 (ctx, fds[i]));
+  return r;
+}
+
+/* Every request already waiting answered and the child pipe drained, with no wait. */
+static JSValue
+js_amk_ask_serve (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  (void) ctx;
+  (void) this_val;
+  (void) argc;
+  (void) argv;
+  amk_ask_wait (0);
+  return JS_UNDEFINED;
+}
+
+/* The raw ask: one request line to the owner, answered with the id to poll for; one that would park in the owner is thrown. */
+static JSValue
+js_amk_ask_begin (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  const char *line;
+  long id;
+  (void) this_val;
+  if (argc < 1 || (line = JS_ToCString (ctx, argv[0])) == NULL)
+    return JS_ThrowTypeError (ctx, "amk.ask: a request is required");
+  id = amk_ask_begin (line);
+  JS_FreeCString (ctx, line);
+  if (id < 0)
+    return JS_ThrowTypeError (ctx, "amk.ask: " AMK_ASK_PARKED);
+  return JS_NewInt64 (ctx, id);
+}
+
+/* The reply to an ask by its id once it is here, else undefined. */
+static JSValue
+js_amk_ask_poll (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  int64_t id;
+  char *reply;
+  JSValue r;
+  (void) this_val;
+  if (argc < 1 || JS_ToInt64 (ctx, &id, argv[0]) < 0)
+    return JS_ThrowTypeError (ctx, "amk.ask: an id is required");
+  reply = amk_ask_poll ((unsigned long) id);
+  if (reply == NULL)
+    return JS_UNDEFINED;
+  r = JS_NewString (ctx, reply);
+  free (reply);
+  return r;
+}
+
+static JSValue
+js_amk_live (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  int32_t pid;
+  (void) this_val;
+  if (argc < 1 || JS_ToInt32 (ctx, &pid, argv[0]) < 0)
+    return JS_EXCEPTION;
+  return JS_NewBool (ctx, amk_spawn_live ((pid_t) pid));
+}
+
+/* amk.deadline(ms, fn, ...args): fn's result, or the error "deadline: ms ms" once ms milliseconds pass, in this guest or in any other it calls, catchable again at this call; a nested deadline keeps the tighter one, and a promise fn returns is not bounded past its return. */
+static JSValue
+js_amk_deadline (JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+  struct amk_deadline saved;
+  int64_t ms;
+  long hit;
+  JSValue r;
+  (void) this_val;
+
+  if (argc < 2 || !JS_IsFunction (ctx, argv[1]))
+    return JS_ThrowTypeError (ctx, "amk.deadline: needs ms and a function");
+  if (JS_ToInt64 (ctx, &ms, argv[0]) < 0)
+    return JS_EXCEPTION;
+  if (ms < 0)
+    return JS_ThrowRangeError (ctx, "amk.deadline: ms must not be negative");
+  amk_deadline_push ((long) ms, &saved);
+  r = js_call_bounded (ctx, argv[1], argc - 2, argv + 2);
+  hit = amk_deadline_pop (&saved);
+  if (JS_IsException (r) && hit >= 0)
+    {
+      JS_FreeValue (ctx, JS_GetException (ctx));
+      return JS_ThrowInternalError (ctx, "deadline: %d ms", (int) hit);
+    }
+  return r;
+}
+
 /* The raw calls under a private global, which the prelude wraps and removes. */
 static void
 js_bind_amk (JSContext *ctx)
@@ -253,39 +513,108 @@ js_bind_amk (JSContext *ctx)
   JS_SetPropertyStr (ctx, raw, "has", JS_NewCFunction (ctx, js_amk_has, "has", 0));
   JS_SetPropertyStr (ctx, raw, "expand", JS_NewCFunction (ctx, js_amk_expand, "expand", 1));
   JS_SetPropertyStr (ctx, raw, "eval", JS_NewCFunction (ctx, js_amk_eval, "eval", 1));
-  JS_SetPropertyStr (ctx, raw, "call", JS_NewCFunction (ctx, js_amk_call, "call", 1));
-  JS_SetPropertyStr (ctx, raw, "callBegin", JS_NewCFunction (ctx, js_amk_call_begin, "callBegin", 1));
+  JS_SetPropertyStr (ctx, raw, "call", JS_NewCFunction (ctx, js_amk_call, "call", 2));
+  JS_SetPropertyStr (ctx, raw, "resolves", JS_NewCFunction (ctx, js_amk_resolves, "resolves", 1));
+  JS_SetPropertyStr (ctx, raw, "callBegin", JS_NewCFunction (ctx, js_amk_call_begin, "callBegin", 2));
   JS_SetPropertyStr (ctx, raw, "callEnd", JS_NewCFunction (ctx, js_amk_call_end, "callEnd", 1));
   JS_SetPropertyStr (ctx, raw, "get", JS_NewCFunction (ctx, js_amk_get, "get", 1));
   JS_SetPropertyStr (ctx, raw, "set", JS_NewCFunction (ctx, js_amk_set, "set", 2));
+  JS_SetPropertyStr (ctx, raw, "rawGet", JS_NewCFunction (ctx, js_amk_raw_get, "rawGet", 1));
+  JS_SetPropertyStr (ctx, raw, "rawSet", JS_NewCFunction (ctx, js_amk_raw_set, "rawSet", 2));
   JS_SetPropertyStr (ctx, raw, "func", JS_NewCFunction (ctx, js_amk_func, "func", 2));
+  JS_SetPropertyStr (ctx, raw, "module", JS_NewCFunction (ctx, js_amk_module, "module", 1));
+  JS_SetPropertyStr (ctx, raw, "send", JS_NewCFunction (ctx, js_amk_send, "send", 1));
+  JS_SetPropertyStr (ctx, raw, "deadline", JS_NewCFunction (ctx, js_amk_deadline, "deadline", 2));
+  JS_SetPropertyStr (ctx, raw, "askFds", JS_NewCFunction (ctx, js_amk_ask_fds, "askFds", 0));
+  JS_SetPropertyStr (ctx, raw, "askServe", JS_NewCFunction (ctx, js_amk_ask_serve, "askServe", 0));
+  JS_SetPropertyStr (ctx, raw, "askBegin", JS_NewCFunction (ctx, js_amk_ask_begin, "askBegin", 1));
+  JS_SetPropertyStr (ctx, raw, "askPoll", JS_NewCFunction (ctx, js_amk_ask_poll, "askPoll", 1));
+  JS_SetPropertyStr (ctx, raw, "live", JS_NewCFunction (ctx, js_amk_live, "live", 1));
   JS_SetPropertyStr (ctx, g, "__amk", raw);
   JS_FreeValue (ctx, g);
 }
 
-/* amk over the raw calls: expand, eval, func, the var proxy that reads, assigns, and answers in, the hook table, and the call's input; every call refuses under the engine flag, where make has parsed nothing. */
+/* amk over the raw calls: expand, eval, func, the var proxy that reads, assigns, and answers in, the hook table, the call's input, ask, whose promise the tagged reply settles, and exited, whose reactor handlers answer children's requests and exist only while a pid is awaited or an acall or an ask is pending; every call refuses under the engine flag, where make has parsed nothing; a name amk lacks loads the payload module of that name once, else stands for what the cascade resolves it to. */
 static const char *js_amk_prelude =
-  "globalThis.amk = (function (raw) {\n"
+  "globalThis.amk = new Proxy((function (raw) {\n"
   "  const need = () => { if (!raw.has()) throw new Error('amk: no make database, running outside a makefile'); };\n"
   "  const text = (v) => v == null ? '' : String(v);\n"
+  "  const unexpanded = new Proxy({}, {\n"
+  "    get: (_, k) => { need(); return raw.rawGet(String(k)); },\n"
+  "    set: (_, k, v) => { need(); raw.rawSet(String(k), text(v)); return true; },\n"
+  "    has: (_, k) => { need(); return raw.rawGet(String(k)) !== undefined; },\n"
+  "  });\n"
+  "  const waiting = new Map(), watched = new Set(), calls = new Set(), asks = new Map();\n"
+  "  const settle = () => {\n"
+  "    for (const [pid, oks] of waiting) {\n"
+  "      const t = raw.call(0, 'amk.wait', String(pid), '0'), r = t ? JSON.parse(t) : undefined;\n"
+  "      if (r && r.status !== 'stopped') { waiting.delete(pid); oks.forEach((ok) => ok(r)); }\n"
+  "    }\n"
+  "  };\n"
+  "  const answer = (reply, ok, no) => {\n"
+  "    const nl = reply.indexOf('\\n'), st = reply.slice(0, nl).split(' ')[0], body = reply.slice(nl + 1);\n"
+  "    if (st === '0') ok(body);\n"
+  "    else no(new Error(st === '3' ? 'amk.ask: the owner exited' : body.trim() || 'amk.ask: status ' + st));\n"
+  "  };\n"
+  "  const settleAsks = () => {\n"
+  "    for (const [id, [ok, no]] of asks) {\n"
+  "      const r = raw.askPoll(id);\n"
+  "      if (r !== undefined) { asks.delete(id); answer(r, ok, no); }\n"
+  "    }\n"
+  "  };\n"
+  "  const watch = () => {\n"
+  "    const now = new Set(waiting.size || calls.size || asks.size ? raw.askFds() : []);\n"
+  "    for (const fd of watched) if (!now.has(fd)) { os.setReadHandler(fd, null); watched.delete(fd); }\n"
+  "    for (const fd of now) if (!watched.has(fd)) { os.setReadHandler(fd, pump); watched.add(fd); }\n"
+  "  };\n"
+  "  const pump = () => { raw.askServe(); settle(); settleAsks(); watch(); };\n"
+  "  const begin = (kind, name, vals) => { need(); const h = raw.callBegin(kind, String(name), ...vals.map(text));\n"
+  "    calls.add(h.pid); watch();\n"
+  "    return new Promise((ok, no) => os.setReadHandler(h.fd, () => {\n"
+  "      os.setReadHandler(h.fd, null); calls.delete(h.pid);\n"
+  "      try { ok(raw.callEnd(h.pid)); } catch (e) { no(e); } finally { watch(); }\n"
+  "    })); };\n"
   "  return {\n"
   "    expand: (t) => { need(); return raw.expand(String(t)); },\n"
   "    eval: (t) => { need(); raw.eval(String(t)); },\n"
-  "    call: (name, ...vals) => { need(); return raw.call(String(name), ...vals.map(text)); },\n"
-  "    acall: (name, ...vals) => { need(); const h = raw.callBegin(String(name), ...vals.map(text));\n"
-  "      return new Promise((ok, no) => os.setReadHandler(h.fd, () => {\n"
-  "        os.setReadHandler(h.fd, null);\n"
-  "        try { ok(raw.callEnd(h.pid)); } catch (e) { no(e); }\n"
-  "      })); },\n"
+  "    call: (name, ...vals) => { need(); const r = raw.call(0, String(name), ...vals.map(text)); if (asks.size) { settleAsks(); watch(); } return r; },\n"
+  "    fxn: (name, ...vals) => { need(); return raw.call(1, String(name), ...vals.map(text)); },\n"
+  "    macro: (name, ...vals) => { need(); return raw.call(2, String(name), ...vals.map(text)); },\n"
+  "    ask: (op, ns, ...vals) => { need(); let id;\n"
+  "      try { id = raw.askBegin([op, ns, ...vals].map(text).join(' ')); } catch (e) { return Promise.reject(e); }\n"
+  "      return new Promise((ok, no) => { asks.set(id, [ok, no]); settleAsks(); watch(); }); },\n"
+  "    acall: (name, ...vals) => begin(0, name, vals),\n"
+  "    afxn: (name, ...vals) => begin(1, name, vals),\n"
+  "    amacro: (name, ...vals) => begin(2, name, vals),\n"
+  "    agoal: (name) => begin(0, 'amk.goal', [name]),\n"
   "    func: (name, fn) => { need(); raw.func(String(name), fn); },\n"
   "    var: new Proxy({}, {\n"
-  "      get: (_, k) => { need(); return raw.get(String(k)); },\n"
+  "      get: (_, k) => { if (k === 'raw') return unexpanded; need(); return raw.get(String(k)); },\n"
   "      set: (_, k, v) => { need(); raw.set(String(k), text(v)); return true; },\n"
   "      has: (_, k) => { need(); return raw.get(String(k)) !== undefined; },\n"
   "    }),\n"
   "    on: {},\n"
+  "    send: raw.send, deadline: raw.deadline,\n"
+  "    exited: (pid) => new Promise((ok, no) => {\n"
+  "      if (!raw.live(pid)) return no(new Error(`amk.exited: ${pid} is not a live job of this process`));\n"
+  "      waiting.set(pid, (waiting.get(pid) || []).concat(ok));\n"
+  "      pump();\n"
+  "    }),\n"
   "  };\n"
-  "})(globalThis.__amk);\n"
+  "})(globalThis.__amk), {\n"
+  "  get: ((module, resolves) => {\n"
+  "    const fn = (name) => new Proxy((...vals) => globalThis.amk.call(name, ...vals), {\n"
+  "      get: (f, k, r) => typeof k === 'string' && !(k in f) ? fn(name + '.' + k) : Reflect.get(f, k, r),\n"
+  "    });\n"
+  "    return (t, k, r) => {\n"
+  "      if (typeof k !== 'string' || k in t) return Reflect.get(t, k, r);\n"
+  "      const ns = module(k), m = ns !== undefined && 'default' in ns ? ns.default : ns;\n"
+  "      if (m !== undefined) { t[k] = m; return m; }\n"
+  "      if (resolves(k)) { t[k] = fn(k); return t[k]; }\n"
+  "      return undefined;\n"
+  "    };\n"
+  "  })(globalThis.__amk.module, globalThis.__amk.resolves),\n"
+  "});\n"
   "delete globalThis.__amk;\n";
 
 static JSValue
@@ -367,7 +696,7 @@ js_state_open (JSRuntime **rt, JSContext **ctx, int argc, char **argv)
     }
   js_init_module_std (*ctx, "std");
   js_init_module_os (*ctx, "os");
-  JS_SetModuleLoaderFunc2 (*rt, NULL, js_module_loader, js_module_check_attributes, NULL);
+  JS_SetModuleLoaderFunc2 (*rt, js_module_normalize, js_module_loader, js_module_check_attributes, NULL);
   JS_SetHostPromiseRejectionTracker (*rt, js_std_promise_rejection_tracker, NULL);
   js_std_add_helpers (*ctx, argc, argv);
   js_bind_amk (*ctx);
@@ -617,9 +946,9 @@ js_export_globals (JSContext *ctx, JSValueConst before, struct amk_sink *out)
   return rc;
 }
 
-/* The open primitive: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
+/* The create member: a kept state, which make holds for the life of the process, with the handle bound and its own table of make functions. */
 __attribute__ ((visibility ("default"))) void *
-js_open (void)
+js_create (void)
 {
   struct js_state *s = calloc (1, sizeof *s);
   if (s == NULL)
@@ -635,9 +964,9 @@ js_open (void)
   return s;
 }
 
-/* The run primitive: exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
-__attribute__ ((visibility ("default"))) int
-js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
+/* exec runs the chunk in the state with what it prints to the sink; import runs it with print on stderr, then hands make what it left on the global object and the sink their names. */
+static int
+js_run_op (void *state, struct amk_sink *out, const char *op, const char *prog)
 {
   struct js_state *s = state;
   struct amk_capture capture;
@@ -646,11 +975,6 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
   JSValue before;
   int rc;
 
-  if (!export && strcmp (op, "exec") != 0)
-    {
-      fprintf (stderr, "js: unknown operation %s\n", op);
-      return 2;
-    }
   if (prog == NULL)
     {
       fprintf (stderr, "js.%s: no chunk\n", op);
@@ -659,7 +983,7 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
 
   if (!export)
     {
-      amk_capture_begin (&capture);
+      amk_capture_begin_to (&capture, out);
       rc = js_run_chunk (ctx, prog, 0);
       amk_capture_end (&capture, out);
       return rc;
@@ -673,6 +997,18 @@ js_run (void *state, struct amk_sink *out, const char *op, const char *prog)
     rc = js_export_globals (ctx, before, out);
   JS_FreeValue (ctx, before);
   return rc;
+}
+
+__attribute__ ((visibility ("default"))) int
+js_exec (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "exec", prog);
+}
+
+__attribute__ ((visibility ("default"))) int
+js_import (void *state, struct amk_sink *out, const char *prog)
+{
+  return js_run_op (state, out, "import", prog);
 }
 
 /* The hook primitive: amk.on[event], when the state holds a function there, is called with the event as an object. Its print goes to stderr, and an error reports there and is otherwise ignored. */

@@ -1,0 +1,355 @@
+#
+# payload/lib/dsys/petri.amk:
+#  petri nets: JSON under @petri, read once by petri.jq into variables, each
+#  place a pool <net>.<place>; <net>.run fires in two halves, inputs then
+#  outputs, with agoal steps in flight as jobs counted in <t>.busy. a run
+#  ends at the final marking, fails dead, or waits while places are open.
+#
+petri._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+$(amk.require jq)
+load dsys/job
+
+petri.max_firings ?= 1000
+petri.patience ?=
+petri.poll_ms ?= 50
+petri._n := 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
+
+# A query of the net's workspace, the plan, and the plan again after a change.
+petri._q = $(jq.ns $(1), get, -r $(2))
+petri._jq = -r -L $(petri._lib)
+petri._plan = $(jq.argv $(petri._jq),include "petri"; load("$(1)"),$(2))
+petri._replan = $(jq.argv $(petri._jq),include "petri"; grow("$(1)"),$(2))
+$(amk.fxn! petri._q)
+$(amk.fxn! petri._plan)
+$(amk.fxn! petri._replan)
+
+# A definition whose version moved since its plan is planned again when read.
+petri._planned = $(eval $(1).planned := $(jq.ns $(1), version))
+petri._fresh = $(if $(filter $($(1).planned),$(jq.ns $(1), version)),, \
+  $(eval $(petri._replan $(1),$(jq.ns $(1), get, -c .))) \
+  $(call petri._open.new,$(1))$(call petri._planned,$(1)))
+
+# An arc as place:weight, read apart, and the pool behind a place.
+petri._place = $(word 1,$(subst :, ,$(1)))
+petri._weight = $(word 2,$(subst :, ,$(1)))
+petri._times = $(wordlist 1,$(1),$(petri._n))
+petri._pool = $(or \
+  $(call petri._weight,$(filter $(2):%,$($(1).pools))),$(1).$(2))
+petri._size = $(amk.pool.size $(call petri._pool,$(1),$(2)))
+$(amk.fxn! petri._size)
+
+# A transition's in-flight count, and any name's count: a busy one, or a place.
+petri._busy = $(words $(foreach p,$($(1).inflight), \
+  $(if $(filter $(2),$($(1).job.$(p))),x)))
+petri._count = $(strip $(if $(filter $(2),$($(1).busy)), \
+  $(call petri._busy,$(1),$(2:%.busy=%)),$(call petri._size,$(1),$(2))))
+
+# Each place a pool, open to the environment if declared so, else the net's strategy.
+petri._strategy = $(if $(filter $(2),$($(1).open)),open,$($(1).strategy))
+petri._open.count = $(amk.pool $(1).$(2), $($(1).init.$(2)), \
+  strategy=$(call petri._strategy,$(1),$(2)))
+petri._open.labels = $(if $($(1).init.$(2)), \
+  $(amk.pool $(1).$(2), labels=$($(1).init.$(2)), \
+    strategy=$(call petri._strategy,$(1),$(2))), \
+  $(amk.pool $(1).$(2), labeled=true, \
+    strategy=$(call petri._strategy,$(1),$(2))))
+petri._open.place = $(if $(filter $(2),$($(1).labeled)), \
+  $(call petri._open.labels,$(1),$(2)),$(call petri._open.count,$(1),$(2)))
+petri._open = $(foreach p,$($(1).places),$(call petri._open.place,$(1),$(p)))
+
+# A net loaded again keeps the pools and tokens of the places it opened.
+petri._open.new = $(foreach p,$($(1).places), \
+  $(if $(amk.pool $(1).$(p)),,$(call petri._open.place,$(1),$(p))))
+
+# What jq reads: each count, and a guarded place's label, taken and put back.
+petri._comma := ,
+petri._space := $(subst ,, )
+petri._json = {$(subst $(petri._space),$(petri._comma),$(1))}
+petri._list = [$(subst $(petri._space),$(petri._comma),$(patsubst %,"%",$(1)))]
+petri._counted = $($(1).places) $($(1).busy) \
+  $(foreach e,$($(1).pools),$(call petri._place,$(e)))
+petri._snapshot = $(call petri._json,$(strip \
+  $(foreach p,$(call petri._counted,$(1)), \
+    "$(p)":$(call petri._count,$(1),$(p)))))
+petri._peek = $(if $(filter 1,$(call petri._size,$(1),$(2))), \
+  $(foreach l,$(amk.pool.consume $(1).$(2)), \
+    $(amk.pool.produce $(1).$(2), $(l))"$(2)":["$(l)"]))
+petri._peeks = $(call petri._json,$(strip \
+  $(foreach p,$($(1).guarded),$(call petri._peek,$(1),$(p)))))
+
+# A jq program over the net: library in scope, the net as input, snapshot bound.
+petri._exec = $(jq.ns $(1), get, -r -L $(petri._lib) --arg net $(1) \
+  --argjson marking '$(call petri._snapshot,$(1))' \
+  $(if $(filter undefined,$(origin 3)),,$(3)) include "petri"; $(2))
+
+# The exec forms: a program with the libraries, the net and the run's state.
+petri._with = $(if $(filter-out petri,$($(1).form)), \
+  import "$($(1).form)" as $($(1).form);)
+petri._source = $(if $($(1).source),$(jq.ns $($(1).source), get, -c .),null)
+petri._all = $(call petri._json,$(strip \
+  $(foreach p,$($(1).labeled),$(call petri._peek,$(1),$(p)))))
+petri.exec = $(call petri._fresh,$(1))$(call petri._exec,$(1), \
+  $(call petri._with,$(1)) $(2), \
+  --argjson labels '$(call petri._all,$(1))' \
+  --argjson trace '$(call petri._list,$($(1).trace))' \
+  --argjson inflight '$(call petri._list,$($(1).inflight))' \
+  --argjson source '$(call petri._source,$(1))')
+petri.exec.at = $(call petri._say, \
+  $(call petri.exec,$(1),$(amk.val.dedent $(2))))
+petri.exec.via = $(call petri.exec.at,<net>,$(1))
+petri.exec.star = $(subst <net>,$(1),$(value petri.exec.via))
+
+# The loop's question, from one snapshot: the transition to fire or -, and met or -.
+petri._next = $(strip $(call petri._exec,$(1), \
+  next($$net; $$marking; $$labels; $$trace; $(petri.max_firings)), \
+  --argjson labels '$(call petri._peeks,$(1))' \
+  --argjson trace '$(call petri._list,$($(1).trace))'))
+
+# One token taken without waiting, kept as place:label so it can go back.
+petri._try = $(strip $(if $(filter $(2),$($(1).labeled)), \
+  $(foreach l,$(amk.pool.consume $(1).$(2), 0), \
+    $(eval $(1).$(3).token := $(l))$(eval $(1).$(3).taken += $(l)) \
+    $(eval $(1).$(3).got += $(2):$(l))y), \
+  $(if $(amk.pool.consume $(call petri._pool,$(1),$(2)), 0), \
+    $(eval $(1).$(3).got += $(2):1)y)))
+petri._undo = $(foreach g,$($(1).$(2).got), \
+  $(if $(filter $(call petri._place,$(g)),$($(1).labeled)), \
+    $(amk.pool.produce $(1).$(call petri._place,$(g)), $(call petri._weight,$(g))), \
+    $(amk.pool.produce $(call petri._pool,$(1),$(call petri._place,$(g))))))
+
+# Every input of a firing, or none: a token missing gives back those taken.
+define petri._grab
+$(strip
+  $(eval $(1).$(2).token :=)
+  $(eval $(1).$(2).taken :=)
+  $(eval $(1).$(2).got :=)
+  $(eval $(1).$(2).short :=)
+  $(foreach a,$($(1).$(2).in),
+    $(foreach n,$(call petri._times,$(call petri._weight,$(a))),
+      $(if $($(1).$(2).short),,
+        $(if $(call petri._try,$(1),$(call petri._place,$(a)),$(2)),,
+          $(eval $(1).$(2).short := y)))))
+  $(if $($(1).$(2).short),$(call petri._undo,$(1),$(2)),y))
+endef
+
+# A token given: its label into a labeled place, else one more into the pool.
+petri._put = $(if $(filter $(2),$($(1).labeled)), \
+  $(amk.pool.produce $(1).$(2), $(3)), \
+  $(amk.pool.produce $(call petri._pool,$(1),$(2))))
+
+# A step in place: its targets in order, the last value its output.
+petri.async := agoal agoal.maybe
+petri._say = $(if $(1),$(info $(1)))
+petri._tell = $(if $(filter output,$($(1).$(2).label)),, \
+  $(call petri._say,$($(1).$(2).output)))
+petri._run.goal = $(foreach r,$(3), \
+  $(eval $(1).$(2).output := $(amk.goal $(r))) \
+  $(call petri._tell,$(1),$(2)))
+petri._run.goal.maybe = $(foreach r,$(3), \
+  $(eval $(1).$(2).output := $(amk.goal.maybe $(r))) \
+  $(call petri._tell,$(1),$(2)) \
+  $(if $(filter failed,$(amk.goal.maybe.status)), \
+    $(eval $(1).$(2).outcome := failed)))
+
+# The variables a step binds, set in this process before it runs.
+petri._key = $(firstword $(subst =, ,$(1)))
+petri._val = $(patsubst $(call petri._key,$(1))=%,%,$(1))
+petri._bind = $(foreach b,$($(1).$(2).bind), \
+  $(eval $(call petri._key,$(b)) := $(call petri._val,$(b))))
+
+# A firing's first half, its inputs grabbed: its step run in place or launched.
+define petri._fire
+$(strip
+  $(eval $(1).firing := $(2))
+  $(eval $(1).$(2).outcome :=)
+  $(eval $(1).$(2).output :=)
+  $(call petri._bind,$(1),$(2))
+  $(if $(filter $($(1).$(2).kind),$(petri.async)),
+    $(if $($(1).$(2).run),
+      $(call petri._launch,$(1),$(2)),$(call petri._done,$(1),$(2))),
+    $(if $($(1).$(2).run),
+      $(call petri._run.$($(1).$(2).kind),$(1),$(2),$($(1).$(2).run)))
+    $(call petri._done,$(1),$(2))))
+endef
+
+# An agoal step as a job of this image, kept in flight with its firing's labels.
+petri._launch = $(foreach p,$(amk.goal.spawn $($(1).$(2).run)), \
+  $(eval $(1).inflight += $(p)) \
+  $(eval $(1).job.$(p) := $(2)) \
+  $(eval $(1).job.$(p).token := $($(1).$(2).token)) \
+  $(eval $(1).job.$(p).taken := $($(1).$(2).taken)))
+
+# A firing's second half: jq names the gives and the state, make gives them.
+petri._firing = $(call petri._json,"t":"$(2)" \
+  "outcome":"$($(1).$(2).outcome)" "token":"$($(1).$(2).token)" \
+  "output":"$(firstword $($(1).$(2).output))" \
+  "taken":$(call petri._list,$($(1).$(2).taken)))
+define petri._done
+$(strip
+  $(eval $(call petri._exec,$(1),fire($$net; $$firing), \
+    --argjson firing '$(call petri._firing,$(1),$(2))'))
+  $(foreach g,$($(1).$(2).gives),
+    $(call petri._put,$(1),$(call petri._place,$(g)),$(call petri._weight,$(g))))
+  $(eval $(1).trace += $(2))
+  $(if $($(1).inflight),,$(call petri._invariants,$(1),$(2))))
+endef
+
+# A finished job lands: its firing's labels back, its outcome from its status.
+petri._rec = $(jq.argv -r,.$(2),$(1))
+petri._outcome = $(if $(filter success,$(call petri._rec,$(1),status)), \
+  success,failed)
+define petri._land
+$(strip
+  $(foreach p,$(call petri._rec,$(2),pid),
+    $(if $($(1).job.$(p)),,$(error $(1): job $(p) is not one of the net's))
+    $(if $(filter stopped,$(call petri._rec,$(2),status)),,
+      $(foreach t,$($(1).job.$(p)),
+        $(eval $(1).inflight := $(filter-out $(p),$($(1).inflight)))
+        $(eval $(1).$(t).token := $($(1).job.$(p).token))
+        $(eval $(1).$(t).taken := $($(1).job.$(p).taken))
+        $(eval $(1).$(t).outcome := $(call petri._outcome,$(2)))
+        $(if $(and $(filter agoal,$($(1).$(t).kind)),
+            $(filter failed,$($(1).$(t).outcome))),
+          $(error $(1): step $(t) failed as job $(p)))
+        $(call petri._done,$(1),$(t))))))
+endef
+
+# After each firing every invariant holds, or the run stops.
+petri._invariants = $(call petri._exec,$(1),invariants($$net; "$(2)"; $$marking))
+
+# Patience: sleep a tick at a time until a firing is enabled or the final marking holds.
+petri._tick = $(if $(amk.pool petri.tick),,$(amk.pool petri.tick, 0)) \
+  $(if $(amk.pool.acquire petri.tick, $(petri.poll_ms)),)
+petri._round = $(jq.argv -r -n, [range($(if $(petri.patience), \
+  $(petri.patience) * 1000 / $(petri.poll_ms) | ceil,600))] \
+  | map(tostring) | join(" "))
+petri._wait = $(eval $(1).awake :=)$(foreach i,$(petri._round), \
+  $(if $($(1).awake),,$(petri._tick)$(if \
+    $(filter-out -,$(call petri._next,$(1))),$(eval $(1).awake := y))))
+petri._patience = $(call petri._wait,$(1))$(if $($(1).awake), \
+  $(call petri._loop,$(1)),$(if $(petri.patience), \
+    $(error $(1): quiescent for $(petri.patience)s, nothing enabled and \
+      nothing arrived in $($(1).open)),$(call petri._patience,$(1))))
+
+# The run: fire what is enabled, else land a job in flight, else end or wait.
+petri._loop = $(eval $(1).next := $(call petri._next,$(1))) \
+  $(foreach t,$(word 1,$($(1).next)), \
+    $(if $(filter -,$(t)), \
+      $(if $($(1).inflight), \
+        $(call petri._land,$(1),$(amk.job.any $($(1).inflight))) \
+        $(call petri._loop,$(1)), \
+        $(if $(filter met,$(word 2,$($(1).next))),,$(if $($(1).open), \
+          $(call petri._patience,$(1))))), \
+      $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t))) \
+      $(call petri._loop,$(1))))
+petri._final = $(call petri._exec,$(1),stuck($$net; $$marking))
+petri.run = $(strip $(call petri._fresh,$(1)) \
+  $(call petri._loop,$(1))$(call petri._final,$(1)))
+$(amk.fxn! petri.run)
+
+# One firing, the first enabled, or none: the transition fired is the value.
+petri.step = $(strip $(call petri._fresh,$(1)) \
+  $(eval $(1).next := $(call petri._next,$(1))) \
+  $(foreach t,$(filter-out -,$(word 1,$($(1).next))), \
+    $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t))$(t))))
+$(amk.fxn! petri.step)
+
+# The marking: every place and busy count as name=count, or one name's count.
+petri.marking = $(strip $(if $(2),$(call petri._count,$(1),$(2)), \
+  $(foreach p,$($(1).places) $($(1).busy),$(p)=$(call petri._count,$(1),$(p)))))
+$(amk.fxn! petri.marking)
+
+# A transition's state: pending, the result its rule labels, or fired.
+petri.state = $($(1).$(2).state)
+petri.states = $(strip $(foreach t,$($(1).transitions),$(t)=$($(1).$(t).state)))
+$(amk.fxn! petri.state)
+$(amk.fxn! petri.states)
+
+# A net from its JSON: planned, pools opened, a __main__ by the form's runner.
+petri._own = $(if $(filter undefined,$(origin $($(1).form).$(2))), \
+  petri.$(2),$($(1).form).$(2))
+petri.run.rule = $(1).__main__:; $$(call $(call petri._own,$(1),run),$(1))
+@amk.fxn!
+define petri.load
+$(strip
+  $(jq.import $(1), $(2))
+  $(eval $(1).form := $(if $(filter undefined,$(origin 3)),petri,$(3)))
+  $(eval $(1).source ?= $(1))
+  $(eval $(petri._plan $(1),$(2)))
+  $(call petri._planned,$(1))
+  $(amk.fxn! $(1).exec, petri.exec, $(1))
+  $(amk.fxn! $(1).step, petri.step, $(1))
+  $(amk.fxn! $(1).version, petri.version, $(1))
+  $(eval $(1).exec_star = $(call petri.exec.star,$(1)))
+  $(foreach e,$($(1).pools),
+    $(if $(amk.pool $(call petri._weight,$(e))),,
+      $(error $(1): place $(call petri._place,$(e)) names pool
+        $(call petri._weight,$(e)), which is not open)))
+  $(call petri._open,$(1))
+  $(amk.fxn! $(1).marking, petri.marking, $(1))
+  $(amk.fxn! $(1).state, $(call petri._own,$(1),state), $(1))
+  $(amk.fxn! $(1).states, petri.states, $(1))
+  $(eval petri.goal := $(.DEFAULT_GOAL))
+  $(eval .PHONY: $(1).__main__)
+  $(eval $(call petri.run.rule,$(1)))
+  $(eval .DEFAULT_GOAL := $(petri.goal)))
+endef
+
+# A loaded net planned again, its value updated in place.
+@amk.fxn!
+define petri.reload
+$(strip
+  $(jq.ns $(1), update, $(2))
+  $(eval $(petri._replan $(1),$(2)))
+  $(call petri._open.new,$(1))
+  $(call petri._planned,$(1)))
+endef
+
+# Late registration: the source updated, checked as the joiner, planned again.
+petri.compile = $(jq.ns $(1), get, -c .)
+$(amk.fxn! petri.compile)
+petri.update.who = $(if $(filter undefined,$(origin 3)),$(1),$(3))
+define petri.update
+$(strip
+  $(jq.ns $($(1).source), update, $(2))
+  $(amk.schema.text $(call petri.update.who,$(1),$(2),$(3)),
+    $(jq.ns $($(1).source), get, -c .), $($($(1).form).__schema__))
+  $(call petri.reload,$(1),$(call $($(1).form).compile,$(1))))
+endef
+$(amk.fxn! petri.update)
+
+# The at lines @petri and @petri.import: the JSON as its net, a file named bare.
+petri.__schema__ := dsys/schema/petri.json
+petri.named = $(patsubst %.$(2),%,$(1))
+petri.pnml = $(awk.argv -f $(petri._lib)/pnml.awk,-,$(1))
+petri.text = $(if $(filter <%,$(firstword $($(1)))), \
+  $(call petri.pnml,$($(1))),$(amk.val.json5 $(1)))
+petri.at = $(call petri.load,$(1),$(call petri.text,$(2)))
+petri_star = $(call petri.at,$(call petri.named,$(1),petri),$(1))
+petri.import_star = $(call petri.at, \
+  $(call petri.named,$(call petri.named,$(1),petri),pnml),$(1))
+
+# The at line @<engine>.target: the net, and a phony target of its name.
+petri.target = $(eval petri.goal := $(.DEFAULT_GOAL))$(eval .PHONY: $(1)) \
+  $(eval $(1): $(1).__main__)$(eval .DEFAULT_GOAL := $(petri.goal))
+petri.target_star = $(call petri_star,$(1)) \
+  $(call petri.target,$(call petri.named,$(1),petri))
+
+# The at line @<engine>.exec (net): a program over the net, printed at parse.
+petri.exec.net = $(or $(firstword $(2)), \
+  $(error @$(3).exec: $(1): name the net in parentheses))
+petri.exec.who = $(if $(filter undefined,$(origin 3)),petri,$(3))
+petri.exec_star = $(call petri.exec.at, \
+  $(call petri.exec.net,$(1),$(2),$(call petri.exec.who,$(1),$(2),$(3))),$(1))
+$(amk.fxn! petri.exec)
+
+# The data variety: a net from text or empty, its version, and a wait past one.
+petri.empty := {"places":{},"transitions":[],"arcs":[]}
+petri.create = $(call petri.load,$(1), \
+  $(if $(filter undefined,$(origin 2)),$(petri.empty),$(2)))
+petri.version = $(jq.ns $($(1).source), version)
+petri.wait = $(jq.ns $($(1).source), wait, $(2))
+$(amk.fxn! petri.create)
+$(amk.fxn! petri.version)
+$(amk.fxn! petri.wait)
+$(amk.engine petri, guest=jq, aliases=pnml)

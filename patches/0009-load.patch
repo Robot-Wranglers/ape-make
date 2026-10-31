@@ -1,0 +1,25 @@
+load.c: a load line is amk's, since an ape cannot dlopen: the file goes to the engine that claims its extension.
+
+--- a/src/load.c
++++ b/src/load.c
+@@ -243,14 +243,14 @@
+
+ #else
+
++#include "filedef.h"
++#include "amk.h"
++
++/* No object loads into an ape, so a load line is amk's: the file goes to the engine that claims its extension.  */
+ int
+-load_file (const floc *flocp, struct file *file UNUSED, int noerror)
++load_file (const floc *flocp, struct file *file, int noerror)
+ {
+-  if (! noerror)
+-    O (fatal, flocp,
+-       _("The 'load' operation is not supported on this platform"));
+-
+-  return 0;
++  return amk_load_file (flocp, file->name, noerror);
+ }
+
+ int

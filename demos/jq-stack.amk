@@ -1,0 +1,51 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/jq-stack.amk:
+#  jq.import: a define's json as a named workspace
+#  that make reads and updates through its handles.
+#
+
+# The at line makes workspace cfg (cfg.get, .update, .load) from the define.
+@jq.import
+define cfg
+  {"name": "amk", "engines": ["lua", "s7"], "jobs": 2}
+endef
+
+# update keeps its first output; a handle takes one argument, commas and all.
+$(cfg.update .engines += ["js"] | .jobs += 1)
+
+# A workspace is a queue as easily: update keeps the rest and returns the head.
+@jq.import
+define todo
+  ["build", "test", "ship"]
+endef
+first := $(todo.update .[1:], .[0])
+
+# Importing a name again replaces its value and keeps its handles.
+$(jq.import todo, ["release"])
+
+# A stack api over any workspace by name; push json with no top-level comma.
+stack.new = $(jq.import $1,[])
+stack.push = $(jq.ns $1, update, . + [$2])
+stack.pop = $(jq.ns $1, update, .[:-1], .[-1])
+stack.peek = $(jq.ns $1, get, .[-1])
+stack.depth = $(jq.ns $1, get, length)
+
+$(call stack.new,undo)
+$(call stack.push,undo,"type a")
+$(call stack.push,undo,"type b")
+undone := $(call stack.pop,undo)
+
+summary := $(cfg.get -r .name) runs $(cfg.get -r .engines | join(" ")) \
+  with $(cfg.get .jobs) jobs; first was $(first), now $(todo.get -r .[0])
+
+__main__:
+	echo "$(summary)"
+	$(if $(filter 3,$(cfg.get .jobs)),,\
+	  $(error jobs should be 3, got $(cfg.get .jobs)))
+	$(if $(filter release,$(todo.get -r .[0])),,\
+	  $(error the second import should replace todo))
+	echo 'undo: popped $(undone),' \
+	  'left $(call stack.peek,undo) of $(call stack.depth,undo)'
+	$(if $(filter 1,$(call stack.depth,undo)),,\
+	  $(error the undo stack should hold one entry after a pop))

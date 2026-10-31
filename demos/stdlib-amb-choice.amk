@@ -1,0 +1,22 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-choice.amk
+#
+
+__main__: choice
+
+@s7.target
+define choice
+  (load "amb.scm" (rootlet))
+  (format #t "odd tens: ~A~%"
+    (amb-collect
+      (lambda ()
+        (let ((x (amb '(1 2 3 4))))
+          (if (even? x) (fail))
+          (* x 10)))))
+  (format #t "pairs: ~A~%"
+    (amb-collect
+      (lambda ()
+        (let* ((x (amb '(1 2))) (y (amb '(a b))))
+          (list x y)))))
+endef

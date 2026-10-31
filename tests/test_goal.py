@@ -1,10 +1,10 @@
 """Pins the value channel.
 
-`$(goal name)` brings a goal up to date and answers its value. An imported target that
-something references keeps its output in a file under the goal directory and reruns when
-a value it reads is newer; any other runs when asked and keeps no file. A body reaches
-the engine as written but for `@x@`, a reference to the goal x in any case: an edge, so
--j orders the targets, and the value's raw text. A plain file target has a value too.
+`$(amk.goal name)` brings a goal up to date and answers its value. A target something references
+keeps its output under the goal directory and reruns when a value it reads is newer, imported
+body or shell recipe alike; any other runs when asked and keeps no file. A body reaches the
+engine as written but for `>>x<<`, a reference to the goal x in any case: an edge, so -j orders
+the targets, and the value's raw text. A marked file target, or one with no recipe, is its file.
 """
 
 import time
@@ -17,15 +17,15 @@ targets = "\n".join([
   "@lua.import.target",
   "define base",
   "local f = io.open('base.count', 'a') f:write('x\\n') f:close()",
-  "print(tonumber(io.open('input.txt'):read('a')) + @seed@)",
+  "print(tonumber(io.open('input.txt'):read('a')) + >>seed<<)",
   "endef",
   "@micropy.import.target",
   "define doubled",
-  "print(int('@base@') * 2)",
+  "print(int('>>base<<') * 2)",
   "endef",
   "@js.import.target",
   "define both",
-  'print("@base@" + "/" + "@doubled@")',
+  'print(">>base<<" + "/" + ">>doubled<<")',
   "endef",
   "seed := 5",
   "$(shell mkdir -p .amk/goals)",
@@ -76,28 +76,28 @@ diamond = "\n".join([
   "@lua.import.target",
   "define report",
   ran("report"),
-  "print('@total@ over @count@')",
+  "print('>>total<< over >>count<<')",
   "endef",
   "@lua.import.target",
   "define total",
   ran("total"),
-  "local n = 0 for x in ('@sorted@'):gmatch('%S+') do n = n + x end print(n)",
+  "local n = 0 for x in ('>>sorted<<'):gmatch('%S+') do n = n + x end print(n)",
   "endef",
   "@lua.import.target",
   "define count",
   ran("count"),
-  "print(select(2, ('@sorted@'):gsub('%S+', '')))",
+  "print(select(2, ('>>sorted<<'):gsub('%S+', '')))",
   "endef",
   "@lua.import.target",
   "define sorted",
   ran("sorted"),
-  "local xs = {} for x in ('@numbers.txt@'):gmatch('%S+') do xs[#xs + 1] = tonumber(x) end",
+  "local xs = {} for x in ('>>numbers.txt<<'):gmatch('%S+') do xs[#xs + 1] = tonumber(x) end",
   "table.sort(xs) print(table.concat(xs, ' '))",
   "endef",
   "@lua.import.target",
   "define aside",
   ran("aside"),
-  "print('aside: @other.txt@')",
+  "print('aside: >>other.txt<<')",
   "endef",
   "numbers.txt other.txt: ;",
   "",
@@ -166,7 +166,7 @@ def test_a_failed_target_keeps_failing_under_delete_on_error(amk, tmp_path):
     "@lua.import.target",
     "define down",
     ran("down"),
-    "print('got [@up@]')",
+    "print('got [>>up<<]')",
     "endef",
     "",
   ])
@@ -238,7 +238,7 @@ def test_a_value_is_kept_only_for_a_body_that_names_it(amk, tmp_path):
     "@lua.import.target",
     "define reader",
     ran("reader"),
-    "print('read @named@')",
+    "print('read >>named<<')",
     "endef",
     "",
   ]))
@@ -255,8 +255,9 @@ def test_a_file_target_is_a_value_too(amk, tmp_path):
   mk.write_text("\n".join([
     "@lua.import.target",
     "define shout",
-    "print(string.upper('@words.txt@'))",
+    "print(string.upper('>>words.txt<<'))",
     "endef",
+    ".AMK_FILE: words.txt",
     "words.txt: ; $(file >$@,hello there)",
     "",
   ]))
@@ -279,12 +280,104 @@ def test_a_plain_rule_reads_a_value_at_recipe_time(amk, tmp_path):
     "print(6 * 7)",
     "endef",
     "show: answer",
-    "\t@echo got=$(goal answer)",
+    "\t@echo got=$(amk.goal answer)",
     "",
   ]))
   r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert "got=42" in r.stdout, r.stdout
+
+
+HANDLE = {
+  "lua": "$(lua.exec local h = amk.agoal('answer') print(amk.goal('answer'), h.result()))",
+  "micropy": "$(micropy.exec import amk, asyncio; print(amk.goal('answer'), asyncio.run(amk.agoal('answer'))))",
+  "js": "$(js.exec print(amk.goal('answer'), await amk.agoal('answer')))",
+  "s7": "$(s7.exec (display (list (amk-goal \"answer\") (amk-call-end (car (amk-agoal \"answer\"))))))",
+}
+
+
+@pytest.mark.parametrize("engine", sorted(HANDLE))
+def test_a_guest_reaches_goal_and_agoal_through_its_handle(amk, engines, tmp_path, engine):
+  if engine not in engines or "lua" not in engines:
+    pytest.skip(f"this amk carries no lua or {engine}")
+  mk = tmp_path / "handle.mk"
+  mk.write_text("\n".join([
+    "@lua.import.target",
+    "define answer",
+    "print(6 * 7)",
+    "endef",
+    f"$(info [{HANDLE[engine]}])",
+    "all:",
+    "\t@true",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "42" in r.stdout and r.stdout.count("42") >= 2, r.stdout
+
+
+FAILING = {
+  "lua": "local ok, err = pcall(amk.goal, 'broken')\nprint(ok, err)",
+  "micropy": "import amk\ntry:\n    amk.goal('broken')\nexcept Exception as e:\n    print(False, e)",
+  "js": "try { amk.goal('broken'); } catch (e) { print(false, e.message); }",
+  "s7": "(display (catch #t (lambda () (amk-fxn \"amk.goal\" \"broken\")) (lambda (type info) (list #f (apply format #f info)))))",
+}
+
+
+@pytest.mark.parametrize("engine", sorted(FAILING))
+def test_a_failed_goal_raises_in_the_guest_instead_of_ending_make(amk, engines, tmp_path, engine):
+  if engine not in engines or "lua" not in engines:
+    pytest.skip(f"this amk carries no lua or {engine}")
+  mk = tmp_path / "failing.mk"
+  mk.write_text("\n".join([
+    "@lua.import.target",
+    "define broken",
+    "error('no')",
+    "endef",
+    "define prog",
+    FAILING[engine],
+    "endef",
+    f"$(info [$({engine}* prog)])",
+    "all:",
+    "\t@echo still running",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "the goal failed" in r.stdout and "still running" in r.stdout, r.stdout + r.stderr
+
+
+def test_goal_maybe_answers_a_failure_as_status_instead_of_ending_make(amk, tmp_path):
+  mk = tmp_path / "maybe.mk"
+  mk.write_text("\n".join([
+    "good:",
+    "\t@echo fine",
+    "bad:",
+    "\t@echo partial; exit 3",
+    "all:",
+    "\t@echo '[$(amk.goal.maybe good)] [$(amk.goal.maybe.status)]'",
+    "\t@echo '[$(amk.goal.maybe bad)] [$(amk.goal.maybe.status)]'",
+    "\t@echo '[$(amk.goal.maybe good)] [$(amk.goal.maybe.status)]'",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk), "all"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[fine] [success]\n[] [failed]\n[fine] [success]" in r.stdout, r.stdout + r.stderr
+
+
+def test_a_failed_goal_at_an_expansion_is_fatal(amk, tmp_path):
+  mk = tmp_path / "fatal.mk"
+  mk.write_text("\n".join([
+    "broken:",
+    "\t@exit 1",
+    "x := $(amk.goal broken)",
+    "all:",
+    "\t@echo never",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
+  assert r.returncode != 0, r.stdout + r.stderr
+  assert "the goal failed" in r.stderr and "never" not in r.stdout, r.stdout + r.stderr
 
 
 @pytest.mark.engines("micropy")
@@ -313,9 +406,9 @@ def test_awk_and_jq_imported_targets_take_their_program_their_own_way(amk, tmp_p
     "define words",
     'BEGIN { print "a b c" }',
     "endef",
-    "@jq.import.target",
+    "@jq.import.target --null-input",
     "define count",
-    '"@words@" | split(" ") | length',
+    '">>words<<" | split(" ") | length',
     "endef",
     "",
   ]))
@@ -366,17 +459,18 @@ def test_amk_stdin_is_per_target_under_j(amk, tmp_path):
 def test_an_imported_target_reads_make_state_through_the_handle(amk, tmp_path):
   mk = tmp_path / "handle.mk"
   mk.write_text("\n".join([
+    "$(amk.mode dataflow)",
     "flavor := plain",
     "@lua.import.target",
     "define probe",
-    'print(amk.expand("$(goal.dir) $(flavor)") .. " " .. amk.var.flavor)',
+    'print(amk.expand("$(amk.dataflow_dir) $(flavor)") .. " " .. amk.var.flavor)',
     'amk.var.flavor = "changed"',
     "endef",
     "show: probe",
     "\t@echo after=$(flavor)",
     "",
   ]))
-  r = sh(amk, ["-s", "-f", str(mk), "goal.dir=vals", "show"], cwd=tmp_path, timeout=120)
+  r = sh(amk, ["-s", "-f", str(mk), "amk.dataflow_dir=vals", "show"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
   assert r.stdout.split("\n")[:2] == ["vals plain plain", "after=plain"], r.stdout + r.stderr
 
@@ -395,7 +489,7 @@ def test_independent_imported_targets_run_at_once_under_j(amk, tmp_path):
     "endef",
     "@lua.import.target",
     "define total",
-    "print(@slow1@ + @slow2@)",
+    "print(>>slow1<< + >>slow2<<)",
     "endef",
     "",
   ]))
@@ -437,7 +531,7 @@ def test_a_value_is_spliced_raw(amk, tmp_path):
     "endef",
     "@s7.import.target",
     "define summed",
-    '(format #t "~A ~S" (apply + (list @g1@)) "@g1@")',
+    '(format #t "~A ~S" (apply + (list >>g1<<)) ">>g1<<")',
     "endef",
     "",
   ]))
@@ -452,7 +546,7 @@ def test_a_reference_folds_case_and_may_come_first(amk, tmp_path):
   mk.write_text("\n".join([
     "@lua.import.target",
     "define shown",
-    "print('@JSON@ @Json@')",
+    "print('>>JSON<< >>Json<<')",
     "endef",
     "@lua.import.target",
     "define json",
@@ -467,7 +561,7 @@ def test_a_reference_folds_case_and_may_come_first(amk, tmp_path):
 
 @pytest.mark.engines("lua")
 def test_a_file_on_disk_is_no_target_without_a_rule(amk, tmp_path):
-  body = ["@lua.import.target", "define shown", "print('@Input.txt@')", "endef", ""]
+  body = ["@lua.import.target", "define shown", "print('>>Input.txt<<')", "endef", ""]
   mk = tmp_path / "disk.mk"
   mk.write_text("\n".join(body))
   (tmp_path / ".amk/goals").mkdir(parents=True)
@@ -477,7 +571,7 @@ def test_a_file_on_disk_is_no_target_without_a_rule(amk, tmp_path):
   dirty = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
   for r in (clean, dirty):
     assert r.returncode == 2, r.stdout + r.stderr
-    assert "@Input.txt@ in imported target 'shown' names no target" in r.stderr, r.stderr
+    assert ">>Input.txt<< in imported target 'shown' names no target" in r.stderr, r.stderr
   assert clean.stderr == dirty.stderr, "what is on disk changed how the makefile reads"
 
   mk.write_text("\n".join(body + ["input.txt: ;", ""]))
@@ -488,16 +582,145 @@ def test_a_file_on_disk_is_no_target_without_a_rule(amk, tmp_path):
 
 @pytest.mark.engines("lua")
 def test_a_reference_must_name_exactly_one_target(amk, tmp_path):
-  head = ["@lua.import.target", "define shown", "print('@value@')", "endef"]
+  head = ["@lua.import.target", "define shown", "print('>>value<<')", "endef"]
   one = ["@lua.import.target", "define {0}", "print(1)", "endef"]
   mk = tmp_path / "none.mk"
   mk.write_text("\n".join(head + [""]))
   r = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
   assert r.returncode != 0, r.stdout
-  assert "@value@ in imported target 'shown' names no target" in r.stderr, r.stderr
+  assert ">>value<< in imported target 'shown' names no target" in r.stderr, r.stderr
   assert "spaces" in r.stderr, r.stderr
   mk = tmp_path / "two.mk"
   mk.write_text("\n".join(head + [l.format("Value") for l in one] + [l.format("VALUE") for l in one] + [""]))
   r = sh(amk, ["-s", "-f", str(mk), "shown"], cwd=tmp_path, timeout=120)
   assert r.returncode != 0, r.stdout
   assert "names both" in r.stderr and "'Value'" in r.stderr and "'VALUE'" in r.stderr, r.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="0315c37c59: >>goal<< under the default mode")
+@pytest.mark.engines("awk")
+def test_default_mode_writes_nothing_in_the_tree(amk, tmp_path):
+  def text(n):
+    return "\n".join([
+      "@awk.import.target",
+      "define base",
+      f"BEGIN {{ print {n} }}",
+      "endef",
+      "@awk.import.target",
+      "define show",
+      "BEGIN { print >>base<< }",
+      "endef",
+      "",
+    ])
+  mk = tmp_path / "plain.mk"
+  mk.write_text(text(1))
+  before = set(tmp_path.iterdir())
+  r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0 and r.stdout.strip() == "1", r.stdout + r.stderr
+  assert set(tmp_path.iterdir()) == before, "a value was kept in the working directory"
+  mk.write_text(text(2))
+  r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
+  assert r.stdout.strip() == "2", "a value survived a change to its program"
+
+
+counted_recipe = "\n".join([
+  "counted:",
+  "\techo x >> counted.count",
+  "\techo 7",
+  "@lua.import.target",
+  "define a",
+  "print('a >>counted<<')",
+  "endef",
+  "@lua.import.target",
+  "define b",
+  "print('b >>counted<<')",
+  "endef",
+  "both: a b",
+  "",
+])
+
+
+def runs(tmp_path, name="counted"):
+  path = tmp_path / f"{name}.count"
+  return len(path.read_text().splitlines()) if path.exists() else 0
+
+
+@pytest.mark.engines("lua")
+def test_a_recipe_targets_output_is_its_value(amk, tmp_path):
+  mk = tmp_path / "recipe.mk"
+  mk.write_text("\n".join([
+    "downstream1:",
+    "\techo arbitrary data from any target",
+    "@lua.import.target",
+    "define shout",
+    "print(string.upper('>>downstream1<<'))",
+    "endef",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk), "shout"], cwd=tmp_path, timeout=120, stdin="")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "ARBITRARY DATA FROM ANY TARGET", r.stdout
+  r = sh(amk, ["-s", "-f", str(mk), "downstream1"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "arbitrary data from any target", "the name as a goal prints its value"
+
+
+@pytest.mark.engines("lua")
+def test_two_readers_of_a_recipe_value_share_one_run(amk, tmp_path):
+  mk = tmp_path / "shared.mk"
+  mk.write_text(counted_recipe)
+  r = sh(amk, ["-s", "-j2", "-f", str(mk), "both"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert sorted(r.stdout.split("\n")[:2]) == ["a 7", "b 7"], r.stdout
+  assert runs(tmp_path) == 1, "two readers ran the recipe twice"
+  r = sh(amk, ["-s", "-f", str(mk), "both"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert runs(tmp_path) == 1, "a kept recipe value with no inputs reran"
+
+
+@pytest.mark.engines("lua")
+def test_a_phony_recipe_value_is_computed_once_per_run(amk, tmp_path):
+  mk = tmp_path / "phony.mk"
+  mk.write_text(".PHONY: counted\n" + counted_recipe)
+  for _ in range(2):
+    r = sh(amk, ["-s", "-f", str(mk), "both"], cwd=tmp_path, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert sorted(r.stdout.split()) == ["7", "7", "a", "b"], r.stdout
+  assert runs(tmp_path) == 2, "a phony value was reused across runs, or ran twice in one"
+  mk.write_text(".AMK_NOCACHE: counted\n" + counted_recipe)
+  r = sh(amk, ["-s", "-f", str(mk), "both"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert runs(tmp_path) == 3, "a no-cache value was reused across runs"
+
+
+@pytest.mark.engines("lua")
+def test_a_file_writer_that_prints_nothing_wants_the_file_mark(amk, tmp_path):
+  mk = tmp_path / "writer.mk"
+  mk.write_text("\n".join([
+    "bad.txt:",
+    "\tprintf hello > $@",
+    "@lua.import.target",
+    "define read",
+    "print('>>bad.txt<<')",
+    "endef",
+    "",
+  ]))
+  r = sh(amk, ["-s", "-f", str(mk), "read"], cwd=tmp_path, timeout=120)
+  assert r.returncode != 0, r.stdout
+  assert "bad.txt wrote its file but printed nothing; mark it @amk.file" in r.stderr, r.stderr
+  assert (tmp_path / "bad.txt").read_text() == "hello", "the target variable did not name the target"
+
+
+@pytest.mark.engines("lua")
+def test_goal_reads_a_recipe_target(amk, tmp_path):
+  mk = tmp_path / "goal.mk"
+  mk.write_text("\n".join([
+    "answer:",
+    "\techo 42",
+    "show:",
+    "\t@echo got=$(amk.goal answer)",
+    "",
+  ]))
+  r = sh(amk, ["-f", str(mk), "show"], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "got=42", "the fork echoed a recipe line into the value: " + r.stdout

@@ -1,0 +1,48 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/actors-2.amk:
+#  goals under the s7 backend: a micropy goal that blocks in a sleep runs
+#  in its own process, so the s7 plex keeps scheduling while it sleeps.
+#  The supervisor polls each goal's exit between yields, and blocks only
+#  once every ready task is waiting on a job. A goal that exits nonzero
+#  is restarted on failure like any other member.
+#
+
+load actor
+
+__main__: g1.__main__
+
+@actor.group
+define g1
+  {
+    "backend": "s7",
+    "intensity": 3,
+    "children": {}
+  }
+endef
+
+# A goal that blocks: a micropy sleep that would hold the plex in process.
+@g1.actor/micropy {kind=goal restart=never}
+define sleeper
+  import time
+  print("sleeper: asleep")
+  time.sleep(1)
+  print("sleeper: awake")
+endef
+
+# A goal restarted on failure: it exits nonzero until its third start.
+@g1.actor/micropy {kind=goal restart=on-failure}
+define flaky
+  import amk, sys
+  start = int(amk.g1.get("-r .children.flaky.start_count"))
+  print("flaky: start %d" % start)
+  sys.exit(0 if start >= 3 else 1)
+endef
+
+# A scoped member: an s7 body ticking on the plex while the goals run.
+@g1.actor/s7 {kind=scoped restart=never}
+define ticker
+  (do ((n 1 (+ n 1))) ((> n 3))
+    (format #t "ticker: tick ~A~%" n)
+    (g1 'yield))
+endef

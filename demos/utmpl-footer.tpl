@@ -1,0 +1,1 @@
+-- {{project}} {{version}}, rendered by amk --

@@ -1,0 +1,58 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/workflow-release.amk:
+#  a release task graph under @workflow, compiled by dsys/workflow to a net:
+#  checkout, a test per guest with at most two holding a runner, package
+#  once every test succeeds, then publish; notify runs only if a need
+#  failed, so here it is skipped. The state table at the end is the result.
+#
+
+load dsys/workflow
+load dsys/pool
+
+__main__: release.__main__ show.after
+
+@pool
+define runners
+  { "size": 2 }
+endef
+
+@workflow
+define release
+  {
+    "tasks": {
+      "checkout": { "run": "checkout" },
+      // one test per engine, two at a time under the runners pool
+      "test":     { "run": "test", "needs": ["checkout"],
+                    "over": ["lua", "js", "micropy"], "pool": "runners" },
+      "package":  { "run": "package", "needs": ["test"] },
+      "publish":  { "run": "publish", "needs": ["package"] },
+      // runs only when package fails
+      "notify":   { "run": "notify", "needs": ["package"],
+                    "when": "failed" },
+    },
+  }
+endef
+
+checkout:
+	@echo "checkout"
+
+# A step run over a list reads its item as release.<task>.token.
+@lua.target
+define test
+  print("test " .. amk.var["release.test.token"])
+endef
+
+package:
+	@echo "package"
+
+publish:
+	@echo "publish"
+
+notify:
+	@echo "notify"
+
+show.after:
+	@echo "states: $(release.states )"
+	@echo "test: $(release.state test.join)"
+	@echo "net: $(words $(release.net )) words of compiled net"

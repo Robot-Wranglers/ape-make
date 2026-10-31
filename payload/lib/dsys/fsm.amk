@@ -1,0 +1,102 @@
+#
+# payload/lib/dsys/fsm.amk:
+#  state machines: an xstate machine config as JSON under @fsm, normalized
+#  by fsm.jq to the definition xstate serializes, checked against xstate's
+#  own schema, and compiled to a net that dsys/petri runs. <name>.definition
+#  reads the definition, <name>.net the net.
+#
+fsm._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+$(amk.require jq)
+load dsys/petri
+
+fsm.__schema__ := dsys/schema/fsm.json
+fsm._xstate := dsys/schema/xstate.machine.json
+
+# The config, a workspace beside the net, normalized or compiled in one call.
+fsm._run = $(jq.argv -c -L $(fsm._lib),include "fsm"; $(2), \
+  $(jq.ns $(1).fsm, get, -c .))
+fsm.definition = $(call fsm._run,$(1),normalize)
+fsm.compile = $(call fsm._run,$(1),compile)
+$(amk.fxn! fsm.definition)
+$(amk.fxn! fsm.compile)
+
+# @fsm and @fsm.import: the config kept as the source, checked as a definition.
+fsm.from = $(jq.import $(1).fsm, $(2)) \
+  $(eval $(1).source := $(1).fsm) \
+  $(amk.schema.text $(1), $(fsm.definition $(1)), $(fsm._xstate)) \
+  $(call petri.load,$(1),$(fsm.compile $(1)),fsm) \
+  $(amk.fxn! $(1).definition, fsm.definition, $(1)) \
+  $(amk.fxn! $(1).send, fsm.send, $(1)) \
+  $(amk.fxn! $(1).net, petri._q, $(1), -c .) \
+  $(call fsm._wire,$(1))
+
+# The net's fsm block: the start's entry actions, pickers, invoked states.
+fsm._comma := ,
+fsm._words = $(call petri._q,$(1),$(2) | join(" "))
+fsm._wire = $(eval $(1).event :=) \
+  $(eval $(1).enter := $(call fsm._words,$(1),.fsm.enter)) \
+  $(foreach s,$(call fsm._words,$(1),.fsm.invokers), \
+    $(eval $(1).$(s).output = $$($(1).$(s).invoke.output))) \
+  $(foreach p,$(call fsm._words,$(1),.fsm.pickers | to_entries \
+      | map("\(.key)=\(.value | map(join("+")) | join("/"))")), \
+    $(eval .PHONY: $(call petri._key,$(p))) \
+    $(eval $(call petri._key,$(p)):; @echo $$(call fsm._picks,$(1), \
+      $(call petri._val,$(p)))))
+
+# The run: the start configuration's entry actions, then the net.
+fsm.run = $(foreach a,$($(1).enter),$(call petri._say,$(amk.goal $(a)))) \
+  $(call petri.run,$(1))
+
+# The active states, which petri.load registers as the machine's state call.
+fsm.state = $(strip $(filter-out ev.% %.invoked %.choice, \
+  $(foreach p,$($(1).places), \
+    $(if $(filter 1,$(call petri.marking,$(1),$(p))),$(p)))))
+
+# A guard: a state of the configuration, a variable's value, a target's success.
+fsm._held = $(filter $(patsubst @%,%,$(2)), \
+  $(subst $(fsm._comma), ,$($(1).config)))
+fsm._ran = $(amk.goal.maybe $(1))$(filter success,$(amk.goal.maybe.status))
+fsm._var = $(filter-out undefined,$(origin $(1)))
+fsm._passed = $(if $(call fsm._var,$(2)),$($(2)),$(call fsm._ran,$(2)))
+fsm._in = $(if $(call fsm._held,$(1),$(2)),$(3))
+fsm._by = $(if $(call fsm._passed,$(1),$(2)),$(3))
+fsm._test = $(call fsm.$(if $(filter @%,$(2)),_in,_by),$(1),$(2),$(3))
+fsm._pass = $(if $(filter -,$(2)),$(3),$(call fsm._test,$(1),$(2),$(3)))
+fsm._next = $(words $(wordlist 1,$(1),$(petri._n)) x)
+fsm._ok = $(call fsm._pass,$(1),$(word $(3),$(2)),$(3))
+fsm._at = $(if $(word $(3),$(2)),$(if $(call fsm._ok,$(1),$(2),$(3)),$(3), \
+  $(call fsm._at,$(1),$(2),$(call fsm._next,$(3)))),0)
+fsm._pick = $(strip $(call fsm._at,$(1),$(2),1))
+fsm._picks = $(subst $(petri._space),-,$(strip $(foreach g,$(subst /, ,$(2)), \
+  $(call fsm._pick,$(1),$(subst +, ,$(g))))))
+
+# An event's place: its own, else the closest wildcard's, else none.
+fsm._under = $(patsubst ev.%._,%,$(filter ev.%._,$($(1).places)))
+fsm.route = $(or $(filter ev.$(2),$($(1).places)), \
+  $(lastword $(foreach p,$(call fsm._under,$(1)), \
+    $(if $(filter $(p).%,$(2)),ev.$(p)._))), \
+  $(filter ev._,$($(1).places)))
+fsm.send = $(foreach p,$(call fsm.route,$(1),$(2)), \
+  $(amk.pool.produce $(1).$(p)))
+$(amk.fxn! fsm.send)
+fsm.scxml = $(lua.exec io.write(amk.dsys.scxml.import("$(1)")))
+$(amk.fxn! fsm.scxml)
+fsm.text = $(if $(filter <%,$(firstword $($(1)))), \
+  $(call fsm.scxml,$(1)),$(amk.val.json5 $(1)))
+fsm.at = $(call fsm.from,$(1),$(call fsm.text,$(2)))
+fsm_star = $(call fsm.at,$(call petri.named,$(1),fsm),$(1))
+fsm.stem = $(call petri.named,$(call petri.named,$(1),fsm),scxml)
+fsm.import_star = $(call fsm.at,$(call fsm.stem,$(1)),$(1))
+fsm.target_star = $(call fsm_star,$(1)) \
+  $(call petri.target,$(call petri.named,$(1),fsm))
+fsm.exec_star = $(call petri.exec_star,$(1),$(2),fsm)
+$(amk.fxn! fsm.exec, petri.exec)
+
+# The data variety: a machine from text or empty, its version, and a wait.
+fsm.empty := {"initial":"idle","states":{"idle":{}}}
+fsm.create = $(call fsm.from,$(1), \
+  $(if $(filter undefined,$(origin 2)),$(fsm.empty),$(2)))
+$(amk.fxn! fsm.create)
+$(amk.fxn! fsm.version, petri.version)
+$(amk.fxn! fsm.wait, petri.wait)
+$(amk.engine fsm, guest=jq, aliases=scxml)

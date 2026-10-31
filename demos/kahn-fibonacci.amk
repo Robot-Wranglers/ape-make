@@ -1,0 +1,52 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/kahn-fibonacci.amk:
+#  Fibonacci as a Kahn network: a feedback loop whose initial tokens are its
+#  delay and its state, a process reading several channels in one firing, and
+#  a bounded stream, fuel, so it ends. step reads a, b and fuel and writes
+#  b, a+b back to its own channels and a+b to out: out gets 1 2 3 5 8 13 21 34.
+#
+
+load dsys/kahn
+
+__main__: fib.__main__ show.after
+
+@kahn
+define fib
+  {
+    // each channel's initial queue of tokens
+    "channels": {
+      "a": ["0"], "b": ["1"],
+      // one token per step, so eight steps run and then the net halts
+      "fuel": ["x", "x", "x", "x", "x", "x", "x", "x"],
+      "out": [],
+    },
+    "processes": {
+      "step": { "run": "step", "reads": ["a", "b", "fuel"],
+                "writes": ["a", "b", "out"] },
+      "emit": { "run": "emit", "reads": ["out"] },
+    },
+    // the token counts the net must end with
+    "final": { "a": 1, "b": 1 },
+  }
+endef
+
+# A firing takes one token per channel read; the labels come in read order.
+@lua.target
+define step
+  local a, b = amk.var["fib.step.taken"]:match("(%S+) (%S+)")
+  local next = tonumber(a) + tonumber(b)
+  amk.pool.produce("fib.a", b)
+  amk.pool.produce("fib.b", tostring(next))
+  amk.pool.produce("fib.out", tostring(next))
+endef
+
+@micropy.target
+define emit
+  import amk
+  print("fib", amk.var["fib.emit.token"])
+endef
+
+show.after:
+	@echo "marking: $(fib.marking )"
+	@echo "fired: $(fib.trace)"

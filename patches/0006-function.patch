@@ -1,0 +1,488 @@
+Hooks in function.c, the bridges into make's own function table, which stays static. The
+star builtin looks up the builtin it wraps, and a handle joins the table. amk's builtins
+take their rows in the table. The profiler times every builtin and every call of a macro,
+and a call keeps its argument count for amk.args. A function a guest defines is credited
+to the engine that defined it. The engine builtins
+register from the engine rows, each with a star twin. The guest handle's call runs a make
+function or macro, and a guest asks whether a name is one. A call that is an immediate
+assignment's whole value is armed with that variable's name once its arguments are expanded.
+
+--- a/src/function.c
++++ b/src/function.c
+@@ -22,6 +22,7 @@
+ #include "os.h"
+ #include "commands.h"
+ #include "debug.h"
++#include "amk.h"
+
+ #ifdef _AMIGA
+ #include "amiga.h"
+@@ -2485,7 +2486,112 @@
+    expand.  */
+
+ static char *func_call (char *o, char **argv, const char *funcname);
++
++static char *func_star (char *o, char **argv, const char *funcname);
++
++/* One handle, ns.op, or its star twin.  */
++void
++amk_handle_add (const char *ns, const char *op, size_t oplen, int star)
++{
++  struct function_table_entry *f = xcalloc (sizeof *f);
++  char *name = xmalloc (strlen (ns) + oplen + 3);
++  sprintf (name, "%s.%.*s%s", ns, (int) oplen, op, star ? "*" : "");
++  f->fptr.func_ptr = star ? func_star : func_handle;
++  f->name = name;
++  f->len = strlen (name);
++  f->minimum_args = 1;
++  f->maximum_args = 1;
++  f->expand_args = 1;
++  hash_insert (&function_table, f);
++  if (star)
++    amk_star_macro (name, 1);
++}
++
++/* The argument count of the innermost user function being expanded, its name included, zero outside any; the pending count is taken before a nested call pads its caller's extra numbers.  */
++static unsigned int amk_call_args;
++static unsigned int amk_call_pending;
++
++/* The bridge to that count for amk.args, its name left out.  */
++unsigned int
++amk_call_argc (void)
++{
++  return amk_call_args > 0 ? amk_call_args - 1 : 0;
++}
+
++/* One star argument: the dedented unexpanded value of the variable it names, or null when it names none and passes as written.  */
++static char *
++star_arg (const char *funcname, const char *arg, char **namep)
++{
++  const char *start = arg;
++  const char *end = arg + strlen (arg);
++  struct variable *v;
++  char *name, *text;
++  size_t width;
++  int bad;
++
++  while (ISSPACE (*start))
++    start++;
++  while (end > start && ISSPACE (end[-1]))
++    end--;
++  if (end == start)
++    return NULL;
++  v = lookup_variable (start, end - start);
++  if (v == NULL)
++    return NULL;
++  name = xstrndup (start, end - start);
++  text = amk_dedent (v->value, &width, &bad);
++  if (bad)
++    fatal (reading_file, strlen (funcname) + strlen (name) + INTSTR_LENGTH, _("%s %s: inconsistent indentation (a line is less-indented than the %d-column body base)"), funcname, name, (int) width);
++  if (namep)
++    *namep = name;
++  else
++    free (name);
++  return text;
++}
++
++/* A star builtin: the builtin named without the star, each argument that names a variable replaced by that variable's value and any other passed as written.  */
++static char *
++func_star (char *o, char **argv, const char *funcname)
++{
++  char *base = xstrndup (funcname, strlen (funcname) - 1);
++  const struct function_table_entry *f = lookup_function (base);
++  char *args[4], *held[4], *name = NULL;
++  int i, n;
++
++  for (n = 0; n < 3 && argv[n] != NULL; ++n)
++    held[n] = NULL;
++  /* An import target or a workspace import named by a variable takes that name and that body; an import target's flags after it pass as written.  */
++  if (((n <= 2 && strlen (base) > 7 && strcmp (base + strlen (base) - 7, ".target") == 0)
++       || (n == 1 && amk_is_workspace_import (base)))
++      && (held[0] = star_arg (funcname, argv[0], &name)) != NULL)
++    {
++      args[0] = name;
++      args[1] = held[0];
++      args[2] = n == 2 ? argv[1] : NULL;
++      args[3] = NULL;
++    }
++  else if (n == 1 && amk_is_workspace_import (base))
++    OSS (fatal, reading_file, _("%s: %s names no variable"), funcname, amk_trim (argv[0]));
++  else
++    {
++      /* A namespace call's name and operation pass as written, as does a workspace import's name; only the text after them may name a variable.  */
++      int from = strlen (base) > 3 && strcmp (base + strlen (base) - 3, ".ns") == 0 ? (n == 3 ? 2 : n)
++                 : amk_is_workspace_import (base) ? 1 : 0;
++      for (i = 0; i < n; ++i)
++        {
++          held[i] = i >= from ? star_arg (funcname, argv[i], NULL) : NULL;
++          args[i] = held[i] ? held[i] : argv[i];
++        }
++      args[n] = NULL;
++    }
++  o = f->fptr.func_ptr (o, args, f->name);
++  for (i = 0; i < n; ++i)
++    free (held[i]);
++  free (name);
++  free (base);
++  return o;
++}
++
+ #define FT_ENTRY(_name, _min, _max, _exp, _func) \
+   { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
+
+@@ -2527,8 +2633,38 @@
+   FT_ENTRY ("if",            2,  3,  0,  func_if),
+   FT_ENTRY ("or",            1,  0,  0,  func_or),
+   FT_ENTRY ("and",           1,  0,  0,  func_and),
++  FT_ENTRY ("amk.goal",      1,  1,  1,  amk_func_goal),
++  FT_ENTRY ("amk.require",   0,  0,  1,  amk_func_require),
++  FT_ENTRY ("amk.warning",   0,  1,  1,  amk_func_warning),
++  FT_ENTRY ("amk.dedent",    0,  1,  1,  amk_func_dedent),
++  FT_ENTRY ("amk.val.dedent", 0, 1,  1,  amk_func_val_dedent),
++  FT_ENTRY ("amk.dedent*",   1,  1,  1,  func_star),
++  FT_ENTRY ("amk.fxns?",     0,  0,  1,  func_bindings),
++  FT_ENTRY ("amk.vars?",     0,  0,  1,  func_bindings),
++  FT_ENTRY ("cksum",         0,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.hex",     0,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.file",    1,  1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum.file.hex", 1, 1,  1,  amk_func_cksum),
++  FT_ENTRY ("cksum*",        1,  1,  1,  func_star),
++  FT_ENTRY ("cksum.hex*",    1,  1,  1,  func_star),
++  FT_ENTRY ("re.match",      2,  2,  1,  amk_func_match),
++  FT_ENTRY ("re.match.file", 2,  2,  1,  amk_func_match),
++  FT_ENTRY ("re.match*",     2,  2,  1,  func_star),
++  FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
++  FT_ENTRY ("amk.bash",      1,  1,  1,  amk_func_bash),
++  FT_ENTRY ("amk.args",      0,  1,  1,  amk_func_args),
++  FT_ENTRY ("amk.kwarg",     2,  2,  1,  amk_func_kwarg),
++  FT_ENTRY ("amk.json5",     1,  1,  1,  amk_func_json5),
++  FT_ENTRY ("amk.lib.find",  1,  1,  1,  amk_func_lib_find),
++  FT_ENTRY ("amk.lib.roots", 0,  1,  1,  amk_func_lib_roots),
++  FT_ENTRY ("amk.fxn!",      1,  0,  1,  amk_func_fxn),
++  FT_ENTRY ("amk.call?",     1,  1,  1,  amk_func_resolves),
++  FT_ENTRY ("amk.fxn?",      1,  1,  1,  amk_func_resolves),
++  FT_ENTRY ("amk.macro?",    1,  1,  1,  amk_func_resolves),
++  FT_ENTRY ("amk.goal?",     1,  1,  1,  amk_func_resolves),
+   FT_ENTRY ("value",         0,  1,  1,  func_value),
+   FT_ENTRY ("eval",          0,  1,  1,  func_eval),
++  FT_ENTRY ("amk.sys",       1,  1,  1,  amk_func_sys),
+   FT_ENTRY ("file",          1,  2,  1,  func_file),
+ #ifdef EXPERIMENTAL
+   FT_ENTRY ("eq",            2,  2,  1,  func_eq),
+@@ -2566,18 +2696,26 @@
+   if (entry_p->adds_command)
+     ++command_count;
+
+-  if (!entry_p->alloc_fn)
+-    return entry_p->fptr.func_ptr (o, argv, entry_p->name);
++  {
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
+
+-  /* This function allocates memory and returns it to us.
+-     Write it to the variable buffer, then free it.  */
+-
+-  p = entry_p->fptr.alloc_func_ptr (entry_p->name, argc, argv);
+-  if (p)
+-    {
+-      o = variable_buffer_output (o, p, strlen (p));
+-      free (p);
+-    }
++    if (!entry_p->alloc_fn)
++      o = entry_p->fptr.func_ptr (o, argv, entry_p->name);
++    else
++      {
++        /* This function allocates memory and returns it to us.
++           Write it to the variable buffer, then free it.  */
++        p = entry_p->fptr.alloc_func_ptr (entry_p->name, argc, argv);
++        if (p)
++          {
++            o = variable_buffer_output (o, p, strlen (p));
++            free (p);
++          }
++      }
++    if (timed)
++      amk_profile_leave (&pf, "fn", entry_p->name);
++  }
+
+   return o;
+ }
+@@ -2599,13 +2737,15 @@
+   char *abeg = NULL;
+   char **argv, **argvp;
+   unsigned int nargs;
++  int amk_depth;
+
+   beg = *stringp + 1;
+
+   entry_p = lookup_function (beg);
+
+   if (!entry_p)
+     return 0;
++  amk_depth = amk_lhs_enter ();
+
+   /* We found a builtin function.  Find the beginning of its arguments (skip
+      whitespace after the name).  */
+@@ -2690,7 +2834,11 @@
+   *argvp = NULL;
+
+   /* Finally!  Run the function...  */
++  /* Its arguments expanded, the call an assignment's whole value makes may take that variable's name.  */
++  amk_lhs_arm (amk_depth, entry_p->name);
+   *op = expand_builtin_function (*op, nargs, argv, entry_p);
++  amk_lhs_arm (-1, NULL);
++  amk_lhs_leave ();
+
+   /* Free memory.  */
+   if (entry_p->expand_args)
+@@ -2768,6 +2910,7 @@
+       sprintf (num, "%u", i);
+       define_variable (num, strlen (num), *argv, o_automatic, 0);
+     }
++  amk_call_pending = i;
+
+   /* If the number of arguments we have is < max_args, it means we're inside
+      a recursive invocation of $(call ...).  Fill in the remaining arguments
+@@ -2789,7 +2928,16 @@
+
+   saved_args = max_args;
+   max_args = i;
+-  o = variable_expand_string (o, body, flen+3);
++  {
++    unsigned int outer_args = amk_call_args;
++    struct amk_prof_frame pf;
++    int timed = amk_profile_on && amk_profile_enter (&pf);
++    amk_call_args = amk_call_pending;
++    o = variable_expand_string (o, body, flen+3);
++    if (timed)
++      amk_profile_leave (&pf, "call", fname);
++    amk_call_args = outer_args;
++  }
+   max_args = saved_args;
+
+   v->exp_count = 0;
+@@ -2838,8 +2986,107 @@
+
+   ent = hash_insert (&function_table, ent);
+   free (ent);
++  if (amk_binding_engine != NULL)
++    amk_binding_add (amk_binding_engine, "fxns", name, strlen (name));
++}
++
++/* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
++static struct function_table_entry amk_function_entries[512];
++
++/* One engine builtin into its slot and the table, answering the slot after it.  */
++static struct function_table_entry *
++amk_entry_add (struct function_table_entry *f, const char *name, char *(*fn) (char *, char **, const char *),
++               unsigned char min, unsigned char max)
++{
++  f->fptr.func_ptr = fn;
++  f->name = name;
++  f->len = strlen (name);
++  f->minimum_args = min;
++  f->maximum_args = max;
++  f->expand_args = 1;
++  hash_insert (&function_table, f);
++  return f + 1;
+ }
+
++/* An engine builtin's name: a spelling of the engine, a dot, and a suffix.  */
++static char *
++amk_entry_name (const char *spelling, const char *suffix, size_t len)
++{
++  char *name = xmalloc (strlen (spelling) + len + 2);
++  sprintf (name, "%s.%.*s", spelling, (int) len, suffix);
++  return name;
++}
++
++/* Every builtin of one engine under one spelling, its name or an alias: each operation's name, .ns, and .import answer through the interface the row has, or refuse; an operation in main takes one argument, so its program keeps its commas.  */
++static struct function_table_entry *
++amk_engine_entries (struct function_table_entry *f, const struct amk_engine *e, const char *spelling)
++{
++  const char *p = AMK_OPS_ALL, *w;
++  size_t wlen;
++  f = amk_entry_add (f, spelling, func_engine, 1, 2);
++  if (e->cli->argv)
++    f = amk_entry_add (f, amk_entry_name (spelling, "argv", 4), func_engine, 2, 3);
++  while ((w = find_next_token (&p, &wlen)) != NULL)
++    if (wlen != 6 || memcmp (w, "import", 6) != 0)
++      f = amk_entry_add (f, amk_entry_name (spelling, w, wlen), amk_engine_has_op (e, w, wlen) ? func_op : func_refuse, 1, 1);
++  f = amk_entry_add (f, amk_entry_name (spelling, "ns", 2), amk_engine_kept (e) != NULL ? func_ns : func_refuse, 2, 3);
++  f = amk_entry_add (f, amk_entry_name (spelling, "ns.create", 9), amk_engine_kept (e) != NULL ? func_ns_create : func_refuse, 1, 2);
++  f = amk_entry_add (f, amk_entry_name (spelling, "import.target", 13), func_import_target, 1, 3);
++  f = amk_entry_add (f, amk_entry_name (spelling, "target", 6), func_import_target, 1, 3);
++  /* A state's import lifts the guest's names into make; a workspace's makes a namespace from a name and its whole value, so the at line above a define gives that define's name a workspace.  */
++  f = amk_entry_add (f, amk_entry_name (spelling, "import", 6),
++                     e->state != NULL ? func_op : e->workspace != NULL ? func_workspace_import : func_refuse,
++                     1, e->state != NULL ? 1 : 2);
++  return f;
++}
++
++static void
++amk_load_engine_functions (void)
++{
++  const struct amk_engine *e;
++  struct function_table_entry *f = amk_function_entries;
++  amk_engines_check ();
++  for (e = amk_engines; e->name; ++e)
++    {
++      const char *p = e->aliases;
++      f = amk_engine_entries (f, e, e->name);
++      while (p != NULL && *p)
++        {
++          size_t n = strcspn (p, " ");
++          f = amk_engine_entries (f, e, xstrndup (p, n));
++          p += n;
++          while (*p == ' ')
++            ++p;
++        }
++    }
++  /* Every builtin gets a star twin whose arguments may name variables.  */
++  {
++    struct function_table_entry *end = f, *g;
++    for (g = amk_function_entries; g < end; ++g)
++      {
++        char *name = xmalloc (g->len + 2);
++        sprintf (name, "%s*", g->name);
++        f->fptr.func_ptr = func_star;
++        f->name = name;
++        f->len = g->len + 1;
++        f->minimum_args = 1;
++        f->maximum_args = g->maximum_args;
++        f->expand_args = 1;
++        hash_insert (&function_table, f++);
++      }
++  }
++}
++
++/* Every star builtin in the table gets its twin macro once the table is whole.  */
++static void
++amk_star_macro_entry (const void *item, void *arg)
++{
++  const struct function_table_entry *f = item;
++  (void) arg;
++  if (f->len > 1 && f->name[f->len - 1] == '*')
++    amk_star_macro (f->name, f->maximum_args);
++}
++
+ void
+ hash_init_function_table (void)
+ {
+@@ -2848,4 +3090,116 @@
+              function_table_entry_hash_cmp);
+   hash_load (&function_table, function_table_init,
+              FUNCTION_TABLE_ENTRIES, sizeof (struct function_table_entry));
++  amk_load_engine_functions ();
++  hash_map_arg (&function_table, amk_star_macro_entry, NULL);
++  amk_args_macro ();
+ }
++
++/* Whether a make function of that name exists, builtin or added, so a guest can refuse to replace one: the table's insert would free the old entry, and a builtin's is static.  */
++int
++amk_function_exists (const char *name)
++{
++  return lookup_function (name) != NULL;
++}
++
++/* A value with each dollar doubled, so a builtin that expands its own arguments gets the value back as written.  */
++static char *
++amk_dollars_doubled (const char *value)
++{
++  size_t n = 0;
++  const char *p;
++  char *out, *q;
++  for (p = value; *p; ++p)
++    n += *p == '$' ? 2 : 1;
++  out = q = xmalloc (n + 1);
++  for (p = value; *p; ++p)
++    {
++      if (*p == '$')
++        *q++ = '$';
++      *q++ = *p;
++    }
++  *q = '\0';
++  return out;
++}
++
++/* One layer of a guest's call: kind 1 the make function of that name, 2 the macro, 0 whichever the name has, function first.  Each value is one whole argument, never split on commas nor expanded, as $(name ...) or $(call name,...) would get it already expanded.  A builtin that expands its own arguments gets each value with its dollars doubled; values past a builtin's last argument join that argument with commas, as the parser would join them; too few, or a name the layer lacks, answers null with the reason in err.  The result is the caller's to free.  */
++char *
++amk_call_as (int kind, const char *name, unsigned int argc, const char **args, const char **err)
++{
++  static char why[256];
++  const struct function_table_entry *entry_p;
++  unsigned int n = argc, i;
++  char **argv, *obuf, *o, *value;
++  size_t olen;
++
++  if (!amk_has_db ())
++    {
++      *err = "no make database, running outside a makefile";
++      return NULL;
++    }
++  entry_p = kind == 2 ? NULL : lookup_function (name);
++  if (entry_p == NULL && (kind == 1 || lookup_variable (name, strlen (name)) == NULL))
++    {
++      snprintf (why, sizeof why, kind == 1 ? "no function named '%s'" : kind == 2 ? "no macro named '%s'" : "no function or variable named '%s'", name);
++      *err = why;
++      return NULL;
++    }
++  if (entry_p != NULL && argc < entry_p->minimum_args)
++    {
++      snprintf (why, sizeof why, "'%s' takes at least %u arguments, and got %u", name, entry_p->minimum_args, argc);
++      *err = why;
++      return NULL;
++    }
++  if (entry_p != NULL && !entry_p->fptr.func_ptr)
++    {
++      snprintf (why, sizeof why, "'%s' is not implemented on this platform", name);
++      *err = why;
++      return NULL;
++    }
++
++  argv = xcalloc ((argc + 2) * sizeof (char *));
++  if (entry_p != NULL)
++    {
++      if (entry_p->maximum_args && n > entry_p->maximum_args)
++        n = entry_p->maximum_args;
++      for (i = 0; i < n; ++i)
++        {
++          char *v = xstrdup (args[i]);
++          unsigned int j;
++          for (j = i + 1; i == n - 1 && j < argc; ++j)
++            {
++              char *joined = xmalloc (strlen (v) + strlen (args[j]) + 2);
++              sprintf (joined, "%s,%s", v, args[j]);
++              free (v);
++              v = joined;
++            }
++          argv[i] = entry_p->expand_args ? v : amk_dollars_doubled (v);
++          if (argv[i] != v)
++            free (v);
++        }
++    }
++  else
++    {
++      argv[0] = xstrdup (name);
++      for (i = 0; i < argc; ++i)
++        argv[i + 1] = xstrdup (args[i]);
++    }
++
++  amk_call_enter ();
++  install_variable_buffer (&obuf, &olen);
++  o = initialize_variable_output ();
++  o = entry_p != NULL ? expand_builtin_function (o, n, argv, entry_p) : func_call (o, argv, "call");
++  variable_buffer_output (o, "", 1);
++  value = xstrdup (initialize_variable_output ());
++  restore_variable_buffer (obuf, olen);
++
++  for (i = 0; argv[i] != NULL; ++i)
++    free (argv[i]);
++  free (argv);
++  if (amk_call_leave (err))
++    {
++      free (value);
++      return NULL;
++    }
++  return value;
++}

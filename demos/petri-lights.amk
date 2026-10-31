@@ -1,0 +1,88 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/petri-lights.amk:
+#  Murata's two traffic lights under @petri, with cars as labeled tokens; a
+#  turn token passes between the lights, so only one may leave red. One
+#  transition is enabled at a time, so the trace is fixed: A green, a1
+#  crosses, A yellow, A red, then B, twice, ending with all four cars crossed.
+#
+
+load dsys/petri
+
+__main__: lights.__main__ show.after
+
+@petri
+define lights
+  {
+    "places": {
+      // both lights start red
+      "a_red": 1, "a_green": 0, "a_open": 0, "a_yellow": 0,
+      "b_red": 1, "b_green": 0, "b_open": 0, "b_yellow": 0,
+      // a goes first; cycles bounds how often a turns green
+      "a_turn": 1, "b_turn": 0, "cycles": 2,
+      // the cars waiting at each light, and those through
+      "a_queue": ["a1", "a2"], "b_queue": ["b1", "b2"], "crossed": [],
+    },
+    "transitions": [
+      "a_go", "a_cross", "a_slow", "a_stop",
+      "b_go", "b_cross", "b_slow", "b_stop"
+    ],
+    "arcs": [
+      ["a_red", "a_go"], ["a_turn", "a_go"], ["cycles", "a_go"],
+      ["a_go", "a_green"],
+      ["a_green", "a_cross"], ["a_queue", "a_cross"],
+      ["a_cross", "a_open"], ["a_cross", "crossed"],
+      ["a_open", "a_slow"], ["a_slow", "a_yellow"],
+      ["a_yellow", "a_stop"], ["a_stop", "a_red"], ["a_stop", "b_turn"],
+
+      ["b_red", "b_go"], ["b_turn", "b_go"], ["b_go", "b_green"],
+      ["b_green", "b_cross"], ["b_queue", "b_cross"],
+      ["b_cross", "b_open"], ["b_cross", "crossed"],
+      ["b_open", "b_slow"], ["b_slow", "b_yellow"],
+      ["b_yellow", "b_stop"], ["b_stop", "b_red"], ["b_stop", "a_turn"]
+    ],
+    "amk": {
+      "backend": "petri",
+      "steps": {
+        "a_go": { "run": "lamp" }, "a_cross": { "run": "drive" },
+        "a_slow": { "run": "lamp" }, "a_stop": { "run": "lamp" },
+        "b_go": { "run": "lamp" }, "b_cross": { "run": "drive" },
+        "b_slow": { "run": "lamp" }, "b_stop": { "run": "lamp" }
+      },
+      // weighted token sums that must hold after every firing
+      "invariants": [
+        // each light shows exactly one aspect
+        { "a_red": 1, "a_green": 1, "a_open": 1, "a_yellow": 1, "=": 1 },
+        { "b_red": 1, "b_green": 1, "b_open": 1, "b_yellow": 1, "=": 1 },
+        // one turn token in play: never both lights off red
+        { "a_turn": 1, "a_green": 1, "a_open": 1, "a_yellow": 1,
+          "b_turn": 1, "b_green": 1, "b_open": 1, "b_yellow": 1, "=": 1 },
+        // no car is lost or made
+        { "a_queue": 1, "b_queue": 1, "crossed": 1, "=": 4 },
+      ],
+      "final": { "a_red": 1, "b_red": 1, "a_turn": 1, "crossed": 4 },
+    },
+  }
+endef
+
+# A light's change of colour: the transition's name is lights.firing.
+@micropy.target
+define lamp
+  import amk
+  light, change = amk.var["lights.firing"].split("_")
+  colour = {"go": "green", "slow": "yellow", "stop": "red"}[change]
+  print(light.upper(), colour)
+endef
+
+# A car crossing: the label its firing took passes through to crossed.
+@lua.target
+define drive
+  local t = amk.var["lights.firing"]
+  print(amk.var["lights." .. t .. ".token"] .. " crosses")
+endef
+
+show.after:
+	@echo "marking: $(lights.marking )"
+	@echo "crossed: $(lights.marking crossed)"
+	@echo "fired: $(lights.trace)"
+	@echo "pnml: $(words $(lights.pnml)) words of PNML"

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pool.json",
+  "title": "@pool",
+  "description": "a pool under @pool: its size or its labels, and its strategy; merged over lib/dsys/pool.default.json, then opened by amk.pool. $defs/pool is the open base a pool-like schema extends, closing it with unevaluatedProperties",
+  "$ref": "#/$defs/pool",
+  "unevaluatedProperties": false,
+  "$defs": {
+    "pool": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "description": "how many tokens an unlabeled pool holds; 0 opens it empty, to fill by produce; with labels, it must equal their count",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16384,
+          "default": 2
+        },
+        "labels": {
+          "description": "one token per label, so the labels set the size; empty for an unlabeled pool",
+          "type": "array",
+          "maxItems": 512,
+          "items": { "type": "string", "pattern": "^\\S{1,31}$" },
+          "default": []
+        },
+        "label_gen": {
+          "description": "reserved, not yet supported",
+          "type": "null",
+          "default": null
+        },
+        "strategy": {
+          "description": "default, also strict or fifo, is resized only by the process that opened it; open is resized by any process and sized by the kernel's count",
+          "enum": ["default", "strict", "fifo", "open"],
+          "default": "default"
+        }
+      }
+    }
+  }
+}

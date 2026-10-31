@@ -1,0 +1,56 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tuplespace-reactor.amk:
+#  handlers in 3 langs and make route an order through a space:
+#  each matching out calls its handler instead of being stored,
+#  and a handler's own out may route on to the next one.
+#
+
+load tspace
+
+@tspace
+define SHOP
+endef
+
+__main__: report
+
+# An order is priced in lua, which routes on to shipping in js.
+@SHOP.reflex/lua (order, item=str, qty=int)
+define price
+  local prices = { tea = 4, cake = 7 }
+  SHOP.out("priced", item, qty, prices[item] * qty)
+endef
+
+@SHOP.reflex/js (priced, item=str, qty=int, total=int)
+define ship
+  SHOP.out("shipped", item, total);
+  SHOP.out("log", `shipped ${qty} ${item}`);
+endef
+
+# A refund only logs.
+@SHOP.reflex/micropy (refund, item=str)
+define refund
+  SHOP.out("log", "refunded " + item)
+endef
+
+# The log line is a make function, which takes the tuple by position.
+@SHOP.reflex/amk (log, _)
+define log
+$(info log: $(2))
+endef
+
+@SHOP.amk
+define orders
+  SHOP.out order tea 3
+  SHOP.out order cake 2
+  SHOP.out refund tea
+  SHOP.out note 'no handler, so stored'
+endef
+
+@SHOP.amk: orders
+define report
+  printf 'handlers:\n'
+  SHOP.rd_s
+  printf 'stored:\n'
+  SHOP.all
+endef

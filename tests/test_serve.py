@@ -2,7 +2,7 @@
 
 Pinned: the server listens while the recipe runs, a request reaches lua, js, and s7 functions
 through amk.expand, and a goal chain fed per request answers fresh for each input in one
-process. demos/json-rpc.mk shows the same pieces over HTTP; this file does not read it.
+process. demos/json-rpc.amk shows the same pieces over HTTP; this file does not read it.
 """
 
 import json
@@ -17,7 +17,8 @@ from conftest import popen
 pytestmark = [pytest.mark.integration, pytest.mark.engines("lua", "s7", "micropy", "js")]
 
 makefile = r'''
-goal.dir := goals
+$(amk.mode dataflow)
+amk.dataflow_dir := goals
 
 @lua.import
 define lua.methods
@@ -37,22 +38,22 @@ endef
 @lua.import.target
 define sorted
   local xs = {}
-  for x in ("@nums.txt@"):gmatch("%S+") do xs[#xs + 1] = tonumber(x) end
+  for x in (">>nums.txt<<"):gmatch("%S+") do xs[#xs + 1] = tonumber(x) end
   table.sort(xs)
   print(table.concat(xs, " "))
 endef
 
 @s7.import.target
 define total
-  (format #t "~A" (apply + (list @sorted@)))
+  (format #t "~A" (apply + (list >>sorted<<)))
 endef
 
-$(goal.dir)/nums.txt: ;
+$(amk.dataflow_dir)/nums.txt: ;
 
 rpc.add = $(add $1,$2)
 rpc.shout = $(shout $1)
 rpc.fact = $(fact $1)
-rpc.stats = $(file >$(goal.dir)/nums.txt,$1)$(goal sorted)/$(goal total)
+rpc.stats = $(file >$(amk.dataflow_dir)/nums.txt,$1)$(amk.goal sorted)/$(amk.goal total)
 
 @micropy.import
 define rpc.server

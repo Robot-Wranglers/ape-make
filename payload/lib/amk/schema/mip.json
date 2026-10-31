@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mip.json",
+  "title": "@mip.install",
+  "description": "micropy packages under @mip.install, by name: each fetched once by mip into mip.cache/<name>/<version> and put on the guest's import path",
+  "type": "object",
+  "minProperties": 1,
+  "propertyNames": {
+    "description": "the package's name, its directory under mip.cache",
+    "pattern": "^[A-Za-z0-9_.-]+$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["spec", "version"],
+    "properties": {
+      "spec": {
+        "description": "what mip installs: a micropython-lib name, github:org/repo/path, gitlab:org/repo/path, or an http or https URL",
+        "type": "string",
+        "minLength": 1
+      },
+      "version": {
+        "description": "the version mip fetches, a tag or branch; also the package's directory under its name",
+        "type": "string",
+        "pattern": "^[^/\\s]+$"
+      },
+      "sha256": {
+        "description": "the digest the install must match, over every file's path and bytes; without it, the install names the digest to pin",
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  }
+}

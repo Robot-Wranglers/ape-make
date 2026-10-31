@@ -1,0 +1,57 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-2.amk:
+#  choice on the plex: counters interleaving, then amb-fork making each
+#  option a task, breadth-first on a fifo plex and depth-first on a lifo
+#  plex, where the order is amb's own. After the Wikipedia call/cc page.
+#
+
+__main__: tasks branches search
+
+# Three counters interleave, each yielding after every line.
+@s7.target
+define tasks
+  (load "/zip/lib/plex/init.scm" (rootlet))
+  (define p (make-plex))
+  (define (counter name)
+    (lambda ()
+      (do ((i 1 (+ i 1))) ((> i 3))
+        (format #t "~A ~A~%" name i)
+        (p 'yield))))
+  (p 'fork (counter "alpha"))
+  (p 'fork (counter "beta"))
+  (p 'fork (counter "gamma"))
+  (p 'run (lambda () #t))
+endef
+
+# Each option a task on a fifo plex: every branch starts before any ends.
+@s7.target
+define branches
+  (load "/zip/lib/plex/init.scm" (rootlet))
+  (load "amb.scm" (rootlet))
+  (define p (make-plex))
+  (p 'run
+    (lambda ()
+      (reset
+        (lambda ()
+          (let ((name (amb-fork p '("one" "two" "three"))))
+            (format #t "~A starts~%" name)
+            (p 'yield)
+            (format #t "~A ends~%" name))))))
+endef
+
+# The same choice on a lifo plex is amb's depth-first search, leaf for leaf.
+@s7.target
+define search
+  (load "/zip/lib/plex/init.scm" (rootlet))
+  (load "amb.scm" (rootlet))
+  (define (pairs choose)
+    (let* ((x (choose '(1 2))) (y (choose '(a b))))
+      (format #t "~A ~A~%" x y)))
+  (format #t "amb:~%")
+  (reset (lambda () (pairs amb)))
+  (format #t "amb-fork, lifo:~%")
+  (let ((p (make-plex 'lifo)))
+    (p 'run
+      (lambda () (reset (lambda () (pairs (lambda (o) (amb-fork p o))))))))
+endef

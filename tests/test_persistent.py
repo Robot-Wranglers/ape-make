@@ -2,9 +2,9 @@
 
 `$(<name>.exec program)` runs in the make process against one state kept
 for its life, where `$(<name> ...)` forks a fresh one per call. Pinned: state carries
-across calls, data arrives through the handle, an error leaves the state as it was, output is
-trimmed like every builtin's even mid-expansion and holds a megabyte whole, and a zygote's
-requests each start from what the parse left.
+across calls, data arrives through the handle, output is trimmed like every builtin's even
+mid-expansion and holds a megabyte whole, and a zygote's requests each start from what the
+parse left. A failing exec stops make, pinned in test_fail_fast.py.
 """
 
 import pytest
@@ -17,7 +17,6 @@ parse_time = "\n".join([
   "fresh := $(lua print(n))",
   "word := abc",
   "upper := $(lua.exec print(amk.var.word:upper()))",
-  'oops := $(lua.exec error("boom"))',
   "after := $(lua.exec print(n))",
   'multi := $(lua.exec print("a") print("b"))',
   'wrote := $(lua.exec io.write("w") io.stdout:write("x") print("y"))',
@@ -25,7 +24,7 @@ parse_time = "\n".join([
   'big := $(lua.exec io.write(string.rep("x", 1048576)))',
   'biglen := $(lua.exec print(string.len(amk.var.big)))',
   'mixed := pre$(lua.exec io.write("a\\n"))mid$(lua.exec print())post',
-  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] closed=[$(closed)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] closed=[$(closed)] biglen=[$(biglen)] mixed=[$(mixed)])",
   "all:",
   "\ttrue",
   "",
@@ -48,7 +47,6 @@ def test_state_outlives_a_call(amk, tmp_path):
   assert "kept=[42]" in r.stdout, r.stdout
   assert "fresh=[nil]" in r.stdout, r.stdout
   assert "upper=[%s]" % "abc".upper() in r.stdout, r.stdout
-  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
   assert "after=[41]" in r.stdout, r.stdout
   assert "multi=[a\nb]" in r.stdout, r.stdout
   assert "wrote=[wxy]" in r.stdout, r.stdout
@@ -93,14 +91,13 @@ micropy_parse_time = "\n".join([
   'fresh := $(micropy print(globals().get("n")))',
   "word := abc",
   "upper := $(micropy.exec import amk; print(amk.var.word.upper()))",
-  'oops := $(micropy.exec raise ValueError("boom"))',
   "after := $(micropy.exec print(n))",
   'multi := $(micropy.exec print("a"); print("b"))',
   'wrote := $(micropy.exec import sys; sys.stdout.write("w"); print("y"))',
   'big := $(micropy.exec import sys; sys.stdout.write("x" * 1048576))',
   "biglen := $(micropy.exec import amk; print(len(amk.var.big)))",
   'mixed := pre$(micropy.exec print("a"))mid$(micropy.exec print())post',
-  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
   "all:",
   "\ttrue",
   "",
@@ -123,7 +120,6 @@ def test_micropy_state_outlives_a_call(amk, tmp_path):
   assert "kept=[42]" in r.stdout, r.stdout
   assert "fresh=[None]" in r.stdout, r.stdout
   assert "upper=[ABC]" in r.stdout, r.stdout
-  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
   assert "after=[41]" in r.stdout, r.stdout
   assert "multi=[a\nb]" in r.stdout, r.stdout
   assert "wrote=[wy]" in r.stdout, r.stdout
@@ -137,14 +133,13 @@ js_parse_time = "\n".join([
   "fresh := $(js print(typeof n))",
   "word := abc",
   "upper := $(js.exec print(amk.var.word.toUpperCase()))",
-  'oops := $(js.exec throw new Error("boom"))',
   "after := $(js.exec print(n))",
   'multi := $(js.exec print("a"); print("b"))',
   'wrote := $(js.exec std.out.puts("w"); print("y"))',
   'big := $(js.exec std.out.puts("x".repeat(1048576)))',
   "biglen := $(js.exec print(amk.var.big.length))",
   'mixed := pre$(js.exec print("a"))mid$(js.exec print())post',
-  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)])",
   "all:",
   "\ttrue",
   "",
@@ -160,7 +155,6 @@ def test_js_state_outlives_a_call(amk, tmp_path):
   assert "kept=[42]" in r.stdout, r.stdout
   assert "fresh=[undefined]" in r.stdout, r.stdout
   assert "upper=[ABC]" in r.stdout, r.stdout
-  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
   assert "after=[41]" in r.stdout, r.stdout
   assert "multi=[a\nb]" in r.stdout, r.stdout
   assert "wrote=[wy]" in r.stdout, r.stdout
@@ -190,7 +184,6 @@ s7_parse_time = "\n".join([
   "fresh := $(s7 (display (defined? 'n)))",
   "word := abc",
   "upper := $(s7.exec (display (string-upcase (amk-var 'word))))",
-  "oops := $(s7.exec (error 'kaput \"boom\"))",
   "after := $(s7.exec (display n))",
   'multi := $(s7.exec (display "a") (newline) (display "b"))',
   'wrote := $(s7.exec (write-string "w") (display "y"))',
@@ -202,8 +195,8 @@ s7_parse_time = "\n".join([
   "b",
   "c",
   "endef",
-  "piped := $(s7 (let loop ((n 0)) (if (eof-object? (read-line)) (display n) (loop (+ n 1)))),$(lines))",
-  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] oops=[$(oops)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)] piped=[$(piped)])",
+  "piped := $(s7 (let loop ((n 0)) (if (eof-object? (read-line)) (display n) (loop (+ n 1)))), $(lines))",
+  "$(info kept=[$(kept)] fresh=[$(fresh)] upper=[$(upper)] after=[$(after)] multi=[$(multi)] wrote=[$(wrote)] biglen=[$(biglen)] mixed=[$(mixed)] piped=[$(piped)])",
   "all:",
   "\ttrue",
   "",
@@ -220,7 +213,6 @@ def test_s7_state_outlives_a_call(amk, tmp_path):
   assert "kept=[42]" in r.stdout, r.stdout
   assert "fresh=[#f]" in r.stdout, r.stdout
   assert "upper=[ABC]" in r.stdout, r.stdout
-  assert "oops=[]" in r.stdout and "boom" in r.stderr, r.stdout + r.stderr
   assert "after=[41]" in r.stdout, r.stdout
   assert "multi=[a\nb]" in r.stdout, r.stdout
   assert "wrote=[wy]" in r.stdout, r.stdout

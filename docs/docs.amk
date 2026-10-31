@@ -1,0 +1,97 @@
+#!/usr/bin/env -S amk -f
+#
+# docs/docs.amk:
+#  via/amk docs: templated pages, in-place section headers, and
+#  GitHub-faithful local previews. Run it from via/amk, or through the
+#  project Makefile's docs.* goals, which forward here.
+#
+$(amk.include utmpl)
+
+# The header and preview tools are uv-run stdlib scripts in docs/tools.
+docs.pages     ?= $(sort README.md $(wildcard docs/*.md) $(docs.rendered))
+docs.img       ?= docs/img/hdr
+docs.repo      ?= Robot-Wranglers/ape-make
+docs.port      ?= 6419
+docs.index     ?= README.md\#module-index
+mdheaders.py    = docs/tools/mdheaders.py
+mdheaders.tool  = uv run --quiet --script $(mdheaders.py) --index $(docs.index)
+log             = printf 'via/amk %s: %s\n' '$1' '$2' >&2
+
+# A page below docs/ keeps its header images in its own folder's img/hdr.
+docs.nested     = $(sort $(filter-out ./ docs/,$(dir $(1))))
+docs.top        = $(filter-out $(addsuffix %,$(call docs.nested,$(1))),$(1))
+mdheaders       = true$(if $(call docs.top,$(1)), \
+  && $(mdheaders.tool) --img $(docs.img) $(2) $(call docs.top,$(1))) \
+  $(foreach d,$(call docs.nested,$(1)), \
+    && $(mdheaders.tool) --img $(d)img/hdr $(2) $(filter $(d)%,$(1)))
+
+# Templated pages: each .md.j2, the README's too, renders to its .md beside it.
+docs.templates ?= README.md.j2 $(shell find docs -name '*.md.j2' \
+  -not -path 'docs/tools/*' | sort)
+docs.rendered  := $(docs.templates:.md.j2=.md)
+docs.data      := {}
+
+# Each template's text is held as utmpl's template for its own path.
+@micropy.exec
+define docs.load
+  import amk
+  for t in amk.var["docs.templates"].split():
+    amk.var.raw[t + ".tpl"] = open(t).read()
+endef
+
+# Diagrams: rendered by a parent compose.mk's drawio plugin, if there is one.
+docs.drawio     = $(sort $(wildcard docs/img/*.drawio))
+docs.parent    ?= $(abspath $(CURDIR)/../..)
+docs.drawio.by  = $(wildcard $(docs.parent)/.cmk/drawio.cmk)
+docs.drawio.dir = $(patsubst $(docs.parent)/%,%,$(CURDIR))/docs/img
+docs.drawio.old = $(foreach f,$(docs.drawio), \
+  $(if $(shell test $(f:.drawio=.png) -nt $(f) && echo ok),,$(f)))
+
+.PHONY: docs docs.render $(docs.rendered) docs.drawio
+.PHONY: docs.headers docs.check docs.test docs.serve
+
+docs: docs.render
+	@# Render the templated pages, then regenerate every page's headers.
+	$(call log,docs,headers for $(words $(docs.pages)) pages)
+	$(call mdheaders,$(docs.pages))
+
+docs.render: $(docs.rendered)
+	@# Render each docs.templates page to its .md, then redo its headers.
+	$(call log,docs.render,headers for $(words $(docs.rendered)) rendered pages)
+	$(call mdheaders,$(docs.rendered))
+
+$(docs.rendered): %.md: %.md.j2
+	$(file > $@,$(utmpl.render $<, docs.data))
+	$(call log,docs.render,rendered $< to $@)
+
+docs.drawio:
+	@# Render docs/img/*.drawio to pngs, through compose.mk when nested in it.
+	$(if $(docs.drawio.by), \
+	  make -C $(docs.parent) drawio/$(docs.drawio.dir), \
+	  $(call log,docs.drawio,no parent compose.mk; keeping the committed pngs) \
+	  $(if $(strip $(docs.drawio.old)), \
+	    && $(call log,docs.drawio,stale or missing png for$(docs.drawio.old))))
+
+docs.headers:
+	@# Regenerate every page's header block and each folder's images.
+	$(call mdheaders,$(docs.pages))
+
+docs.check:
+	@# Fail when a header block or image is out of date; writes nothing.
+	$(call mdheaders,$(docs.pages),--check) \
+	  || { echo "docs.check: a header is out of date" \
+	    "-- run make docs.headers" >&2; exit 1; }
+
+docs.test:
+	@# The header tool's own tests, in a throwaway environment with pytest.
+	uv run --quiet --with pytest --with fonttools \
+	  pytest -q -p no:cacheprovider docs/tools
+
+docs.serve:
+	@# Serve pages as github.com renders them; ?theme=dark or =light pins one.
+	command -v gh >/dev/null || { \
+	  echo "docs.serve: gh is not on PATH" \
+	    "-- the preview renders through gh api" >&2; \
+	  exit 1; }
+	echo "docs.serve: serving at http://localhost:$(docs.port)/" >&2
+	uv run --quiet --script docs/tools/preview.py $(docs.repo) $(docs.port)

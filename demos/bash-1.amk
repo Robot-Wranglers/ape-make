@@ -1,0 +1,30 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/bash-1.amk:
+#  bash as a stacked engine.
+#
+
+# Load the engine itself
+load bash
+
+# A one-shot command, run under bash with strict flags; its stdout is the value.
+hello := $(amk.bash printf 'hello from %s' "$${BASH##*/}")
+
+# A shell program in a define is a target: run once, stdout the recorded value.
+@bash.target
+define listing
+  ls demos/data | grep -c .
+endef
+
+@bash.target
+define words
+  printf '%s\n' alpha beta gamma | wc -l | tr -d ' '
+endef
+
+# A recipe reads a value by goal; the goal is a prerequisite.
+__main__: listing words
+	echo "hello: $(hello)"
+	echo "files in demos/data: $(amk.goal listing)"
+	echo "words: $(amk.goal words)"
+	test "$(hello)" = "hello from bash"
+	test "$(amk.goal words)" = 3

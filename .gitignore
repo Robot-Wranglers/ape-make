@@ -5,8 +5,8 @@
 /*.ape
 /dkjson-*.lua
 /cosmocc/
-# Unpacked sources, build trees, and outputs; make clean drops them.
-/src/
+# Unpacked sources, build trees, and outputs; make clean drops them. src/amk is amk's own source and is kept.
+/src/*-*
 /build/
 /out/
 /dist/
@@ -18,6 +18,8 @@ __pycache__
 .tkt.fossil .tkt.fossil.pid
 .tkt.*
 .amk/*
-amk
+/amk
 /json.bash-*
 .tmp.*
+effection*.tgz
+.amk

@@ -1,0 +1,37 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/race-1.amk:
+#  fork-join over goals on the js plex: race takes the first goal
+#  to finish, all joins every goal, and all over a failing one
+#  ends at the first failure.
+#
+
+__main__: join
+
+# Three goals that take their time and print their names, and one that fails.
+alpha:
+	sleep 0.3 ; echo alpha
+bravo:
+	sleep 0.1 ; echo bravo
+charlie:
+	sleep 0.5 ; echo charlie
+delta:
+	exit 1
+
+# A goal awaited is amk.agoal; race and all are Effection's own.
+@js.target
+define join
+  const { run, until, race, all } = amk.plex;
+  const goal = (name) => until(amk.agoal(name));
+
+  await run(function* () {
+    const first = yield* race([goal("alpha"), goal("bravo"), goal("charlie")]);
+    print(`race: ${first} won`);
+
+    const every = yield* all([goal("alpha"), goal("bravo"), goal("charlie")]);
+    print(`all: ${every.join(" ")}`);
+
+    try { yield* all([goal("charlie"), goal("delta")]); }
+    catch (e) { print(`all with a failure: ${e.message}`); }
+  });
+endef

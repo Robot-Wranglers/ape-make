@@ -4,7 +4,7 @@
 phony target of the same name that hands the body to the engine and prints what comes back.
 Pinned: the target prints the body's output, the define is still a plain variable, a file of
 the target's name does not stop it, the name is expanded, the builtin works without the at
-line, and an at line naming no builtin is left to make.
+line or as `<engine>.target`, and an at line naming no builtin names its missing macro.
 """
 
 import pytest
@@ -35,7 +35,16 @@ prefixed = "\n".join([
 ])
 
 literal = "\n".join([
-  "$(lua.import.target hi,print('hi from a literal'))",
+  "$(lua.import.target hi, print('hi from a literal'))",
+  "",
+])
+
+short = "\n".join([
+  "@jq.target --null-input --raw-output",
+  "define jq-hello",
+  '"hi from " + "jq"',
+  "endef",
+  "$(lua.target hi, print('hi from a literal'))",
   "",
 ])
 
@@ -87,9 +96,18 @@ def test_the_builtin_works_without_the_at_line(amk, tmp_path):
   assert r.stdout.strip() == "hi from a literal", r.stdout
 
 
-def test_an_at_line_naming_no_builtin_is_left_to_make(amk, tmp_path):
+@pytest.mark.engines("jq", "lua")
+def test_the_short_name_is_the_same_builtin_with_flags(amk, tmp_path):
+  mk = tmp_path / "define.mk"
+  mk.write_text(short)
+  r = sh(amk, ["-s", "-f", str(mk), "jq-hello", "hi"], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.split("\n")[:2] == ["hi from jq", "hi from a literal"], r.stdout
+
+
+def test_an_at_line_naming_no_builtin_names_the_missing_macro(amk, tmp_path):
   mk = tmp_path / "define.mk"
   mk.write_text(unknown)
   r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
   assert r.returncode != 0
-  assert "missing separator" in r.stderr, r.stderr
+  assert f"{mk}:1: @cobol.import.target: no macro cobol.import.target_star" in r.stderr, r.stderr

@@ -1,0 +1,74 @@
+#
+# payload/lib/amk/mip.amk:
+#  packages for the micropy guest, named as json in a define under the
+#  at line @mip.install, each with spec, version, and an optional sha256,
+#  cached once by version and on the guest's import path; the define's
+#  name is the target that installs what is missing.
+#
+$(amk.require micropy, jq)
+
+mip.cache ?= $(HOME)/.cache/amk/mip
+mip.json = $(if $(filter sqlite,$(.FEATURES)),$(amk.json5 $($(1))),$($(1)))
+mip.q = $(strip $(jq.argv -r, $(2), $(call mip.json,$(1))))
+mip.pkgs = $(call mip.q,$(1),keys[])
+mip.ver = $(call mip.q,$(1),."$(2)".version)
+mip.dir = $(mip.cache)/$(2)/$(call mip.ver,$(1),$(2))
+mip.path = $(foreach p,$(call mip.pkgs,$(1)),$(call mip.dir,$(1),$(p)))
+mip.ok = $(wildcard $(call mip.dir,$(1),$(2))/.ok)
+mip.missing = $(foreach p,$(call mip.pkgs,$(1)), \
+  $(if $(call mip.ok,$(1),$(p)),,$(p)))
+
+# mip.get installs into a fresh directory; a pin must match, no pin is named.
+@micropy.exec
+define micropy.mip
+  import amk, binascii, hashlib, mip, os, sys
+
+  def _walk(d, rel=""):
+    for e in sorted(os.ilistdir(d)):
+      if e[1] == 0x4000:
+        yield from _walk(d + "/" + e[0], rel + e[0] + "/")
+      else:
+        yield rel + e[0], d + "/" + e[0]
+
+  def _get(manifest, name, dest):
+    manifest, name, dest = manifest.strip(), name.strip(), dest.strip()
+    def field(f):
+      return amk.expand('$(call mip.q,%s,."%s".%s)' % (manifest, name, f))
+    tmp = dest + ".tmp-" + binascii.hexlify(os.urandom(4)).decode()
+    mip.install(field("spec"), version=field("version"), target=tmp)
+    h = hashlib.sha256()
+    for rel, path in _walk(tmp):
+      h.update(rel.encode() + b"\0" + open(path, "rb").read())
+    got = binascii.hexlify(h.digest()).decode()
+    pin = field("sha256")
+    msg = "mip: %s digests to %s; pin it as its sha256 in %s"
+    if pin == "null":
+      print(msg % (name, got, manifest), file=sys.stderr)
+    elif got != pin:
+      amk.expand("$(error %s)" % (msg % (name, got, manifest)))
+    open(tmp + "/.ok", "w").write(got)
+    try:
+      os.rename(tmp, dest)
+    except OSError:
+      pass
+
+  amk.func("mip.get", _get)
+endef
+
+# The manifest's target: a stamp per version, the missing ones are the install.
+define mip.rule
+.PHONY: $(1)
+$(1):
+	$$(foreach p,$$(call mip.missing,$(1)), \
+	  $$(mip.get $(1), $$(p), $$(call mip.dir,$(1),$$(p))))
+endef
+$(amk.fxn! mip.rule)
+
+# The at line @mip.install: packages on the import path, the name their target.
+mip.install.__schema__ := amk/schema/mip.json
+@amk.fxn!
+define mip.install_star
+$(strip
+  $(eval MICROPYPATH += $(call mip.path,$(1)))
+  $(eval $(mip.rule $(1))))
+endef

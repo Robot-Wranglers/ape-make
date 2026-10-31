@@ -1,0 +1,38 @@
+#
+# payload/lib/dsys/workflow.amk:
+#  workflows: a task graph as JSON under @workflow, compiled by workflow.jq
+#  to a net that dsys/petri runs. <name>.net reads the compiled net.
+#
+workflow._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+$(amk.require jq)
+load dsys/petri
+
+workflow._main := include "workflow"; compile
+workflow.__schema__ := dsys/schema/workflow.json
+
+# The source, a workspace beside the net, compiled to the net's JSON.
+workflow.compile = $(jq.argv -c -L $(workflow._lib),$(workflow._main), \
+  $(jq.ns $(1).workflow, get, -c .))
+$(amk.fxn! workflow.compile)
+
+# @workflow and @workflow.import: the source kept, the compiled net loaded.
+workflow.from = $(jq.import $(1).workflow, $(2)) \
+  $(eval $(1).source := $(1).workflow) \
+  $(call petri.load,$(1),$(workflow.compile $(1)),workflow) \
+  $(amk.fxn! $(1).net, petri._q, $(1), -c .)
+workflow.at = $(call workflow.from,$(1),$(amk.val.json5 $(2)))
+workflow_star = $(call workflow.at,$(call petri.named,$(1),workflow),$(1))
+workflow.import_star = $(call workflow_star,$(1))
+workflow.target_star = $(call workflow_star,$(1)) \
+  $(call petri.target,$(call petri.named,$(1),workflow))
+workflow.exec_star = $(call petri.exec_star,$(1),$(2),workflow)
+$(amk.fxn! workflow.exec, petri.exec)
+
+# The data variety: a workflow from text or empty, its version, and a wait.
+workflow.empty := {"tasks":{}}
+workflow.create = $(call workflow.from,$(1), \
+  $(if $(filter undefined,$(origin 2)),$(workflow.empty),$(2)))
+$(amk.fxn! workflow.create)
+$(amk.fxn! workflow.version, petri.version)
+$(amk.fxn! workflow.wait, petri.wait)
+$(amk.engine workflow, guest=jq)

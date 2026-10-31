@@ -1,0 +1,46 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/petri-csp.amk:
+#  a rendezvous, as in Hoare's processes, from the dsys topic's factory: a
+#  send returns only once its value is received. two micropy senders and a
+#  slow js receiver share one channel, so each "sent" line follows its
+#  "received" line.
+#
+
+load dsys/locks
+load dsys/jobman
+
+__main__: run.csp show.after
+
+$(amk.rendezvous chan)
+
+# A sender: each send waits until its value is received.
+@micropy.target
+define sender
+  import amk
+  me = amk.sys("pid")
+  for i in (1, 2):
+    v = "m%d-%s" % (i, me)
+    amk.rendezvous.chan.send(v)
+    print("sent " + v)
+endef
+
+# A receiver, slow, so the senders wait on it.
+@js.target
+define receiver
+  for (let i = 0; i < 4; i++) {
+    os.sleep(300);
+    print("received " + amk.rendezvous.chan.recv());
+  }
+endef
+
+@lua.target
+define run.csp
+  local jobman = amk.jobman.__jobs__
+  local jobs = { jobman.spawn.goal('receiver'), jobman.spawn.goal('sender'),
+                 jobman.spawn.goal('sender') }
+  for i = 1, 3 do jobman.wait(jobs[i]) end
+endef
+
+show.after:
+	@echo "chan: $(amk.pool.size chan), chan.ack: $(amk.pool.size chan.ack)"

@@ -1,0 +1,28 @@
+file.c: the table of every file make knows is shared, since the goal references resolve
+against it, and a served child never removes intermediates, since it shares its files
+with the zygote that parsed them.
+
+--- a/src/file.c
++++ b/src/file.c
+@@ -58,7 +58,7 @@
+                           ((struct file const *) y)->hname);
+ }
+
+-static struct hash_table files;
++struct hash_table files;
+
+ /* Whether or not .SECONDARY with no prerequisites was given.  */
+ static int all_secondary = 0;
+@@ -364,8 +364,10 @@
+   struct file **file_end;
+   int doneany = 0;
+
+-  /* If there's no way we will ever remove anything anyway, punt early.  */
+-  if (question_flag || touch_flag || all_secondary || no_intermediates)
++  /* If there's no way we will ever remove anything anyway, punt early.
++     A resident dispatch child shares these files with its parent.  */
++  if (question_flag || touch_flag || all_secondary || no_intermediates
++      || amk_child)
+     return;
+
+   if (sig && just_print_flag)

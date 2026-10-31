@@ -1,0 +1,59 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/pipe-1.amk:
+#  every engine in one shell pipe, each stage adding
+#  its own version to a json object.
+#
+
+__main__:
+	${amk} s7.seed | ${amk} awk.add \
+	  | jq_version="$(jq.__version__)" ${amk} jq.add | ${amk} lua.add \
+	  | ${amk} micropy.add | ${amk} js.add | ${amk} jq.check
+
+# Each stage is an imported target: define in, stdin in, output down the pipe.
+@s7.target
+define s7.seed
+  (format #t "{\"s7\": \"~A\"}" (*s7* 'version))
+endef
+
+@awk.target
+define awk.add
+  BEGIN { while ((getline line) > 0) s = s line
+          v = PROCINFO["version"]
+          print substr(s, 1, length(s) - 1) ", \"awk\": \"" v "\"}" }
+endef
+
+@jq.target
+define jq.add
+  . + {jq: env.jq_version}
+endef
+
+@lua.target
+define lua.add
+  local json = require("dkjson")
+  local d = json.decode(io.read("a"))
+  d.lua = _VERSION
+  print(json.encode(d))
+endef
+
+@micropy.target
+define micropy.add
+  import sys, json
+  d = json.load(sys.stdin)
+  d["micropy"] = sys.version
+  print(json.dumps(d))
+endef
+
+@js.target
+define js.add
+  const d = JSON.parse(std.in.readAsString());
+  d.js = "quickjs on " + os.platform;
+  print(JSON.stringify(d));
+endef
+
+# The last stage fails unless every stage left a key.
+@jq.target
+define jq.check
+  if (keys | length) == 6 then .
+  else error("expected 6 stages, got \(keys)") end
+endef

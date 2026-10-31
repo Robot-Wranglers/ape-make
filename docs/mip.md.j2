@@ -1,0 +1,106 @@
+{% set name = "mip" %}
+{% set root = ".." %}
+<!-- header # mip "`mod :: amk.{{ name }}`" |Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
+<!-- /header -->
+
+<a id="overview"></a>
+The `mip.amk` module installs pinned packages for the [micropy guest](../README.md#micropy). A define under `@mip.install` names the packages as JSON; the define's name becomes the target that fetches whatever is missing, and every package lands on the guest's import path.
+
+```Makefile
+load {{ name }}
+
+@mip.install
+define deps
+  { "microdot": {
+      "version": "v2.7.0",
+      "spec": "github:miguelgrinberg/microdot/src/microdot/microdot.py" } }
+endef
+```
+
+<a id="see-also"></a>
+
+It builds on:
+
+* micropython's own package installer, `mip`[^mip], bundled from micropython-lib
+* amk's [micropy engine](../README.md#micropy) and jq
+* mip [module source](../payload/lib/amk/mip.amk), a thin wrapper on the above, providing the grammar
+
+<a id="concepts"></a>
+
+## Concepts
+
+| Term | Meaning |
+| --- | --- |
+| Manifest | the define under `@mip.install`: packages by name, each with a spec and a version |
+| Spec | what mip installs: a micropython-lib name, `github:org/repo/path`, `gitlab:org/repo/path`, or an http or https URL |
+| Cache | `mip.cache`, `~/.cache/amk/mip` by default; a package lives at `<cache>/<name>/<version>` |
+| Stamp | the `.ok` file in a package's directory, holding its digest; a package with a stamp is installed |
+| Pin | a package's `sha256`, the digest its install must match, over every file's path and bytes |
+
+A version is fetched once and shared by every manifest that names it.
+
+<a id="syntax"></a>
+
+## Syntax
+
+| Form | Declares |
+| --- | --- |
+| `@mip.install` above a define | a manifest of the define's name: its packages on `MICROPYPATH`, and a phony target of the same name that installs the missing ones |
+
+The body may be JSON5, as [io](io.md) describes for every JSON define.
+
+<a id="api"></a>
+
+## API
+
+| Call | Does | Answers |
+| --- | --- | --- |
+| `<manifest>` | installs every package without a stamp | a target |
+| `mip.cache` | where packages are installed, `$(HOME)/.cache/amk/mip` unless set | a variable |
+| `$(mip.path manifest)` | each package's directory, as added to `MICROPYPATH` | paths |
+| `$(mip.missing manifest)` | the packages with no stamp yet | names |
+
+Run the manifest's target before a guest imports from it, for example as a prerequisite:
+
+```Makefile
+serve: deps
+	...
+```
+
+<a id="errors"></a>
+
+## Errors
+
+| Condition | Message |
+| --- | --- |
+| A manifest that breaks the schema | `deps: does not meet schema/mip.json: ...`, and nothing is fetched |
+| An install whose digest does not match its pin | `mip: microdot digests to <sha>; pin it as its sha256 in deps`, and the build stops with nothing published |
+| A package with no pin | the same line on stderr as a warning; the install completes and its digest is kept in the stamp |
+
+<a id="demos"></a>
+
+## Demos
+
+| Demo | Shows |
+| --- | --- |
+| [`json-rpc.amk`]({{ root }}/demos/json-rpc.amk) | microdot under `@mip.install`, serving a JSON-RPC server whose methods live in several guests |
+
+<a id="references"></a>
+
+## References
+
+- [The micropy engine](../README.md#micropy), the guest these packages are for.
+- [Bundled libraries](../README.md#libraries), where mip sits among the payload's libraries.
+- [io](io.md), the JSON5 reading every JSON define shares.
+
+[^mip]: micropython-lib, "mip", [github.com/micropython/micropython-lib](https://github.com/micropython/micropython-lib).
+
+<a id="schema"></a>
+
+## Schema
+
+Each manifest is checked against [`schema/mip.json`]({{ root }}/payload/lib/amk/schema/mip.json) before anything is fetched.
+
+```json
+{{ open("payload/lib/amk/schema/mip.json").read().rstrip() }}
+```

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kahn.json",
+  "title": "@kahn",
+  "description": "a Kahn network under @kahn: channels holding tokens and processes reading and writing them, compiled by kahn.jq to an open net; one reader and one writer per channel, and every name a process uses a channel, are checked by the compile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channels"],
+  "properties": {
+    "channels": {
+      "description": "each channel and the tokens it starts with, in order; a channel is a labeled place of the net",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_.-]+$" },
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "pattern": "^[^\\s$#\\\\]{1,31}$" }
+      }
+    },
+    "processes": {
+      "description": "each process by name: the target it runs and the channels it reads one token from and may write to; more join by the at line @<name>.proc",
+      "type": "object",
+      "default": {},
+      "propertyNames": { "pattern": "^[a-z0-9_-]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run", "reads"],
+        "properties": {
+          "run": { "description": "the target a firing runs", "type": "string", "minLength": 1 },
+          "reads": {
+            "description": "the channels it takes one token from per firing",
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
+          "writes": {
+            "description": "the channels its target produces to itself",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "final": {
+      "description": "the token counts the network must end with, by channel; without it, the end is not checked",
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

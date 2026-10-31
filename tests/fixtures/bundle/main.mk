@@ -1,4 +1,4 @@
-# The program smoke bundles: the entry comes from the payload, and so does its include.
+# The program smoke bundles: entry and its include both come from the payload.
 include lib/greet.mk
 include lib/sub/deep.mk
 

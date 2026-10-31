@@ -1,0 +1,54 @@
+#
+# payload/lib/dsys/jobman.amk:
+#  jobmen: pools of jobs over amk.pool and dsys/job. @jobman above a JSON
+#  define opens a pool of the define's name with a pool's keys and keeps
+#  fail_fast as a variable the guests read; a jobman, a guest's handle from
+#  lib/jobman as amk.jobman.<pool>, spawns under its bound, waits only on its
+#  own members, and gives the token back on reap. __jobs__, opened on load,
+#  is the default job pool. jobman._ is private.
+#
+$(amk.require jq)
+load dsys/job
+
+jobman._pool := $(amk.lib.find dsys/pool.default.json)
+jobman._own := $(amk.lib.find dsys/jobman.default.json)
+jobman.__schema__ := dsys/schema/jobman.json
+jobman.__jobs__.fail_fast ?= false
+
+# The default pool, opened once: __jobs__ by AMK_MAX_JOBS, or max_jobs.
+jobman.max_jobs ?= 4
+jobman._env = $(if $(filter-out undefined,$(origin $(1))),$($(1)))
+jobman._jobs = $(strip $(or \
+  $(call jobman._env,AMK_MAX_JOBS),$(jobman.max_jobs)))
+$(if $(amk.pool __jobs__),,$(amk.pool __jobs__, $(jobman._jobs)))
+
+# The body over pool's defaults, then jobman's, as words; - for none.
+define jobman._merge
+  ($$pool[0] * $$own[0] * .) as $$m
+  | [ (if ($$m.labels | length) > 0 then (.size // "-") else $$m.size end),
+      ($$m.label_gen // "-"), ($$m.strategy // "-"), $$m.fail_fast ]
+    + ($$m.labels | map(tostring))
+  | map(tostring) | join(" ")
+endef
+jobman._merged = $(jq.argv -r \
+  --slurpfile pool $(jobman._pool) --slurpfile own $(jobman._own), \
+  $(strip $(jobman._merge)), $(amk.val.json5 $(1)))
+$(amk.fxn! jobman._merged)
+
+# The callform: a pool of jobs by name and size; fail_fast only when given true
+jobman = $(strip \
+  $(if $(amk.pool $(1)),,$(amk.pool $(1), $(2))) \
+  $(eval jobman.$(1).fail_fast := $(if $(filter true, \
+    $(if $(filter-out undefined,$(origin 3)),$(3))),true,false)))
+$(amk.fxn! jobman)
+
+# The at line @jobman: a pool from the merge's pool keys, then its fail_fast.
+@amk.fxn!
+define jobman_star
+$(if $(amk.pool $(1)),,$(amk.pool $(1), \
+  size=$(filter-out -,$(word 1,$(jobman._merged $(1)))), \
+  labels=$(wordlist 5,260,$(jobman._merged $(1))), \
+  label_gen=$(filter-out -,$(word 2,$(jobman._merged $(1)))), \
+  strategy=$(filter-out -,$(word 3,$(jobman._merged $(1)))))) \
+$(jobman $(1), , $(word 4,$(jobman._merged $(1))))
+endef

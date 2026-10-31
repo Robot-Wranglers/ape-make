@@ -1,0 +1,655 @@
+posixos.c: the jobserver's state is a ledger, a struct the verbs take, and make's own is
+the goals ledger behind the stock names; amk opens more by jobserver_new and the _on
+verbs, declared in amk.h. The wait for a token also serves the children's call requests,
+so a child blocked on a request never holds a token make is waiting for; it takes its
+bound in milliseconds, forever below zero, and at once at zero. A ledger's token is width
+bytes, one for make's own; a ledger whose tokens are labels sets its width by
+jobserver_width_on, reads the token the last acquire took whole by jobserver_token_on, and
+writes one by jobserver_release_token_on.
+
+--- a/src/posixos.c
++++ b/src/posixos.c
+@@ -40,6 +40,7 @@
+ #include "debug.h"
+ #include "job.h"
+ #include "os.h"
++#include "amk.h"
+
+ #define STREAM_OK(_s) ((fcntl (fileno (_s), F_GETFD) != -1) || (errno != EBADF))
+
+@@ -79,17 +80,6 @@
+
+ /* This section provides OS-specific functions to support the jobserver.  */
+
+-/* True if this is the root make instance.  */
+-static unsigned char job_root = 0;
+-
+-/* These track the state of the jobserver pipe.  Passed to child instances.  */
+-static int job_fds[2] = { -1, -1 };
+-
+-/* Used to signal read() that a SIGCHLD happened.  Always CLOEXEC.
+-   If we use pselect() this will never be created and always -1.
+- */
+-static int job_rfd = -1;
+-
+ /* Token written to the pipe (could be any character...)  */
+ static char token = '+';
+
+@@ -101,23 +91,50 @@
+     js_fifo             /* Use a named pipe as the jobserver.  */
+   };
+
+-static enum js_type js_type = js_none;
++/* One ledger: whether this process made it, the pipe, the dup'd read side the child signal closes when pselect is missing, the style, the fifo's name, and the bytes in one token; make's own is the goals ledger, and amk opens more with the same verbs.  */
++struct jobserver
++  {
++    unsigned char root;
++    int fds[2];
++    int rfd;
++    enum js_type type;
++    char *fifo_name;
++    unsigned int width;
++  };
+
+-/* The name of the named pipe (if used).  */
+-static char *fifo_name = NULL;
++static struct jobserver js_goals = { 0, { -1, -1 }, -1, js_none, NULL, 1 };
++static unsigned int js_made = 0;
++/* The token the last acquire read, whole, for ledgers whose tokens are labels.  */
++static char js_intake[JOBSERVER_WIDTH_MAX];
+
++struct jobserver *
++jobserver_goals (void)
++{
++  return &js_goals;
++}
++
++struct jobserver *
++jobserver_new (void)
++{
++  struct jobserver *js = xcalloc (sizeof *js);
++  js->fds[0] = js->fds[1] = js->rfd = -1;
++  js->width = 1;
++  return js;
++}
++
+ static int
+-make_job_rfd ()
++make_job_rfd (struct jobserver *js)
+ {
+ #ifdef HAVE_PSELECT
+   /* Pretend we succeeded.  */
++  (void) js;
+   return 0;
+ #else
+-  EINTRLOOP (job_rfd, dup (job_fds[0]));
+-  if (job_rfd >= 0)
+-    fd_noinherit (job_rfd);
++  EINTRLOOP (js->rfd, dup (js->fds[0]));
++  if (js->rfd >= 0)
++    fd_noinherit (js->rfd);
+
+-  return job_rfd;
++  return js->rfd;
+ #endif
+ }
+
+@@ -143,7 +160,7 @@
+ }
+
+ unsigned int
+-jobserver_setup (int slots, const char *style)
++jobserver_setup_on (struct jobserver *js, int slots, const char *style)
+ {
+   int r;
+
+@@ -156,74 +173,78 @@
+ # define  FNAME_PREFIX "GMfifo"
+       const char *tmpdir = get_tmpdir ();
+
+-      fifo_name = xmalloc (strlen (tmpdir) + CSTRLEN (FNAME_PREFIX)
+-                           + INTSTR_LENGTH + 2);
+-      sprintf (fifo_name, "%s/" FNAME_PREFIX "%" MK_PRI64_PREFIX "d",
+-               tmpdir, (long long)make_pid ());
++      js->fifo_name = xmalloc (strlen (tmpdir) + CSTRLEN (FNAME_PREFIX)
++                               + INTSTR_LENGTH * 2 + 3);
++      if (js == &js_goals)
++        sprintf (js->fifo_name, "%s/" FNAME_PREFIX "%" MK_PRI64_PREFIX "d",
++                 tmpdir, (long long)make_pid ());
++      else
++        sprintf (js->fifo_name, "%s/" FNAME_PREFIX "%" MK_PRI64_PREFIX "d-%u",
++                 tmpdir, (long long)make_pid (), ++js_made);
+
+-      EINTRLOOP (r, mkfifo (fifo_name, 0600));
++      EINTRLOOP (r, mkfifo (js->fifo_name, 0600));
+       if (r < 0)
+         {
+-          perror_with_name("jobserver mkfifo: ", fifo_name);
+-          free (fifo_name);
+-          fifo_name = NULL;
++          perror_with_name("jobserver mkfifo: ", js->fifo_name);
++          free (js->fifo_name);
++          js->fifo_name = NULL;
+         }
+       else
+         {
+           /* We have to open the read side in non-blocking mode, else it will
+              hang until the write side is open.  */
+-          EINTRLOOP (job_fds[0], open (fifo_name, O_RDONLY|O_NONBLOCK));
+-          if (job_fds[0] < 0)
++          EINTRLOOP (js->fds[0], open (js->fifo_name, O_RDONLY|O_NONBLOCK));
++          if (js->fds[0] < 0)
+             OSS (fatal, NILF, _("cannot open jobserver %s: %s"),
+-                 fifo_name, strerror (errno));
++                 js->fifo_name, strerror (errno));
+
+-          EINTRLOOP (job_fds[1], open (fifo_name, O_WRONLY));
+-          if (job_fds[0] < 0)
++          EINTRLOOP (js->fds[1], open (js->fifo_name, O_WRONLY));
++          if (js->fds[0] < 0)
+             OSS (fatal, NILF, _("cannot open jobserver %s: %s"),
+-                 fifo_name, strerror (errno));
++                 js->fifo_name, strerror (errno));
+
+-          js_type = js_fifo;
++          js->type = js_fifo;
+         }
+     }
+ #endif
+
+-  if (js_type == js_none)
++  if (js->type == js_none)
+     {
+       if (style && strcmp (style, "pipe") != 0)
+         OS (fatal, NILF, _("unknown jobserver auth style '%s'"), style);
+
+-      EINTRLOOP (r, pipe (job_fds));
++      EINTRLOOP (r, pipe (js->fds));
+       if (r < 0)
+         pfatal_with_name (_("creating jobs pipe"));
+
+-      js_type = js_pipe;
++      js->type = js_pipe;
+     }
+
+   /* By default we don't send the job pipe FDs to our children.
+      See jobserver_pre_child() and jobserver_post_child().  */
+-  fd_noinherit (job_fds[0]);
+-  fd_noinherit (job_fds[1]);
++  fd_noinherit (js->fds[0]);
++  fd_noinherit (js->fds[1]);
+
+-  if (make_job_rfd () < 0)
++  if (make_job_rfd (js) < 0)
+     pfatal_with_name (_("duping jobs pipe"));
+
+   while (slots--)
+     {
+-      EINTRLOOP (r, write (job_fds[1], &token, 1));
++      EINTRLOOP (r, write (js->fds[1], &token, 1));
+       if (r != 1)
+         pfatal_with_name (_("init jobserver pipe"));
+     }
+
+   /* When using pselect() we want the read to be non-blocking.  */
+-  set_blocking (job_fds[0], 0);
++  set_blocking (js->fds[0], 0);
+
+-  job_root = 1;
++  js->root = 1;
+
+   return 1;
+ }
+
+ unsigned int
+-jobserver_parse_auth (const char *auth)
++jobserver_parse_auth_on (struct jobserver *js, const char *auth)
+ {
+   int rfd, wfd;
+
+@@ -232,24 +253,24 @@
+   /* First see if we're using a named pipe.  */
+   if (strncmp (auth, FIFO_PREFIX, CSTRLEN (FIFO_PREFIX)) == 0)
+     {
+-      fifo_name = xstrdup (auth + CSTRLEN (FIFO_PREFIX));
++      js->fifo_name = xstrdup (auth + CSTRLEN (FIFO_PREFIX));
+
+-      EINTRLOOP (job_fds[0], open (fifo_name, O_RDONLY));
+-      if (job_fds[0] < 0)
++      EINTRLOOP (js->fds[0], open (js->fifo_name, O_RDONLY));
++      if (js->fds[0] < 0)
+         {
+           OSS (error, NILF,
+-               _("cannot open jobserver %s: %s"), fifo_name, strerror (errno));
++               _("cannot open jobserver %s: %s"), js->fifo_name, strerror (errno));
+           return 0;
+         }
+
+-      EINTRLOOP (job_fds[1], open (fifo_name, O_WRONLY));
+-      if (job_fds[1] < 0)
++      EINTRLOOP (js->fds[1], open (js->fifo_name, O_WRONLY));
++      if (js->fds[1] < 0)
+         {
+           OSS (error, NILF,
+-               _("cannot open jobserver %s: %s"), fifo_name, strerror (errno));
++               _("cannot open jobserver %s: %s"), js->fifo_name, strerror (errno));
+           return 0;
+         }
+-      js_type = js_fifo;
++      js->type = js_fifo;
+     }
+   /* If not, it must be a simple pipe.  */
+   else if (sscanf (auth, "%d,%d", &rfd, &wfd) == 2)
+@@ -262,10 +283,10 @@
+       if (!FD_OK (rfd) || !FD_OK (wfd))
+         return 0;
+
+-      job_fds[0] = rfd;
+-      job_fds[1] = wfd;
++      js->fds[0] = rfd;
++      js->fds[1] = wfd;
+
+-      js_type = js_pipe;
++      js->type = js_pipe;
+     }
+   /* Who knows what it is?  */
+   else
+@@ -278,38 +299,38 @@
+      handler.  If this fails with EBADF, the parent closed the pipe on us as
+      it didn't think we were a submake.  If so, warn and default to -j1.  */
+
+-  if (make_job_rfd () < 0)
++  if (make_job_rfd (js) < 0)
+     {
+       if (errno != EBADF)
+         pfatal_with_name ("jobserver readfd");
+
+-      jobserver_clear ();
++      jobserver_clear_on (js);
+
+       return 0;
+     }
+
+   /* When using pselect() we want the read to be non-blocking.  */
+-  set_blocking (job_fds[0], 0);
++  set_blocking (js->fds[0], 0);
+
+   /* By default we don't send the job pipe FDs to our children.
+      See jobserver_pre_child() and jobserver_post_child().  */
+-  fd_noinherit (job_fds[0]);
+-  fd_noinherit (job_fds[1]);
++  fd_noinherit (js->fds[0]);
++  fd_noinherit (js->fds[1]);
+
+   return 1;
+ }
+
+ char *
+-jobserver_get_auth ()
++jobserver_get_auth_on (struct jobserver *js)
+ {
+   char *auth;
+
+-  if (js_type == js_fifo) {
+-    auth = xmalloc (strlen (fifo_name) + CSTRLEN (FIFO_PREFIX) + 1);
+-    sprintf (auth, FIFO_PREFIX "%s", fifo_name);
++  if (js->type == js_fifo) {
++    auth = xmalloc (strlen (js->fifo_name) + CSTRLEN (FIFO_PREFIX) + 1);
++    sprintf (auth, FIFO_PREFIX "%s", js->fifo_name);
+   } else {
+     auth = xmalloc ((INTSTR_LENGTH * 2) + 2);
+-    sprintf (auth, "%d,%d", job_fds[0], job_fds[1]);
++    sprintf (auth, "%d,%d", js->fds[0], js->fds[1]);
+   }
+
+   return auth;
+@@ -319,7 +340,7 @@
+ jobserver_get_invalid_auth ()
+ {
+   /* If we're using a named pipe we don't need to invalidate the jobserver.  */
+-  if (js_type == js_fifo) {
++  if (js_goals.type == js_fifo) {
+     return NULL;
+   }
+
+@@ -329,46 +350,46 @@
+ }
+
+ unsigned int
+-jobserver_enabled ()
++jobserver_enabled_on (struct jobserver *js)
+ {
+-  return js_type != js_none;
++  return js->type != js_none;
+ }
+
+ void
+-jobserver_clear ()
++jobserver_clear_on (struct jobserver *js)
+ {
+-  if (job_fds[0] >= 0)
+-    close (job_fds[0]);
+-  if (job_fds[1] >= 0)
+-    close (job_fds[1]);
+-  if (job_rfd >= 0)
+-    close (job_rfd);
++  if (js->fds[0] >= 0)
++    close (js->fds[0]);
++  if (js->fds[1] >= 0)
++    close (js->fds[1]);
++  if (js->rfd >= 0)
++    close (js->rfd);
+
+-  job_fds[0] = job_fds[1] = job_rfd = -1;
++  js->fds[0] = js->fds[1] = js->rfd = -1;
+
+-  if (fifo_name)
++  if (js->fifo_name)
+     {
+-      if (job_root)
++      if (js->root)
+         {
+           int r;
+-          EINTRLOOP (r, unlink (fifo_name));
++          EINTRLOOP (r, unlink (js->fifo_name));
+         }
+
+       if (!handling_fatal_signal)
+         {
+-          free (fifo_name);
+-          fifo_name = NULL;
++          free (js->fifo_name);
++          js->fifo_name = NULL;
+         }
+     }
+
+-  js_type = js_none;
++  js->type = js_none;
+ }
+
+ void
+-jobserver_release (int is_fatal)
++jobserver_release_on (struct jobserver *js, int is_fatal)
+ {
+   int r;
+-  EINTRLOOP (r, write (job_fds[1], &token, 1));
++  EINTRLOOP (r, write (js->fds[1], &token, 1));
+   if (r != 1)
+     {
+       if (is_fatal)
+@@ -380,20 +401,21 @@
+ unsigned int
+ jobserver_acquire_all ()
+ {
++  struct jobserver *js = &js_goals;
+   int r;
+   unsigned int tokens = 0;
+
+   /* Use blocking reads to wait for all outstanding jobs.  */
+-  set_blocking (job_fds[0], 1);
++  set_blocking (js->fds[0], 1);
+
+   /* Close the write side, so the read() won't hang forever.  */
+-  close (job_fds[1]);
+-  job_fds[1] = -1;
++  close (js->fds[1]);
++  js->fds[1] = -1;
+
+   while (1)
+     {
+       char intake;
+-      EINTRLOOP (r, read (job_fds[0], &intake, 1));
++      EINTRLOOP (r, read (js->fds[0], &intake, 1));
+       if (r != 1)
+         break;
+       ++tokens;
+@@ -401,48 +423,48 @@
+
+   DB (DB_JOBS, ("Acquired all %u jobserver tokens.\n", tokens));
+
+-  jobserver_clear ();
++  jobserver_clear_on (js);
+
+   return tokens;
+ }
+
+ /* Prepare the jobserver to start a child process.  */
+ void
+-jobserver_pre_child (int recursive)
++jobserver_pre_child_on (struct jobserver *js, int recursive)
+ {
+-  if (recursive && js_type == js_pipe)
++  if (recursive && js->type == js_pipe)
+     {
+-      fd_inherit (job_fds[0]);
+-      fd_inherit (job_fds[1]);
++      fd_inherit (js->fds[0]);
++      fd_inherit (js->fds[1]);
+     }
+ }
+
+ /* Reconfigure the jobserver after starting a child process.  */
+ void
+-jobserver_post_child (int recursive)
++jobserver_post_child_on (struct jobserver *js, int recursive)
+ {
+-  if (recursive && js_type == js_pipe)
++  if (recursive && js->type == js_pipe)
+     {
+-      fd_noinherit (job_fds[0]);
+-      fd_noinherit (job_fds[1]);
++      fd_noinherit (js->fds[0]);
++      fd_noinherit (js->fds[1]);
+     }
+ }
+
+ void
+-jobserver_signal ()
++jobserver_signal_on (struct jobserver *js)
+ {
+-  if (job_rfd >= 0)
++  if (js->rfd >= 0)
+     {
+-      close (job_rfd);
+-      job_rfd = -1;
++      close (js->rfd);
++      js->rfd = -1;
+     }
+ }
+
+ void
+-jobserver_pre_acquire ()
++jobserver_pre_acquire_on (struct jobserver *js)
+ {
+   /* Make sure we have a dup'd FD.  */
+-  if (job_rfd < 0 && job_fds[0] >= 0 && make_job_rfd () < 0)
++  if (js->rfd < 0 && js->fds[0] >= 0 && make_job_rfd (js) < 0)
+     pfatal_with_name (_("duping jobs pipe"));
+ }
+
+@@ -456,7 +478,7 @@
+    never miss a SIGCHLD.
+  */
+ unsigned int
+-jobserver_acquire (int timeout)
++jobserver_acquire_on (struct jobserver *js, int ms)
+ {
+   struct timespec spec;
+   struct timespec *specp = NULL;
+@@ -464,24 +486,26 @@
+
+   sigemptyset (&empty);
+
+-  if (timeout)
++  if (ms >= 0)
+     {
+-      /* Alarm after one second (is this too granular?)  */
+-      spec.tv_sec = 1;
+-      spec.tv_nsec = 0;
++      spec.tv_sec = ms / 1000;
++      spec.tv_nsec = (ms % 1000) * 1000000L;
+       specp = &spec;
+     }
+
+   while (1)
+     {
+       fd_set readfds;
+-      int r;
++      int r, top;
+-      char intake;
+
+       FD_ZERO (&readfds);
+-      FD_SET (job_fds[0], &readfds);
++      FD_SET (js->fds[0], &readfds);
++      /* The children's call requests are answered from this wait too, or a child blocked on one never frees its token.  */
++      top = amk_ask_fdset (&readfds);
++      if (top < js->fds[0])
++        top = js->fds[0];
+
+-      r = pselect (job_fds[0]+1, &readfds, NULL, NULL, specp, &empty);
++      r = pselect (top+1, &readfds, NULL, NULL, specp, &empty);
+       if (r < 0)
+         switch (errno)
+           {
+@@ -502,8 +526,12 @@
+         /* Timeout.  */
+         return 0;
+
++      amk_ask_ready (&readfds);
++      if (!FD_ISSET (js->fds[0], &readfds))
++        continue;
++
+       /* The read FD is ready: read it!  This is non-blocking.  */
+-      EINTRLOOP (r, read (job_fds[0], &intake, 1));
++      EINTRLOOP (r, read (js->fds[0], js_intake, js->width));
+
+       if (r < 0)
+         {
+@@ -603,22 +631,21 @@
+ }
+
+ unsigned int
+-jobserver_acquire (int timeout)
++jobserver_acquire_on (struct jobserver *js, int ms)
+ {
+-  char intake;
+   int got_token;
+   int saved_errno;
+
+   /* Set interruptible system calls, and read() for a job token.  */
+-  set_child_handler_action_flags (1, timeout);
++  set_child_handler_action_flags (1, ms > 0);
+
+-  EINTRLOOP (got_token, read (job_rfd, &intake, 1));
++  EINTRLOOP (got_token, read (js->rfd, js_intake, js->width));
+   saved_errno = errno;
+
+-  set_child_handler_action_flags (0, timeout);
++  set_child_handler_action_flags (0, ms > 0);
+
+-  if (got_token == 1)
++  if (got_token > 0)
+     return 1;
+
+   /* If the error _wasn't_ expected (EINTR or EBADF), fatal.  Otherwise,
+      go back and reap_children(), and try again.  */
+@@ -635,6 +662,99 @@
+
+ #endif /* HAVE_PSELECT */
+
++/* make's own calls, each on the goals ledger; its acquire waits forever, or one second when other jobs wait on the load.  */
++unsigned int
++jobserver_setup (int slots, const char *style)
++{
++  return jobserver_setup_on (&js_goals, slots, style);
++}
++
++unsigned int
++jobserver_parse_auth (const char *auth)
++{
++  return jobserver_parse_auth_on (&js_goals, auth);
++}
++
++char *
++jobserver_get_auth ()
++{
++  return jobserver_get_auth_on (&js_goals);
++}
++
++unsigned int
++jobserver_enabled ()
++{
++  return jobserver_enabled_on (&js_goals);
++}
++
++void
++jobserver_clear ()
++{
++  jobserver_clear_on (&js_goals);
++}
++
++void
++jobserver_release (int is_fatal)
++{
++  jobserver_release_on (&js_goals, is_fatal);
++}
++
++void
++jobserver_pre_child (int recursive)
++{
++  jobserver_pre_child_on (&js_goals, recursive);
++}
++
++void
++jobserver_post_child (int recursive)
++{
++  jobserver_post_child_on (&js_goals, recursive);
++}
++
++void
++jobserver_signal ()
++{
++  jobserver_signal_on (&js_goals);
++}
++
++void
++jobserver_pre_acquire ()
++{
++  jobserver_pre_acquire_on (&js_goals);
++}
++
++unsigned int
++jobserver_acquire (int timeout)
++{
++  return jobserver_acquire_on (&js_goals, timeout ? 1000 : -1);
++}
++
++/* A ledger whose tokens are labels: its width in bytes, the token the last acquire read, and a release that writes a whole token.  */
++void
++jobserver_width_on (struct jobserver *js, unsigned int width)
++{
++  js->width = width;
++}
++
++const char *
++jobserver_token_on (void)
++{
++  return js_intake;
++}
++
++void
++jobserver_release_token_on (struct jobserver *js, int is_fatal, const char *t)
++{
++  int r;
++  EINTRLOOP (r, write (js->fds[1], t, js->width));
++  if (r != (int) js->width)
++    {
++      if (is_fatal)
++        pfatal_with_name (_("write jobserver"));
++      perror_with_name ("write", "");
++    }
++}
++
+ #endif /* MAKE_JOBSERVER */
+
+ #if !defined(NO_OUTPUT_SYNC)

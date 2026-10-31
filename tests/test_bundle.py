@@ -48,20 +48,24 @@ def test_recursion_stays_inside_the_binary(bundle, tmp_path):
 def test_the_payload_keeps_the_base_members(amk, bundle):
   """Bundling adds files; the tools and libraries of the base binary stay."""
   assert packed(bundle, "lib/gmsl") == packed(amk, "lib/gmsl")
-  assert packed(bundle, "lib/dkjson.lua") == packed(amk, "lib/dkjson.lua")
+  assert packed(bundle, "lib/lua/dkjson.lua") == packed(amk, "lib/lua/dkjson.lua")
   assert packed(bundle, "lib/greet.mk") == (BUNDLE_SRC / "lib" / "greet.mk").read_text()
   assert packed(bundle, "__main__.mk") == (BUNDLE_SRC / "main.mk").read_text()
 
 
 def test_a_bundle_runs_with_nothing_on_the_path(bundle, tmp_path):
-  """The distribution case: only the binary, no shell tools from the host."""
+  """The distribution case: only the binary, so its recipes run on the payload's own bash and tools."""
+  cache = tmp_path / "cache"
+  probe = 'probe: ; echo "shell=$${BASH_VERSION:+bash} sed=$$(command -v sed)"'
+  # HOME stays real, since the ape loader a portable binary needs on macOS was unpacked there once with host tools.
   r = subprocess.run(
-    ["env", "-i", f"HOME={os.environ['HOME']}", "AMK_NO_PATH=1", "PATH=/nonexistent",
-     "/bin/sh", "-c", '"$0" -s entry', str(bundle)],
+    ["env", "-i", f"HOME={os.environ['HOME']}", f"XDG_CACHE_HOME={cache}", "PATH=/nonexistent",
+     "/bin/sh", "-c", '"$0" -s --eval "$1" entry probe', str(bundle), probe],
     capture_output=True, text=True, cwd=tmp_path, timeout=300,
   )
   assert r.returncode == 0, r.stderr
   assert entry_line in r.stdout
+  assert f"shell=bash sed={cache}/amk/" in r.stdout, r.stdout
 
 
 def test_a_bundle_serves_a_zygote(bundle, tmp_path, sock):

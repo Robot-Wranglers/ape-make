@@ -1,0 +1,51 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/utmpl-functions.amk:
+#  a template imported as a make function: one define, rendered on
+#  each call with whichever data variable the call names; and the
+#  forms a stacked engine leaves undefined, which stop make by name.
+#
+
+load utmpl
+
+release.data = {"project": "myproject", "version": "0.1"}
+other.data = {"project": "other", "version": "9"}
+
+# An imported template is a make function over any data variable.
+@utmpl.import
+define badge
+  [{{project}}-{{version}}]
+endef
+
+# A function composes with make's own: here, one badge per data variable.
+badges = $(foreach d,$(1),$(badge $(d)))
+
+one:
+	test "$(badge release.data)" = "[myproject-0.1]"
+	echo "one call: $(badge release.data)"
+
+many:
+	test "$(call badges,release.data other.data)" = "[myproject-0.1] [other-9]"
+	echo "two calls: $(call badges,release.data other.data)"
+
+# A template with its own args line takes the data whole, so it may be any json.
+@utmpl.import
+define pair
+  {% args d %}
+  {{d[0]}}+{{d[1]}}
+endef
+pair.data = [1, 2]
+
+own-args:
+	test "$(pair pair.data)" = "1+2"
+	echo "own args: $(pair pair.data)"
+
+# utmpl defines no exec; registration made the form stop make with a message.
+refused:
+	out=$$(${amk} missing 2>&1 || true); case "$$out" in \
+	  *"does not define utmpl.exec"*) echo "refused: utmpl.exec";; \
+	  *) echo "$$out"; exit 1;; esac
+missing:
+	echo "$(utmpl.exec print(1))"
+
+__main__: one many own-args refused

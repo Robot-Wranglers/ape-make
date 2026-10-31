@@ -1,0 +1,30 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/jq-2.amk:
+#  jq as a filter over a stream, and --null-input with inputs
+#  to fold the stream into one value.
+#
+
+__main__:
+	${amk} jq.events | ${amk} jq.errors | ${amk} jq.summary
+
+# A stream of log events, one json value per line.
+@jq.target --null-input --compact-output
+define jq.events
+  {level: "info", ms: 12}, {level: "error", ms: 40},
+  {level: "error", ms: 7}, {level: "info", ms: 3}
+endef
+
+# With no flags jq runs once per value on standard input, as any jq filter does.
+@jq.target --compact-output
+define jq.errors
+  select(.level == "error")
+endef
+
+# With --null-input it runs once and pulls the stream through inputs.
+@jq.target --null-input --raw-output
+define jq.summary
+  reduce inputs as $e ({n: 0, ms: 0}; .n += 1 | .ms += $e.ms)
+  | if .n == 2 and .ms == 47 then "errors: \(.n), \(.ms) ms"
+    else error("expected 2 errors and 47 ms, got \(.)") end
+endef

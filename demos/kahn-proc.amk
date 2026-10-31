@@ -1,0 +1,70 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/kahn-proc.amk:
+#  kahn-fizzbuzz with its processes joined late: the @kahn define declares
+#  only the channels, and each process joins by its own at line,
+#  @fb.proc/engine (reads > writes), above the define that is its body, as a
+#  member joins @actor.group or a reflex a tuple space. The output is the
+#  same: fizzbuzz 15, fizz 3 6 9 12, buzz 5 10.
+#
+
+load dsys/kahn
+
+__main__: fb.__main__ show.after
+
+fb.limit ?= 15
+
+@kahn
+define fb
+  {
+    channels: {
+      // the generator's state: the next number to emit
+      next: ["1"],
+      numbers: [],
+      fizzbuzz: [], fizz: [], buzz: [],
+    },
+    // every channel drained at the end
+    final: { next: 0, numbers: 0, fizzbuzz: 0, fizz: 0, buzz: 0 },
+  }
+endef
+
+# The generator: its token is its state, and it stops by not putting one back.
+@fb.proc/lua (next > next numbers)
+define gen
+  local n = tonumber(amk.var["fb.gen.token"])
+  amk.pool.produce("fb.numbers", tostring(n))
+  if n < tonumber(amk.var["fb.limit"]) then
+    amk.pool.produce("fb.next", tostring(n + 1))
+  end
+endef
+
+# The one writer whose choice of channel depends on the number it read.
+@fb.proc/micropy (numbers > fizzbuzz fizz buzz)
+define classify
+  import amk
+  n = int(amk.var["fb.classify.token"])
+  to = "fizzbuzz" if n % 15 == 0 else "fizz" if n % 3 == 0 \
+    else "buzz" if n % 5 == 0 else None
+  if to:
+      amk.pool.produce("fb." + to, str(n))
+  print(n, "->", to or "itself")
+endef
+
+@fb.proc/js (fizzbuzz)
+define say_fizzbuzz
+  print("js fizzbuzz " + amk.var["fb.say_fizzbuzz.token"]);
+endef
+
+@fb.proc/lua (fizz)
+define say_fizz
+  print("lua fizz " .. amk.var["fb.say_fizz.token"])
+endef
+
+@fb.proc/s7 (buzz)
+define say_buzz
+  (format #t "s7 buzz ~A~%" (amk-var "fb.say_buzz.token"))
+endef
+
+show.after:
+	@echo "marking: $(fb.marking )"
+	@echo "fired: $(words $(fb.trace)) firings"

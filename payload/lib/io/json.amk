@@ -1,0 +1,25 @@
+#
+# payload/lib/io/json.amk:
+#  JSON defines. the at line @json5 rewrites a define's body as plain JSON,
+#  and @json.schema (name) checks a define's body against the schema define
+#  of that name, by schema.jq, when the define is read. a body is read as
+#  JSON5 either way, so the two stack in any order, and a schema may be
+#  JSON5 too. json.validate runs the same check on demand.
+#
+json._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+$(amk.require jq, sqlite)
+
+# The at line @json5: the body read as JSON5, written back as plain JSON.
+json5_star = $(eval define $(1)$(nl)$(amk.val.json5 $(1))$(nl)endef)
+
+# A define's errors against a schema define, joined; nothing when valid.
+json._main := include "schema"; \
+  .[1] as $$s | .[0] | schema_errors($$s) | join("; ")
+json.validate = $(jq.argv -r -L $(json._lib),$(json._main), \
+  [$(amk.val.json5 $(1)),$(amk.val.json5 $(2))])
+$(amk.fxn! json.validate)
+
+# The at line @json.schema (name): the define checked, fatal on an error.
+json._need = $(error $(1): @json.schema needs a schema, as (name))
+json._refuse = $(if $(3),$(error $(1): does not meet $(2): $(3)))
+json.schema_star = $(if $(2),$(call json._refuse,$(1),$(2),$(json.validate $(1), $(2))),$(call json._need,$(1)))

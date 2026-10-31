@@ -1,0 +1,59 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tuplespace-actors.amk:
+#  actors whose mailboxes are a tuple space: a message is the tuple
+#  ["mail", to, from, body], send is out, and receive is a blocking in
+#  on the actor's own address. A pattern over the sender as well is a
+#  selective receive, so a reply is taken ahead of other mail.
+#
+
+load tspace
+load actor
+
+__main__: report
+
+# The mailboxes: one space for every actor, in memory.
+@tspace
+define MAIL
+endef
+
+# The charter: the Effection backend, members joining by at line.
+@actor.group
+define shop
+  { "backend": "effection", "restart": "never" }
+endef
+
+# A counter: a python goal in its own process, serving mail until stopped.
+@shop.actor/micropy {kind=goal}
+define counter
+  import amk
+  mail, count = amk.tspace["MAIL"], 0
+  while True:
+    _, _, sender, body = mail.in_("mail", "counter", str, object)
+    if body == "stop":
+      break
+    if body == "inc":
+      count += 1
+    if body == "get":
+      mail.out("mail", sender, "counter", count)
+endef
+
+# A client: it sends, then waits for the counter's reply alone.
+@shop.actor/micropy {kind=goal}
+define client
+  import amk
+  mail = amk.tspace["MAIL"]
+  mail.out("mail", "client", "nobody", "a letter the client never reads")
+  for body in ["inc", "inc", "inc", "get"]:
+    mail.out("mail", "counter", "client", body)
+  _, _, _, count = mail.in_("mail", "client", "counter", object)
+  print("client: counter says", count)
+  mail.out("mail", "counter", "client", "stop")
+endef
+
+# Mail nobody received stays in the space after the group ends.
+@MAIL.micropy.target: shop.__main__
+define report
+  for t in MAIL.all():
+    print("unread:", t)
+endef

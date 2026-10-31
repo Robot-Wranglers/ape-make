@@ -1,0 +1,50 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tuplespace-basic.amk:
+#  a space created and seeded by the @tspace decorator,
+#  read from make, worked by python and js targets, and counted in SQL.
+#
+
+load tspace
+
+# The define names the space; its json is the backing plus the seed.
+@tspace
+define SHOP
+  {
+    "run": true,
+    // tuples in the space before any reflex runs
+    "seed": [
+      ["stock", "tea", 10],
+      ["stock", "cake", 4],
+      ["order", "tea", 3],
+    ],
+  }
+endef
+
+__main__: report
+
+$(info stock: $(SHOP.read stock, ?str, ?int))
+
+# Python takes each order out of the space and ships it; SHOP is bound for it.
+@SHOP.micropy.target
+define orders
+  order = SHOP.inp("order", str, int)
+  while order:
+    print("took:", order)
+    SHOP.out("shipped", order[1], order[2])
+    order = SHOP.inp("order", str, int)
+endef
+
+# The define runs as SQL on the default space, so this counts nothing yet.
+@tspace.target
+define tally
+  SELECT count(*) AS default_space FROM tspace
+endef
+
+# JS reports what is left, and counts it in SQL through tspace.exec.
+@js.target: orders tally
+define report
+  const shop = amk.tspace["SHOP"];
+  for (const t of shop.all()) print("left:", JSON.stringify(t));
+  print("count:", amk.tspace.exec("SHOP", "SELECT count(*) AS n FROM tspace"));
+endef

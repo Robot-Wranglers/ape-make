@@ -1,0 +1,27 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/jq-1.amk:
+#  jq as a generator, building json from make's own values
+#  with no input at all.
+#
+
+$(amk.mode dataflow)
+
+__main__:
+	${amk} jq.check
+
+export engines := $(.ENGINES)
+
+# With --null-input jq reads nothing; here the engine list comes in via the env.
+@jq.target --null-input --compact-output
+define jq.manifest
+  {name: "amk", engines: (env.engines | split(" "))}
+endef
+
+# A second generator reads the first, spliced in as json.
+@jq.target --null-input --raw-output
+define jq.check
+  (>>JQ.MANIFEST<<)
+  | if (.engines | index("jq")) then "manifest: \(.engines | length) engines"
+    else error("jq is missing from \(.engines)") end
+endef

@@ -17,3 +17,7 @@ jobs:
   test:
     needs: build
     uses: ./.github/workflows/test.yml
+
+  itest:
+    needs: build
+    uses: ./.github/workflows/itest.yml

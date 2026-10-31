@@ -1,0 +1,246 @@
+<!-- header # jobman "`mod :: dsys/jobman`" |Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
+<h1><a id="jobman"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.up.dark.svg"><img src="img/hdr/docs-jobman.jobman.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.mod.dark.svg"><img src="img/hdr/docs-jobman.jobman.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.title.dark.svg"><img src="img/hdr/docs-jobman.jobman.title.svg" alt=" :: dsys/jobman"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.5.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.4.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.3.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.2.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.1.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.0.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<!-- /header -->
+
+<a id="overview"></a>
+A job is a fork of the parsed image running a goal list, and a pool of jobs bounds how
+many run at once. The job functions, `amk.spawn`, `amk.wait` and job control, are make
+functions that need no library. `dsys/jobman` opens pools of jobs, and
+the jobman library gives each guest `amk.jobman`, which wraps the job functions, through
+[`dsys/job`](job.md), with the guest's own values, and holds a jobman per pool: the
+handle that spawns under the [pool's](pool.md) bound. A jobman is a host plex: it owns the
+jobs it spawned, waits only on them, and can race them or end them all.
+
+```Makefile
+load dsys/jobman
+
+@jobman
+define ci
+  { "size": 2, "fail_fast": true }
+endef
+
+@lua.target
+define __main__
+  for _, r in ipairs(amk.jobman.ci.map({ {'lint'}, {'test'}, {'build'} })) do print(r.status) end
+endef
+```
+
+The jobman runs the goals `lint`, `test` and `build`, two at a time, as jobs; your targets do the work.
+
+Where jobs sit among the other concurrency flavors is in
+[the runtime](runtime.md#multiprocessing); the fork itself is in
+[the zygote](zygote.md#fork-and-the-fresh-copy), and the job functions' text contract in
+[the host handle](FFI.md#host-handle).
+
+<a id="concepts"></a>
+
+## Concepts
+
+| Term | Meaning |
+| --- | --- |
+| Job | a fork of the parsed image running a goal list as its own process group; it keeps the parent's parse and every guest state as they stood at the spawn, and a fatal signal at the parent ends it |
+| Record | a finished job's `pid`, `code`, `signal`, `status` and `mail`, as [the host handle](FFI.md#host-handle) describes |
+| `status` | `success`, `question` for make's exit 1, `failed` for any other code, `signal`, or `stopped` |
+| Mail | what a job's recipes sent through `amk.send` or the descriptor `AMK_MAIL` names, read whole in the record |
+| Module | `m` below: the verbs the jobman library adds to each guest, which take no pool token |
+| Jobman | `p` below: the handle on a job pool, whose spawn takes a token before the fork and whose wait gives it back on reap, so a job that dies frees its slot |
+| Member | a job a jobman spawned and has not reaped; `p.pending()` lists them, and `p.wait()` with no pid waits only on them, so a job outside the pool keeps its record for its own wait |
+| `__jobs__` | the default job pool, opened when the topic loads, and `m.__jobs__` its jobman; its size is `AMK_MAX_JOBS` in the environment, else `jobman.max_jobs`, which is 4, and its `fail_fast` is `jobman.__jobs__.fail_fast`, each settable before the load |
+| `fail_fast` | a pool's setting that stops `map` launching after the first result that is not `success` |
+
+<a id="syntax"></a>
+
+## Syntax
+
+A pool of jobs is declared with `@jobman` above a define named after it. A jobman is a
+[pool](dsys.md#pool-decorator) plus `fail_fast`: its body takes every key of `@pool`, merged
+over [pool's baseline](../payload/lib/dsys/pool.default.json) and then [jobman's](../payload/lib/dsys/jobman.default.json), so a size of 2,
+no labels, the default strategy and `fail_fast` false. It is checked first against its
+JSON Schema, [`schema/jobman.json`](../payload/lib/dsys/schema/jobman.json),
+which extends pool's, so a stray key is refused:
+
+```Makefile
+load dsys/jobman
+
+@jobman
+define strict
+  { "size": 1, "fail_fast": true }
+endef
+
+@lua.target
+define run
+  local rs = amk.jobman.strict.map({ {'build'}, {'test'} })
+  print(rs[1].status)
+endef
+```
+
+| Form | Declares |
+| --- | --- |
+| `@jobman` above `define name { "size": .., "labels": [..], "strategy": .., "fail_fast": .. } endef` | a pool of jobs of the define's name, from json over the defaults |
+| `$(jobman name, size[, fail_fast])` | the same, opening the pool `name` and setting `jobman.name.fail_fast`, `true` only when given |
+
+<a id="api"></a>
+<a id="job-catalog"></a>
+
+## API
+
+Every job call, one table per language. In each guest, `m` is the module
+the jobman library loads, whose verbs take no pool token, and `p` is a jobman, whose
+spawn takes a token of its pool and whose wait gives it back. `__jobs__` is the default
+job pool. A killed job keeps its pool token until its wait.
+
+A spawn names what it runs: `spawn.goal`, `spawn.goals` or `spawn.call`, the kinds of
+[`amk.job.spawn`](job.md#api), which the guest passes through as `kind=what`. Make knows the
+kinds and refuses any other by name, so every guest has the same family and the same
+refusal; `spawn` called bare spawns goals.
+
+<a id="api-make"></a>
+<a id="job-catalog-make"></a>
+
+### make
+
+| Call | Pool | Answers |
+| --- | --- | --- |
+| `$(amk.spawn one two)` | none | the pid, as text |
+| `$(amk.spawn one, foreground=1, stdout=log)` | none | the pid, as text |
+| `$(amk.spawn.argv one 'msg=a b')` | none | the pid, as text |
+| `$(amk.wait $(pid))`, `$(amk.wait )` for any job | none | the record, as json text |
+| `$(amk.wait $(pid),0)` | none | the record, or empty when it has not finished |
+| `$(amk.kill $(pid))`, `$(amk.kill $(pid),9)` | none | `1`, or empty for a pid that is not a live job |
+| `$(amk.stop $(pid))`, `$(amk.resume $(pid))`, `$(amk.foreground $(pid))` | none | `1` or empty |
+
+The same verbs with a job table, a status read, and waits on a set are under `amk.job`;
+see [`dsys/job`](job.md#api).
+
+<a id="api-lua"></a>
+<a id="job-catalog-lua"></a>
+
+### lua
+
+| Call | Pool | Answers |
+| --- | --- | --- |
+| `m = amk.jobman` | | the module |
+| `m.spawn.goal('one')`, `m.spawn.goals({'one', 'two'})`, `m.spawn.call('fn', 'arg')`, `m.spawn({'one'}, {foreground = true, stdout = 'log'})` for goals | none | the pid, a number |
+| `m.wait(pid)`, `m.wait()` for any job | none | the record, a table |
+| `m.wait(pid, false)` | none | the record, or `nil` when it has not finished |
+| `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `true`, or `false` for a pid that is not a live job |
+| `p = m.__jobs__`, `p = m.on('mine')`, `p = m.mine` | | a jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals({'one', 'two'})`, `p.spawn.call('fn', 'arg')`, `p.spawn({'one'})` for goals | a token | the pid, a number |
+| `p.wait(pid)`, `p.wait(pid, false)` | gives the token back | as `m.wait` |
+| `p.wait()`, `p.wait(nil, false)` | gives the token back | the first member's record, or `nil` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, a table; a job's record without consuming it, or `nil` while it runs |
+| `p.map({ {'a'}, {'b'} })`, `p.map(lists, {fail_fast = true})` | a token per list | a table of records, in input order |
+| `p.race({ {'a'}, {'b'} })` | a token per list | the first record; the others are killed and reaped |
+| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+
+<a id="api-micropy"></a>
+<a id="job-catalog-micropy"></a>
+
+### micropy
+
+| Call | Pool | Answers |
+| --- | --- | --- |
+| `m = amk.jobman` | | the module |
+| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], foreground=True, stdout='log')` for goals | none | the pid, an int |
+| `m.wait(pid)`, `m.wait()` for any job | none | the record, a dict |
+| `m.wait(pid, False)` | none | the record, or `None` when it has not finished |
+| `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `True`, or `False` for a pid that is not a live job |
+| `p = m.__jobs__`, `p = m.on('mine')` | | a jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | a token | the pid, an int |
+| `p.wait(pid)`, `p.wait(pid, False)` | gives the token back | as `m.wait` |
+| `p.wait()`, `p.wait(None, False)` | gives the token back | the first member's record, or `None` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, a list; a job's record without consuming it, or `None` while it runs |
+| `p.map([['a'], ['b']])`, `p.map(lists, True)` to stop at a failure | a token per list | a list of records, in input order |
+| `p.race([['a'], ['b']])` | a token per list | the first record; the others are killed and reaped |
+| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+
+<a id="api-js"></a>
+<a id="job-catalog-js"></a>
+
+### js
+
+| Call | Pool | Answers |
+| --- | --- | --- |
+| `const m = amk.jobman` | | the module |
+| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], {foreground: true, stdout: 'log'})` for goals | none | the pid, a number |
+| `m.wait(pid)`, `m.wait()` for any job | none | the record, an object |
+| `m.wait(pid, false)` | none | the record, or `undefined` when it has not finished |
+| `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `true`, or `false` for a pid that is not a live job |
+| `amk.exited(pid)` | none | a promise for the record, so a plex task awaits a job the way it awaits anything else |
+| `const p = m.__jobs__`, `const p = m.on('mine')` | | a jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | a token | the pid, a number |
+| `p.wait(pid)`, `p.wait(pid, false)` | gives the token back | as `m.wait` |
+| `p.wait()`, `p.wait(undefined, false)` | gives the token back | the first member's record, or `undefined` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, an array; a job's record without consuming it, or `undefined` while it runs |
+| `await p.exited(pid)` | gives the token back | the record, an object |
+| `await p.map([['a'], ['b']])`, `await p.map(lists, {fail_fast: true})` | a token per list | an array of records, in input order |
+| `p.race([['a'], ['b']])` | a token per list | the first record; the others are killed and reaped |
+| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+
+<a id="api-s7"></a>
+<a id="job-catalog-s7"></a>
+
+### s7
+
+| Call | Pool | Answers |
+| --- | --- | --- |
+| `(amk-jobman-spawn-kind 'goal "one")`, `(amk-jobman-spawn-kind 'call "fn" "arg")`, `(amk-jobman-spawn '("one" "two") :foreground #t :stdout "log")` for goals | none | the pid, an integer |
+| `(amk-jobman-wait pid)`, `(amk-jobman-wait)` for any job | none | the record, a hash table keyed by symbol |
+| `(amk-jobman-wait pid #f)` | none | the record, or `#f` when it has not finished |
+| `(amk-jobman-kill pid)`, `(amk-jobman-kill pid 9)`, `-stop`, `-resume`, `-foreground` | none | `#t`, or `#f` for a pid that is not a live job |
+| `(define p amk-jobman-__jobs__)`, `(define p (amk-jobman-on "mine"))` | | a jobman, a procedure of a verb |
+| `(p 'spawn.goal "one")`, `(p 'spawn.goals '("one" "two"))`, `(p 'spawn.call "fn" "arg")`, `(p 'spawn '("one"))` for goals | a token | the pid, an integer |
+| `(p 'wait pid)`, `(p 'wait pid #f)` | gives the token back | as `amk-jobman-wait` |
+| `(p 'wait)`, `(p 'wait #f #f)` | gives the token back | the first member's record, or `#f` with no member or none ready |
+| `(p 'pending)`, `(amk-jobman-peek pid)`, `(p 'peek pid)` | none | the members' pids, a list; a job's record without consuming it, or `#f` while it runs |
+| `(p 'map '(("a") ("b")))`, `(p 'map lists #t)` to stop at a failure | a token per list | a vector of records, in input order |
+| `(p 'race '(("a") ("b")))` | a token per list | the first record; the others are killed and reaped |
+| `(p 'close)` | gives every token back | every member killed and reaped, their records in pid order |
+| `(p 'kill pid)`, `(p 'stop pid)`, `(p 'resume pid)`, `(p 'foreground pid)` | none | as `amk-jobman-kill` |
+
+An s7 actor group's goals use the module's verbs, so a group that gives up kills the goals
+it still had running. A guest may also call the job functions bare, `amk.kill(pid)` or
+`(amk-kill pid)`, and gets the make table's text.
+
+<a id="errors"></a>
+
+## Errors
+
+| Condition | Message |
+| --- | --- |
+| A body that fails [the jobman schema](../payload/lib/dsys/schema/jobman.json) under `@jobman` | `odd: does not meet schema/jobman.json: Additional property 'colour' not allowed` |
+| A spawn of no goals, or more than 63 | `$(amk.spawn ...): between 1 and 63 goals` |
+| A spawn option other than `foreground=` and `stdout=` | `$(amk.spawn ...): no option 'x'; options are foreground= and stdout=` |
+| A fork that fails | `$(amk.spawn ...): fork failed` |
+| A pid or signal that is not a number | `$(amk.kill ...): pid 'twelve' is not a number` |
+| Job control with no pid | `$(amk.kill ...): no pid` |
+| An s7 handle verb it lacks | `amk-jobman: no verb spawnn` |
+| An s7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
+| A pool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
+
+A failure from a job function is fatal at a plain expansion, and a guest catches it
+through `amk.call`.
+
+<a id="demos"></a>
+
+## Demos
+
+| Demo | Shows |
+| --- | --- |
+| [`pool-basic.amk`](../demos/pool-basic.amk) | three jobs spawned through `amk.jobman.__jobs__` from lua, serialized by a pool of one |
+| [`pool-locking.amk`](../demos/pool-locking.amk) | jobs through the same handle, contending on a mutex and a horcrux |
+| [`supervise-1.amk`](../demos/supervise-1.amk) | a supervisor written by hand in js: goals spawned, awaited, stopped and resumed through the `__jobs__` jobman |
+| [`actors-2.amk`](../demos/actors-2.amk) | goals under the s7 actor backend, reaped through the module's verbs while the plex runs |
+
+<a id="references"></a>
+
+## References
+
+- [The runtime](runtime.md#multiprocessing), where jobs sit among the concurrency flavors.
+- [The zygote](zygote.md#fork-and-the-fresh-copy), the fork every job is.
+- [The host handle](FFI.md#host-handle), the job functions' text contract.
+- [Pool](pool.md), the tokens a pool of jobs takes.
+- [fork](https://en.wikipedia.org/wiki/Fork_(system_call)) and [process groups](https://en.wikipedia.org/wiki/Process_group), on Wikipedia.

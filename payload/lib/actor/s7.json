@@ -1,0 +1,17 @@
+{
+  "backend": "s7",
+  "strategy": "one_for_one",
+  "intensity": 3,
+  "restart": "always",
+  "pool": "actors",
+  "mailbox": "none",
+  "ask": false,
+  "kinds": {
+    "goal": {},
+    "call": {},
+    "block": { "engine": "micropy" },
+    "scoped": {},
+    "group": {}
+  },
+  "children": {}
+}

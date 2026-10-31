@@ -1,6 +1,6 @@
 """Pins that amk processes coordinate through descriptors, never through filesystem names.
 
-A recipe's call channel is its own: concurrent callers under -j never read each other's
+A recipe's ask channel is its own: concurrent callers under -j never read each other's
 replies, a request left unread dies with its recipe, and a caller gone before its reply costs
 make nothing. A forked guest's write lands when the call returns. The census runs the ape
 under its own syscall trace with a private temp dir; every name made there is on the allowlist.
@@ -27,7 +27,7 @@ concurrent = "\n".join([
   "seed := " + " ".join(f'$(K{n}.update "{n}")' for n in names),
   "all: " + " ".join(names),
   " ".join(names) + ":",
-  "\t@source amk.sh; bad=0; for i in $$(seq 30); do v=$$(amk.call 'get K$@ .'); [ \"$$v\" = '\"$@\"' ] || bad=$$((bad + 1)); done; echo \"$@ bad=$$bad\"",
+  "\t@source amk.sh; bad=0; for i in $$(seq 30); do v=$$(amk.ask 'get K$@ .'); [ \"$$v\" = '\"$@\"' ] || bad=$$((bad + 1)); done; echo \"$@ bad=$$bad\"",
   "",
 ])
 
@@ -37,11 +37,11 @@ channel = "\n".join([
   "$(jq.ns S, create)",
   "seed := $(S.update $(three))",
   "unread:",
-  "\t@printf 'get S length\\n' >&$$AMK_CALL",
+  "\t@printf 'get S length\\n' >&$$AMK_ASK",
   "after: unread",
-  "\t@printf 'get S .[0]\\n' >&$$AMK_CALL; read -r st n <&$$AMK_REPLY; IFS= read -r v <&$$AMK_REPLY; echo \"v=$$v\"",
+  "\t@printf 'get S .[0]\\n' >&$$AMK_ASK; read -r st n <&$$AMK_REPLY; IFS= read -r v <&$$AMK_REPLY; echo \"v=$$v\"",
   "dead:",
-  "\t@printf '@gone get S .\\n' >&$$AMK_CALL; read -r ack <&$$AMK_REPLY; echo dead-done",
+  "\t@printf '@gone get S .\\n' >&$$AMK_ASK; read -r ack <&$$AMK_REPLY; echo dead-done",
   "",
 ])
 
@@ -71,11 +71,11 @@ census = "\n".join([
   "endef",
   "all: one two three",
   "one:",
-  "\t@source amk.sh; amk.call 'get S .'",
+  "\t@source amk.sh; amk.ask 'get S .'",
   "two:",
   "\t@echo $(lua amk.var.X = \"x\")",
   "three:",
-  "\t@echo $(goal hello)",
+  "\t@echo $(amk.goal hello)",
   "",
 ])
 

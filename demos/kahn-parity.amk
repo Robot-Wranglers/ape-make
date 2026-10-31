@@ -1,0 +1,49 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/kahn-parity.amk:
+#  a Kahn network under @kahn, compiled by dsys/kahn to an open net that
+#  dsys/petri runs. split writes each number to evens or odds by its value,
+#  producing from its own step; one reader and one writer per channel keep
+#  the result fixed: odds 1 3 5, evens 2 4 6, every channel empty at the end.
+#
+
+load dsys/kahn
+
+__main__: parity.__main__ show.after
+
+@kahn
+define parity
+  {
+    "channels": {
+      "numbers": ["1", "2", "3", "4", "5", "6"],
+      "evens": [], "odds": []
+    },
+    "processes": {
+      // split routes each number to evens or odds
+      "split": { "run": "split", "reads": ["numbers"],
+                 "writes": ["evens", "odds"] },
+      "even":  { "run": "even", "reads": ["evens"] },
+      "odd":   { "run": "odd", "reads": ["odds"] },
+    },
+    "final": {},
+  }
+endef
+
+# The one process whose writes depend on what it read.
+@lua.target
+define split
+  local n = tonumber(amk.var["parity.split.token"])
+  local to = n % 2 == 0 and "evens" or "odds"
+  amk.pool.produce("parity." .. to, tostring(n))
+  print(n .. " -> " .. to)
+endef
+
+even:
+	@echo "even $(parity.even.token)"
+
+odd:
+	@echo "odd $(parity.odd.token)"
+
+show.after:
+	@echo "marking: $(parity.marking )"
+	@echo "fired: $(parity.trace)"
