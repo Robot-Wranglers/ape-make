@@ -100,7 +100,32 @@ plex, one task per option; on `(make-plex 'lifo)` the leaves come in `amb`'s ord
 a fifo plex the branches interleave, each start before any end, so a choice becomes a task
 that can yield, carry a deadline, and share the plex with other work. Choice is an s7
 matter: a js generator cannot be resumed twice, so Effection has no `shift`.
-`demos/stdlib-amb-2.amk` shows all three.
+
+Both orders as a demo: three branches interleaving on a fifo plex, then
+[the amb graph walk](amb.md#example-search) on a lifo plex, finding `amb`'s paths in
+`amb`'s order:
+
+```Makefile
+{{ open("demos/plex-choice.amk").read().split("\n\n", 1)[1].rstrip() }}
+```
+
+```
+$ amk -f demos/plex-choice.amk
+one starts
+two starts
+three starts
+one ends
+two ends
+three ends
+amb:
+  (a b c d e)
+  (a b d e)
+  (a c d e)
+amb-fork, lifo:
+  (a b c d e)
+  (a b d e)
+  (a c d e)
+```
 
 <a id="errors"></a>
 
@@ -120,7 +145,7 @@ has them.
 
 | Demo | Shows |
 | --- | --- |
-| [`stdlib-amb-2.amk`]({{ root }}/demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
+| [`plex-choice.amk`]({{ root }}/demos/plex-choice.amk), embedded under [choice](#choice) | `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search |
 | [`supervise-1.amk`]({{ root }}/demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
 | [`race-1.amk`]({{ root }}/demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 

@@ -63,6 +63,7 @@ sqlite.sha256  := 1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e8
 cosmocc.version := 4.0.2
 cosmocc.zip     := cosmocc-$(cosmocc.version).zip
 cosmocc.url     := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
+cosmocc.mirror  := https://github.com/jart/cosmopolitan/releases/download/$(cosmocc.version)/$(cosmocc.zip)
 cosmocc.sha256  := 85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44
 
 # Tools are released cosmos binaries, zipped into the payload unchanged; patch 0012 puts them first on PATH.
@@ -413,7 +414,7 @@ $(dkjson.tarball): url := $(dkjson.url)
 $(lxsc.tarball): url := $(lxsc.url)
 $(utemplate.tarball): url := $(utemplate.url)
 $(effection.tarball): url := $(effection.url)
-$(cosmocc.zip): url := $(cosmocc.url)
+$(cosmocc.zip): url := $(cosmocc.url) $(cosmocc.mirror)
 $(deps.files):
 	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
 	$(call log, deps, fetching $@ from $(firstword $(url)))
@@ -674,9 +675,9 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
 	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
 
-# The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so it runs without this file's undefined-variable warnings.
+# The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so the prelude's undefined-variable warnings are shown only when the suite fails.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
-	  out=$$(env MAKEFLAGS=-s sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode"); \
+	  out=$$(sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode" 2>&1); \
 	  echo "gmsl-tests $$mode: $$(echo "$$out" | tail -1)"; \
 	  case "$$out" in *'; 0 tests failed'*) ;; *) echo "$$out" >&2; exit 1;; esac; \
 	done
@@ -718,7 +719,7 @@ smoke: $(artifact.ape) smoke.demos
 	rm -rf build/bundle && mkdir -p build/bundle/away
 	cd tests/fixtures/bundle && sh -c "$(abspath $(artifact.ape)) --bundle main.mk lib/ --out $(HERE)build/bundle/b.amk"
 	unzip -Z1 $(artifact.ape) | sort > build/bundle/base.list && unzip -Z1 build/bundle/b.amk | sort > build/bundle/b.list
-	test "$$(comm -13 build/bundle/base.list build/bundle/b.list | tr '\n' ' ')" = "__main__.mk lib/greet.mk lib/sub/deep.mk "
+	test "$$(comm -13 build/bundle/base.list build/bundle/b.list | tr '\n' ' ')" = "__main__.mk lib/greet.mk lib/js/dup.js lib/lua/dup.lua lib/sub/deep.mk "
 	unzip -tq build/bundle/b.amk
 	cd build/bundle/away && sh -c "../b.amk entry" && sh -c "../b.amk recurse"
 	cd build/bundle/away && env -i HOME="$$HOME" AMK_NO_PATH=1 PATH=/nonexistent /bin/sh -c "../b.amk entry"

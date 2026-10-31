@@ -55,7 +55,7 @@ JSON5 is read by a builtin every amk with sqlite has, with or without `load io/j
 | `$(amk.val.json5 name)` | the value of the define `name`, read the same way; the value unchanged in an amk without sqlite |
 
 The decorators that read a define as JSON, [`@actor.group`](actor.md), [`@petri`](petri.md),
-`@kahn`, `@workflow`, [`@pool`](dsys.md#pool-decorator), [`@jobman`](jobman.md#syntax),
+`@kahn`, `@workflow.dag`, [`@pool`](dsys.md#pool-decorator), [`@jobman`](jobman.md#syntax),
 [`@tspace`](tspace.md) and [`@mip.install`](mip.md), read it through these, so each of their bodies
 may be JSON5.
 

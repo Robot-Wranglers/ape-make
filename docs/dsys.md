@@ -14,7 +14,7 @@ The `dsys` module is a grab-bag of distributed-systems and dynamic-systems stuff
 | [job](job.md) | `load dsys/job` | [`amk.job`](job.md): the host's job verbs under one name, with a job table, a wait on a set, and mail from make |
 | [jobman](jobman.md) | `load dsys/jobman` | [`@jobman`](jobman.md#syntax): pools of jobs, the default `__jobs__`, and each guest's handle on one as `amk.jobman.<pool>`; loads `dsys/job` |
 | [petri](petri.md) | `load dsys/petri` | [Petri nets](petri.md): [`@petri`](petri.md#syntax), every place a pool; a [data engine](FFI.md#data-variety) on jq, loading `.petri` and `.pnml` |
-| [workflow](workflow.md) | `load dsys/workflow` | [`@workflow`](workflow.md): a task graph compiled to a net, each task's outcome a token's label; a data engine on jq, loading `.workflow`; loads `dsys/petri` |
+| [workflow](workflow.md) | `load dsys/workflow` | [`@workflow.dag`](workflow.md): a task graph compiled to a net, each task's outcome a token's label; a data engine on jq, loading `.workflow`; loads `dsys/petri` |
 | [kahn](kahn.md) | `load dsys/kahn` | [`@kahn`](kahn.md): a Kahn network compiled to a net, each channel a place its steps write themselves; a data engine on jq, loading `.kahn`; loads `dsys/petri` |
 | [fsm](fsm.md) | `load dsys/fsm` | [`@fsm`](fsm.md): a state machine in the shape of an xstate machine config, or an scxml document, compiled to a net; a data engine on jq, loading `.fsm` and `.scxml`; loads `dsys/petri` |
 
@@ -128,7 +128,7 @@ Most of the [runtime flavors](runtime.md) have need of a kind of budget for boun
 | [Multiprocessing](runtime.md#job-pools) | the spawner, across the job's lifetime | pools of jobs: `spawn`, `wait`, `map` |
 | [Control Multiplexer](plex.md) | the coroutine, across a yield | `acquire` with `ms` 0 between sleeps, since a waiting acquire holds the plex |
 | [Actor Model](actor.md#actor-pools) | the supervisor, one token per live leaf member, taken before a start and given back at its exit; with `"mailbox": "pool"`, an inbox per member | the charter's `pool` key, `actors` by default, which `load actor` opens from `AMK_MAX_ACTORS` else `actor.max_actors` |
-| [Automata & DEDS](runtime.md#automata) | the model's [Petri net](petri.md): every place is a pool, a firing consumes its inputs when it starts and produces its outputs when it lands | `@petri`, `@workflow` and `@kahn`, and arcs from an existing pool named under `amk.pools`, which bound the firings in flight |
+| [Automata & DEDS](runtime.md#automata) | the model's [Petri net](petri.md): every place is a pool, a firing consumes its inputs when it starts and produces its outputs when it lands | `@petri`, `@workflow.dag` and `@kahn`, and arcs from an existing pool named under `amk.pools`, which bound the firings in flight |
 | [Tuplespace Reactor](runtime.md#tuplespace-reactor) | the space itself: n identical tuples are a pool, `in` is acquire, `out` is release | none needed; a pool is a tuple space of one tuple type kept in a pipe, and the two differ by reach, not meaning |
 
 <a id="errors"></a>

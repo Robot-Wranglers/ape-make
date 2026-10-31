@@ -34,6 +34,7 @@ def plan:
         run: ($a.steps[$t].run // "" | if type == "array" then join(" ") else . end),
         bind: [($a.steps[$t].bind // {}) | to_entries[] | "\(.key)=\(.value)"],
         kind: ($a.steps[$t].kind // "goal"),
+        instance: ($a.steps[$t].instance // ""),
         guard: ($a.guard[$t] // ""
           | if type == "object" then "label:\(.label)" else gsub(" "; "_") end),
         label: ($a.label[$t] // "" | if type == "object" then "items" else . end),
@@ -54,6 +55,7 @@ def problems:
   | ($p.places + $pools) as $ends
   | (($a.backend // "petri") | select(IN(backends[]) | not)
       | "backend \(.); petri runs \(backends | join(" "))"),
+    (.transitions | group_by(.)[] | select(length > 1) | "transition \(.[0]) is declared twice"),
     ((($a.steps // {}) | keys) - $p.transitions | .[] | "step \(.) names no transition"),
     ($pools[] | select(IN($p.places[])) | "\(.) is both a place and an existing pool"),
     ($p.open[] | select(IN($p.places[]) | not) | "open place \(.) is not a place of the net"),

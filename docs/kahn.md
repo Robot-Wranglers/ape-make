@@ -23,7 +23,8 @@ endef
 `make parity` runs the network: each number in `numbers` fires `split` once.
 
 * every channel is a labeled [pool](pool.md),
-* a process fires once it can read one token from each channel it reads, and
+* a process fires once it can read one token from each channel it reads,
+* processes run concurrently, each as a job, and each one firing at a time, and
 * its step writes to its channels itself, so what it writes may depend on what it read.
 
 One reader and one writer per channel keep the result fixed, whatever order the processes fire in.
@@ -80,7 +81,8 @@ A step reads the token it took as `<name>.<process>.token` and writes with `amk.
 | Network part | Becomes |
 | --- | --- |
 | A channel | a labeled place of the same name |
-| A process | a transition with an arc from each channel it reads |
+| A process | a transition with an arc from each channel it reads, its step of kind [`agoal`](petri.md#amk-block) |
+| Its sequence | a place `<process>.idle` holding one token, with an arc into the process and one back, so the process has one firing in flight at most and writes each channel in order |
 | `writes` | no arcs: the step produces into its channels |
 | The network | an open net, strategy `open`, with a final marking only when `final` is given |
 
@@ -116,6 +118,7 @@ then refuses what a schema cannot say, before any net exists:
 | A read or write that is no channel | `p: names c, which is no channel` |
 | A channel with two readers | `c: has 2 readers, not 1` |
 | A channel with two writers | `c: has 2 writers, not 1` |
+| A channel named like a process's control place | `p.idle: is a channel and the control place of process p` |
 
 The `kahn.compile` function runs the compiler alone, without the schema, so a malformed body
 given to it directly fails as a jq error.

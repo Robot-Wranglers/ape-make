@@ -1,5 +1,4 @@
 <!-- header # petri "`mod :: dsys/petri`" |Concepts #concepts | Syntax #syntax | Runtime #amk-block | Endings #endings | Strategy #strategy | API #api | Reduction #reduction | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="petri"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.up.dark.svg"><img src="img/hdr/docs-petri.petri.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.mod.dark.svg"><img src="img/hdr/docs-petri.petri.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.title.dark.svg"><img src="img/hdr/docs-petri.petri.title.svg" alt=" :: dsys/petri"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.10.dark.svg"><img align=right src="img/hdr/docs-petri.petri.10.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.9.dark.svg"><img align=right src="img/hdr/docs-petri.petri.9.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.8.dark.svg"><img align=right src="img/hdr/docs-petri.petri.8.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.7.dark.svg"><img align=right src="img/hdr/docs-petri.petri.7.svg" alt="Errors"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.6.dark.svg"><img align=right src="img/hdr/docs-petri.petri.6.svg" alt="Reduction"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.5.dark.svg"><img align=right src="img/hdr/docs-petri.petri.5.svg" alt="API"></picture></a><a href="#strategy"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.4.dark.svg"><img align=right src="img/hdr/docs-petri.petri.4.svg" alt="Strategy"></picture></a><a href="#endings"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.3.dark.svg"><img align=right src="img/hdr/docs-petri.petri.3.svg" alt="Endings"></picture></a><a href="#amk-block"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.2.dark.svg"><img align=right src="img/hdr/docs-petri.petri.2.svg" alt="Runtime"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.1.dark.svg"><img align=right src="img/hdr/docs-petri.petri.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.0.dark.svg"><img align=right src="img/hdr/docs-petri.petri.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -21,7 +20,7 @@ build:
 __main__: flow.__main__
 ```
 
-Unless you *directly* want to encode a [discrete-event dynamic system](runtime.md#automata) as a petri net.. you probably will not use `@petri` directly.  Petri nets are primarily a *compilation target*, i.e. a lingua franca that everything from [state machines](fsm.md) to workflows can use, lowered or lifted as needed.  See also the main docs for the [dsys topic](dsys.md), see [`dsys/workflow`](workflow.md): `@workflow` for a task graph, and [`dsys/kahn`](kahn.md): `@kahn` for a Kahn network.
+Unless you *directly* want to encode a [discrete-event dynamic system](runtime.md#automata) as a petri net.. you probably will not use `@petri` directly.  Petri nets are primarily a *compilation target*, i.e. a lingua franca that everything from [state machines](fsm.md) to workflows can use, lowered or lifted as needed.  See also the main docs for the [dsys topic](dsys.md), see [`dsys/workflow`](workflow.md): `@workflow.dag` for a task graph, and [`dsys/kahn`](kahn.md): `@kahn` for a Kahn network.
 
 
 Lowering or lifting other abstractions to/from petri nets as a compilation project works, but it's also *executable* because **petri nets are a [runtime](runtime.md#automata) for amk**.  This works because:
@@ -132,6 +131,26 @@ mostly its block.
 | `invariants` | what must hold whenever nothing is in flight | a list of weighted sums over places and `<t>.busy` counts, each with its total under `=`; a broken one stops the run |
 | `backend` | which runner takes the net | `petri`, the only one today |
 
+A step's `run` may be another net's `<net>.__main__`, of any form. Every step runs in a child
+process, and a net run there opens its places afresh in that process, from its initial
+marking: each run is an instance with a marking of its own, and the parent sees its outcome
+and the files it writes.
+
+A step running a net with open places runs one named instance of it, by the step's
+`instance` or `<net>.<transition>`. The instance's open places are ports, pools named
+`<instance>.<place>` that open as soon as both nets have loaded, before any fork, so the
+parent, its steps and any job beside them can feed the instance:
+
+| Call | Puts a token into |
+| --- | --- |
+| `$(petri.put <instance>, place)` | that instance |
+| `$(petri.put <net>, place)` | the net's one instance, or the net itself when it runs as none |
+| inside an instance's run, `$(petri.put <net>, place)` | its own instance |
+
+A put is refused when the net has several instances, or when the instance is not running,
+in any process: an instance holds a token in the open pool `petri.live.<instance>` from its
+firing to its end. A step refuses to fire while its instance is still in flight.
+
 A transition with no `steps` entry moves tokens and runs nothing. Labels and guards are
 how the [workflow](workflow.md) form carries outcomes: each task's step is `goal.maybe`, its
 result the label of the token it produces, and the next task's guard reads that label.
@@ -215,6 +234,7 @@ time an open net's wait, as [endings](#endings) describes.
 | --- | --- | --- |
 | `<net>.__main__` | fires the net until no transition is enabled and none is in flight; then it ends at the final marking, fails if a final marking is declared and missed, or, with open places, waits for the environment | a target |
 | `$(<net>.marking )`, `$(<net>.marking place)` | reads the marking, each agoal transition's `<t>.busy` included | `place=count` words, or one count |
+| `$(petri.put <net or instance>, place)` | puts one token into a place, an [instance's](#amk-block) port when the net runs as one | nothing |
 | `petri.patience`, `petri.poll_ms` | how long an open net waits with nothing enabled, in seconds, empty for no limit; and how often it looks, 50 ms by default | variables |
 | `$(<net>.states )`, `$(<net>.state t)` | reads each transition's state | `t=state` words, or one state |
 | `$(<net>.trace)` | lists the firings so far, in order | transition names |
@@ -266,7 +286,7 @@ back what it compiled to.
 
 | Form | Page |
 | --- | --- |
-| `@workflow`, a task graph | [Workflows](workflow.md) |
+| `@workflow.dag`, a task graph | [Workflows](workflow.md) |
 | `@kahn`, a Kahn network | [Kahn networks](kahn.md) |
 | `@fsm`, a state machine | [State machines](fsm.md) |
 
@@ -281,6 +301,7 @@ routes the form's extension to it.
 
 | Condition | Message |
 | --- | --- |
+| A transition listed twice | `n: transition t is declared twice` |
 | An arc that does not join a place and a transition | `n: arc a to b does not join a place and a transition` |
 | `amk.open` naming no place | `n: open place c is not a place of the net` |
 | A place named like an agoal transition's in-flight count | `n: t.busy is both a place and the in-flight count of a transition` |
@@ -317,7 +338,7 @@ routes the form's extension to it.
 
 The full form of a net's JSON, as a JSON Schema, [`schema/petri.json`](../payload/lib/dsys/schema/petri.json),
 and every `@petri` body is checked against it as the makefile is read.
-The nets that `@workflow` and `@kahn` compile are of the same form. A net is also refused for
+The nets that `@workflow.dag` and `@kahn` compile are of the same form. A net is also refused for
 what a schema cannot say, as [errors](#errors) lists: an arc that does not join a place and a
 transition, or a transition with no input place.
 
@@ -411,6 +432,11 @@ transition, or a transition with no input place.
                 "description": "goal and goal.maybe run in place; agoal and agoal.maybe run as a job, in flight as a token of <t>.busy; a .maybe failure is an outcome, not fatal",
                 "enum": ["goal", "goal.maybe", "agoal", "agoal.maybe"],
                 "default": "goal"
+              },
+              "instance": {
+                "description": "when run is a net's __main__ and the net has open places, the name of the instance the step runs, its ports opened under it; by default <net>.<transition>",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+$"
               }
             }
           }

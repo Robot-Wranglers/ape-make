@@ -51,9 +51,10 @@ docs.drawio.old = $(foreach f,$(docs.drawio), \
 .PHONY: docs.headers docs.check docs.test docs.serve
 
 docs: docs.render
-	@# Render the templated pages, then regenerate every page's headers.
+	@# Render templated pages, regenerate every page's headers, then the diagrams.
 	$(call log,docs,headers for $(words $(docs.pages)) pages)
 	$(call mdheaders,$(docs.pages))
+	$(MAKE) -f docs/docs.amk docs.drawio
 
 docs.render: $(docs.rendered)
 	@# Render each docs.templates page to its .md, then redo its headers.

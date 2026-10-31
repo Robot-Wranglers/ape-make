@@ -50,7 +50,7 @@ As with [engine kinds](../README.md#engines), concurrency breaks down into flavo
 <dd>
 <p><strong>Unit:</strong> an event: a transition's firing, whose step is a target, a job, or a body in any guest.</p>
 <p><strong>Scheduler:</strong> the model's run, <code>&lt;name&gt;.__main__</code>, which steps until nothing can fire.</p>
-<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow</code> or <code>@kahn</code> above a JSON define.</p>
+<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow.dag</code> or <code>@kahn</code> above a JSON define.</p>
 <p><strong>Parameters:</strong> the model and its form; see <a href="dsys.md">dsys</a>.</p>
 </dd>
 </dl>
@@ -61,7 +61,7 @@ As with [engine kinds](../README.md#engines), concurrency breaks down into flavo
 | Multiprocessing | A process forked from the [zygote](zygote.md#fork-and-the-fresh-copy) | OS kernel, driven by a guest | signals, exit status, and mail | Preemptive multiprocessing; Message passing over pipes; Futures (`amk.acall`, `amk.exited`) | None; calls on the guest handle, and `$$AMK_MAIL` in a recipe | [the host handle](FFI.md#host-handle), [the zygote](zygote.md) |
 | Actor Model | a program in a guest runtime | a backend, under a group's charter | the group handle, events, and restarts | actor model with supervision trees; cooperative multitasking; structured concurrency | `@actor.group` above a JSON charter; `@<group>.actor (<engine>) {opts}` above a define; `<group>.run` | this page |
 | Workspaces | a tuple or row held by a data engine | the engine's owner: blocking verbs, versions, and triggers | the data itself | generative communication (Linda), blackboard; bound handlers make it a programmable tuple centre; `wait` is a condition variable on a version | `$(<space>.<verb> ...)` callforms; `@<space>.reflex <engine> (pattern)` above a define; `${tspace.sh}` verbs in a recipe | [version and wait](data-engines.md#version-and-wait), [the tuple space](tspace.md) |
-| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
+| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow.dag`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
 
 Targets are make's own concurrency and need nothing from a guest. Jobs are the host handle's
 `amk.spawn`, `amk.wait` and the rest of job control, and a guest's `amk.acall` is one job
@@ -221,7 +221,7 @@ The [dsys module](dsys.md) provides:
 | Form | Model |
 | --- | --- |
 | [`@petri`](petri.md) | a Petri net, written by hand |
-| [`@workflow`](workflow.md) | a task graph, each task's outcome a token's label |
+| [`@workflow.dag`](workflow.md) | a task graph, each task's outcome a token's label |
 | [`@kahn`](kahn.md) | a Kahn network, its channels labeled places |
 | [`@fsm`](fsm.md) | a state machine, xstate config or scxml, its states places holding one token and its events open places |
 
@@ -328,11 +328,11 @@ slow := $(wasm.exec deadline 100 fib 45)
 | [`supervise-3.amk`](../demos/supervise-3.amk) | the charter as data under `"backend": "effection"`, every kind, a nested group giving up |
 | [`actors-1.amk`](../demos/actors-1.amk) | the same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded in [the actor module](actor.md#syntax) |
 | [`actors-2.amk`](../demos/actors-2.amk) | goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
+| [`plex-choice.amk`](../demos/plex-choice.amk) | choice on the plex: `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search; embedded in [the plex module](plex.md#choice) |
 | [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
 | [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
 | [`petri-csp.amk`](../demos/petri-csp.amk) | a rendezvous as a Petri net: two micropy senders and a slow js receiver, each send returning once its value is received |
-| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
+| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow.dag`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
 | [`kahn-parity.amk`](../demos/kahn-parity.amk) | a Kahn network: open labeled pools as channels, produced to from a step's fork |
 | [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 

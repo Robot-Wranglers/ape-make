@@ -4,12 +4,12 @@
 
 <a id="overview"></a>
 
-Part of the [dsys toolkit](dsys.md), the `@workflow` syntax declares a task graph as data and compiles it to a [Petri net](petri.md):
+Part of the [dsys toolkit](dsys.md), the `@workflow.dag` syntax declares a task graph as data and compiles it to a [Petri net](petri.md):
 
 ```Makefile
 load dsys/workflow
 
-@workflow
+@workflow.dag
 define release
   {"tasks": {"build": {"run": "build"}, "ship": {"run": "ship", "needs": ["build"]}}}
 endef
@@ -21,11 +21,22 @@ __main__: release.__main__
 ```
 
 * each task runs a target, in any [guest engine](FFI.md),
-* `needs` orders tasks, and `when` picks which outcomes of the needs let a task run,
+* `needs` orders tasks partially, and `when` picks which outcomes of the needs let a task run,
 * `over` fans one task out across a list of items, and
 * `pool` bounds how many firings of a task hold a [pool](pool.md) token at once.
 
 The compiled net is an ordinary net: `<name>.__main__` and every other [petri call](petri.md#api) work on it.
+
+<a id="make"></a>
+
+A Makefile is a task graph too. A workflow differs from `target: prereqs` in four ways:
+
+| # | Make | Workflow |
+| --- | --- | --- |
+| 1 | The order lives on each target, as its prerequisite list | The order lives in one body, apart from the targets it runs, so a target serves many workflows unchanged |
+| 2 | A failed prerequisite stops the build, unless `-k` keeps going | A failure is an outcome, passed on as a label; `when` routes on it, and a skipped task passes its skip on |
+| 3 | A target is built once per run | `over` runs one task once per item, and `pool` bounds those runs |
+| 4 | Prerequisites are a partial order | `needs` is a partial order: two tasks with no path of needs between them are unordered |
 
 <a id="syntax"></a>
 
@@ -33,7 +44,7 @@ The compiled net is an ordinary net: `<name>.__main__` and every other [petri ca
 
 | Form | Declares |
 | --- | --- |
-| `@workflow` above a define | a workflow of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
+| `@workflow.dag` above a define | a workflow of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
 | `$(workflow.compile name)` | the compiled net's JSON, without loading it |
 
 A workflow is an object with one key, `tasks`, mapping each task name to its keys. A task name is `[a-z0-9_-]+`.
@@ -41,7 +52,7 @@ A workflow is an object with one key, `tasks`, mapping each task name to its key
 | Key | Value | Default |
 | --- | --- | --- |
 | `run` | the target the task runs | no step |
-| `needs` | task names that run first | `[]` |
+| `needs` | task names that end before this one starts; the only order between tasks | `[]` |
 | `when` | `success`, `failed` or `done`: whether the task runs when all needs succeeded, when any failed, or always | `success` |
 | `over` | a list of items, each 1 to 31 bytes with no whitespace; the task runs once per item | runs once |
 | `pool` | a pool name; each firing holds one of its tokens | unbounded |
@@ -58,7 +69,7 @@ A task whose `when` does not hold is skipped, and its skip passes on as its outc
 | --- | --- |
 | A need | a labeled place `<need>.to.<task>`, its token the need's outcome |
 | A task with no needs | a place `<task>.ready` holding one `success` token |
-| The task | a transition guarded by `when`, its step of kind `goal.maybe`, its outcome the token's label |
+| The task | a transition guarded by `when`, its step of kind [`goal.maybe`](petri.md#amk-block), run in place, its outcome the token's label |
 | `when` other than `done` | a second transition `<task>.skip` guarded by the opposite |
 | `over` | transitions `<task>.split` and `<task>.join` around places `<task>.items` and `<task>.results` |
 | `pool` | an arc from the pool into the task and back |
@@ -76,8 +87,8 @@ A task whose `when` does not hold is skipped, and its skip passes on as its outc
 | `$(<name>.exec prog)` | a jq program over the net, the workflow's JSON as `$source` and the library as `workflow::` | what it prints |
 | `$(<name>.version )` | the workflow's workspace version | a number |
 
-`workflow` is a [stacked engine](FFI.md#stacked-engines) on jq, so `@workflow.target`,
-`@workflow.import` and `@workflow.exec (name)` are its at lines and [`load ./release.workflow`](petri.md#loading)
+`workflow.dag` is a [stacked engine](FFI.md#stacked-engines) on jq, aliased `workflow`, so `@workflow.dag.target`,
+`@workflow.dag.import` and `@workflow.dag.exec (name)` are its at lines and [`load ./release.workflow`](petri.md#loading)
 reads a file as a workflow.
 
 <a id="errors"></a>
@@ -118,15 +129,15 @@ body given to it directly fails as a jq error.
 ## Schema
 
 The full form, as a JSON Schema, is [`schema/workflow.json`](../payload/lib/dsys/schema/workflow.json),
-and every `@workflow` body is checked against it before it compiles. A workflow is also refused for
+and every `@workflow.dag` body is checked against it before it compiles. A workflow is also refused for
 what a schema cannot say, as [errors](#errors) lists: a need that names no task, or needs that form a cycle.
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "workflow.json",
-  "title": "@workflow",
-  "description": "a task graph under @workflow, compiled by workflow.jq to a net; that each need names a task, and that needs hold no cycle, are checked by the compile",
+  "title": "@workflow.dag",
+  "description": "a task graph under @workflow.dag, compiled by workflow.jq to a net; that each need names a task, and that needs hold no cycle, are checked by the compile",
   "type": "object",
   "additionalProperties": false,
   "required": ["tasks"],

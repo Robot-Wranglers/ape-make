@@ -3,8 +3,9 @@
 # demos/dsys-fsm.amk:
 #  a state machine under @fsm in the shape of an xstate machine config,
 #  compiled by dsys/fsm to a net that dsys/petri runs. a door moves by the
-#  events it is sent; entering a state runs its entry action in a guest,
-#  and checking invokes a service whose output the guards route on.
+#  events its own entry actions send while it runs; entering a state runs
+#  its actions in guests, and checking invokes a service whose output the
+#  guards route on.
 #
 
 load dsys/fsm
@@ -17,8 +18,8 @@ define door
     "id": "door",
     "initial": "locked",
     "states": {
-      "locked":   { "entry": "bolt",  "on": { "unlock": "closed" } },
-      "closed":   { "entry": "latch",
+      "locked":   { "entry": ["bolt", "turn"],  "on": { "unlock": "closed" } },
+      "closed":   { "entry": ["latch", "tug"],
                     "on": { "pull": "checking", "lock": "locked" } },
       "checking": {
         "invoke": {
@@ -30,18 +31,21 @@ define door
           ]
         }
       },
-      "open":     { "entry": "swing", "on": { "push": "closed" } },
+      "open":     { "entry": ["swing", "shove"], "on": { "push": "closed" } },
       "broken":   { "type": "final" }
     }
   }
 endef
 
-# The environment sends the events; the machine never holds its own input.
-$(door.send unlock)
-$(door.send pull)
-$(door.send pull)
-$(door.send push)
-$(door.send pull)
+# The visitor: each state's last entry action sends the event that moves it on.
+turn:
+	$(door.send unlock)
+
+tug:
+	$(door.send pull)
+
+shove:
+	$(door.send push)
 
 # Entry actions: the event that brought the machine here is door.event.
 @lua.target

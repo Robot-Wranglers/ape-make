@@ -1,7 +1,7 @@
 #!/usr/bin/env -S amk --silent -f
 #
 # demos/workflow-release.amk:
-#  a release task graph under @workflow, compiled by dsys/workflow to a net:
+#  a release task graph under @workflow.dag, compiled by dsys/workflow to a net:
 #  checkout, a test per guest with at most two holding a runner, package
 #  once every test succeeds, then publish; notify runs only if a need
 #  failed, so here it is skipped. The state table at the end is the result.
@@ -17,7 +17,7 @@ define runners
   { "size": 2 }
 endef
 
-@workflow
+@workflow.dag
 define release
   {
     "tasks": {
