@@ -381,6 +381,94 @@ def test_an_open_net_with_nothing_arriving_runs_out_of_patience(amk, tmp_path):
   assert "n: quiescent for 1s, nothing enabled and nothing arrived in in" in r.stderr, r.stderr
 
 
+def child(places, arcs, amk_keys):
+  return "\n".join([
+    "@petri", "define c",
+    f'{{ "places": {{ {places} }}, "transitions": ["t"], "arcs": [{arcs}], "amk": {{ {amk_keys} }} }}',
+    "endef",
+  ])
+
+
+def parent(runs, kind):
+  return "\n".join([
+    "@petri", "define p",
+    f'{{ "places": {{ "s": {runs}, "e": 0 }}, "transitions": ["u"], "arcs": [["s", "u"], ["u", "e"]],',
+    f'  "amk": {{ "steps": {{ "u": {{ "run": "c.__main__", "kind": "{kind}" }} }}, "final": {{ "e": {runs} }} }} }}',
+    "endef",
+  ])
+
+
+def test_a_running_child_nets_strict_places_refuse_a_write_from_outside(amk, tmp_path):
+  body = "\n".join([
+    child('"a": 1, "b": 0', '["a", "t"], ["t", "b"]', '"steps": { "t": { "run": "nap" } }, "final": { "b": 1 }'),
+    parent(1, "goal"),
+    "nap:", "\t@sleep 1",
+    "poke:", "\t@sleep 0.3; echo $(amk.pool.produce c.a)",
+    "spawn:", "\t@echo spawned $(amk.goal.spawn poke)",
+    "show: spawn p.__main__", "\t@echo '[$(p.trace)]'",
+  ])
+  r = run(amk, tmp_path, body, "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "amk.pool: c.a: only the process that opened it may produce" in r.stderr, r.stderr
+  assert "[u]" in r.stdout, r.stdout
+
+
+def test_two_runs_of_one_net_each_start_from_its_initial_marking(amk, tmp_path):
+  body = "\n".join([
+    child('"a": 1, "b": 0', '["a", "t"], ["t", "b"]', '"steps": { "t": { "run": "nap" } }, "final": { "b": 1 }'),
+    parent(2, "agoal"),
+    "nap:", "\t@sleep 0.5",
+    "show: p.__main__", "\t@echo '[$(p.trace)] [$(p.marking )]'",
+  ])
+  r = run(amk, tmp_path, body, "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[u u] [s=0 e=2" in r.stdout, r.stdout
+
+
+OPEN_CHILD = child('"a": 1, "e": 0, "b": 0', '["a", "t"], ["e", "t"], ["t", "b"]',
+  '"open": ["e"], "steps": { "t": { "run": "took" } }, "final": { "b": 1 }')
+
+
+def test_a_step_running_an_open_net_is_one_instance_and_refuses_a_second_firing_in_flight(amk, tmp_path):
+  body = "\n".join([OPEN_CHILD, parent(2, "agoal"), "took:", "\t@true", "show: p.__main__", "\t@true"])
+  r = run(amk, tmp_path, body, "show")
+  assert r.returncode != 0, r.stdout
+  assert "p: u is already running c as instance p.u" in r.stderr, r.stderr
+
+
+TWO_STEPS = "\n".join([
+  "@petri", "define p",
+  '{ "places": { "s1": 1, "s2": 1, "e": 0 }, "transitions": ["u1", "u2"],',
+  '  "arcs": [["s1", "u1"], ["s2", "u2"], ["u1", "e"], ["u2", "e"]],',
+  '  "amk": { "steps": { "u1": { "run": "c.__main__", "kind": "agoal" },',
+  '                      "u2": { "run": "c.__main__", "kind": "agoal" } } } }',
+  "endef",
+])
+
+
+def test_each_instance_of_an_open_net_takes_only_the_tokens_put_to_it(amk, tmp_path):
+  body = "\n".join([
+    "petri.patience = 3", OPEN_CHILD, TWO_STEPS,
+    "took:", "\t@echo took as $(c.instance)",
+    "nap.%:", "\t@sleep 0.5",
+    "put.%: nap.%", "\t@echo $(petri.put p.$*, e)",
+    "poke: put.u2 put.u1", "\t@true",
+    "spawn:", "\t@echo spawned $(amk.goal.spawn poke)",
+    "show: spawn p.__main__", "\t@echo '[$(p.marking )]'",
+  ])
+  r = run(amk, tmp_path, body, "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert sorted(l for l in r.stdout.splitlines() if l.startswith("took")) == ["took as p.u1", "took as p.u2"], r.stdout
+  assert "[s1=0 s2=0 e=2" in r.stdout, r.stdout
+
+
+def test_a_token_put_to_a_net_with_several_instances_is_refused(amk, tmp_path):
+  body = "\n".join([OPEN_CHILD, TWO_STEPS, "took:", "\t@true", "$(petri.put c, e)"])
+  r = run(amk, tmp_path, body)
+  assert r.returncode != 0, r.stdout
+  assert "c: a token for e is ambiguous among instances p.u1 p.u2" in r.stderr, r.stderr
+
+
 @pytest.mark.parametrize("body,want", [
   (net('"a": 1', '"t"', '["a", "b"]'), "n: arc a to b does not join a place and a transition"),
   (net('"a": 1, "b": 0', '"t"', '["t", "b"]'), "n: transition t has no input place"),
@@ -392,6 +480,7 @@ def test_an_open_net_with_nothing_arriving_runs_out_of_patience(amk, tmp_path):
    'Value "scoped" not in enum; one of "goal" "goal.maybe" "agoal" "agoal.maybe"'),
   (net('"a": 1, "b": 0', '"t"', '["a", "t"], ["t", "b"]', '"steps": { "u": { "run": "x" } }'), "n: step u names no transition"),
   (net('"a": 1, "b": 0', '"b"', '["a", "b"]'), "n: b is both a place and a transition"),
+  (net('"a": 1, "b": 0', '"t", "t"', '["a", "t"], ["t", "b"]'), "n: transition t is declared twice"),
   (net('"a": 1, "b": 0', '"t"', '["a", "t"], ["t", "b"]', '"open": ["c"]'), "n: open place c is not a place of the net"),
   (net('"a": 1, "t.busy": 0', '"t"', '["a", "t"], ["t", "t.busy"]', '"steps": { "t": { "run": "x", "kind": "agoal" } }'),
    "n: t.busy is both a place and the in-flight count of a transition"),

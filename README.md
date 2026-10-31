@@ -8,17 +8,19 @@
 
 Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, single-file, multi-language scripting environment without any need for docker.  Besides embedding support for [python](#micropy), [js](#js), [lua](#lua), and [lisp](#s7), other guests can be reached via [wasm](#wasm).  FFI support is omnidirectional: guest-to-host, host-to-guest, and guest-to-guest are all supported.  Additionally `amk` can also handle [modules](#modules), package [external tools](#tools), and can output a [bundle](#bundles) as a portable artifact.
 
-One consequence of this is that Makefile *(and a small, optional extension of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh?  Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.  But there's more!  Is it ready for concurrent guests?  [Yes.](docs/runtime.md) Collaborative datastructures and ways to build more?  [Yes.](docs/data-engines.md)
+<p align="center"><img src="docs/img/lang-engines.png" width="90%" alt="amk's engines as a tree: language and data engines, with the stacked engines and services under the engines they run on"></p>
+
+One consequence of this is that Makefile *(and a small, [optional extension](#) of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh? Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.  But there's more!  Is it ready for concurrent guests?  [Yes.](docs/runtime.md) Collaborative datastructures and ways to build more?  [Yes.](docs/data-engines.md)
 
 Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.  Or rather.. `amk` is several languages + the new one that coordinates.  AMK-Lang is a <a href=https://esolangs.org/wiki/Matrioshka_language>Matrioshka Language</a> that's actually useful.
-
-<p align="center"><img src="docs/img/engines.png" width="90%" alt="amk's engines as a tree: language and data engines, with the stacked engines and services under the engines they run on"></p>
 
 <a id="just-show-me"></a>
 
 ## Just Show Me
 
-Back to the regularly scheduled docs after a demo for the impatient.  Here's a JSON-RPC server where every method lives in a different language and `amk` glues them together.  Transport works via HTTP, using a python guest, serving with microdot *(like flask, but smaller)* from mip *(like pip, but micropython)*.
+A demo for the impatient, then back to the regularly scheduled docs.  Here's a JSON RPC server where every method lives in a different language and `amk` glues them to
+gether.  Transport works with HTTP, using a python guest, serving with microdot *(li
+ke flask, but smaller)* provided via mip *(like pip, but for micropython)*.
 
 ```Makefile
 PORT ?= 18090
@@ -126,9 +128,11 @@ The main use-cases for `amk` are:
 
 1. **[Standard Guests](#tools)** are the other part of (1), meaning that besides `make`, the *rest* of the toolchain can also be APE'd riders.  Could be anything, but the usual thing is the shell toolkit;  No worries if `make` is available **or** which awk/sed are available, or if any are available.  **Portable scripting environment, no containers.**
 
-1. **[Special Guests](#engines):** Yup it's basically a **polyglot VM in miniature!** Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [js](#js), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  Lightweight supervision and orchestration not enough?  Put any of the guests in charge of it instead and nerd out with [effection](#js), [coroutines](#lua), or [call/cc](#s7).  **A tiny Graal, but without JDK.**
+1. **[Special Guests](#engines):** Yup it's basically a **polyglot VM in miniature!** Shell remains a fist-class citizen, but `amk` also exposes embedded engines for things like **[python](#micropy), [js](#js), [lua](#lua), [lisp](#s7), and [wasm](#wasm),** with a familiar coordination language already in place to switch between them.  **A tiny Graal, but without JDK.**
 
 1. **[Zygote / Resident Mode](#zygote):**  Useful to avoid cold-start penalties in many circumstances.  Side-effect free?  Execution freezes a program, then runs and re-runs against the same base without a re-parse.  Keep most of the "incremental computing" model, get extras for **improved recursion, FP, workflows, dataflows.**
+
+1. **[Control Flow & Runtime](runtime.md):** Lightweight supervision and orchestration not enough?  Put any of the guests in charge of it instead and use [effection](#js), [coroutines](#lua), or [continuation-passing style](#s7).  There's also a declarative piece that doesn't rely on guest-engine capabilities: [the classic jobserver is generalized](pools.md) to accommodate diverse workflow descriptions and automata that nest and compose.  **A nerd-sniping concurrent paradise of polyglot futures, which still leaves open the possibility of static-analysis.**
 
 Besides the major features above, there's a grab-bag of other extras: [built-in profiler](docs/dev.md#profiling), new [built-in functions](#functions) for things like regex, and [syntax-highlighting support](docs/syntax-hl.md).
 
@@ -206,13 +210,13 @@ amk --bundle main.mk lib/ --out my.tool
 ./my.tool -x main.mk
 ```
 
-Extraction prints the path and skips the copy when one is already current.  Among other things this means that a "quasi-compiled" artifact from `amk` can still act as a normal library in any vanilla `make` / Makefile setup, like so:
+Extraction prints the path and skips the copy when one is already current.  One consequence is that "compiled" artifact from `amk` can still act as a normal library in any vanilla `make` / Makefile setup, like so:
 
 ```Makefile
 include $(shell ./my.tool --ape-unpack=lib/greet.mk)
 ```
 
-Inside a bundle, `include` can resolve against the payload, so can [`load`](#modules), and `$(MAKE)` reaches the same program.
+From `amk` derived bundles though, both `include` and `load` support [Modules](#modules) in multiple languages are also supported, because `load` and `include` can work with any kind of bundled material.
 
 - Run `--bundle` from the directory your includes are relative to; archive members keep those names.
 - A file of the same name in the working directory shadows a payload include.
@@ -346,6 +350,8 @@ Most guest engines are embedded, i.e. linked into `amk` directly.
 <dt>Language Engines</dt>
 <dd>
 
+<p align="center"><img src="docs/img/lang-engines.png" width="90%" alt="The language engines as a tree: bash under lua, utmpl under micropython, and zig, golang and wat under wasm3"></p>
+
 | Guest | Version | From | Adds | Default |
 | --- | --- | --- | --- | --- |
 | [lua](#lua) | 5.4.8 | [lua.org](https://www.lua.org/ftp/) | 0.5 MB | on |
@@ -371,24 +377,21 @@ Let's get organized, we need a few concepts.
 
 **Language Engines vs Data Engines.**  Both engine types have a concept of "statefulness", but there's a difference.  You can guess that jqlang and SQL are different than the other engines, right?  These guests do *involve* languages but there's something extra too.  Full details [here](docs/data-engines.md), but let's do the overview quickly:  Language engines keep **namespaces**, which is a group of functions and values that *[import](#import-mode)* may lift into the host (and make available to other guests via [FFI](docs/FFI.md)). Data engines keep **workspaces**, which are data stores that `import` can seed with a value, plus mutators that change values.  Data-engines are interesting because besides the [simple stuff](#sqlite), `amk` also leverages them into [collaborative concurrent datastructures](docs/tspace.md), allowing for guests to talk to each other without the host in the middle.
 
-**Stacked Engines.** Do we need engines on engines?  Yes!  Especially for something like the [wasm support](#wasm), that is kind of the point.  But then there's other reasons you might want this, like wrangling DSLs, or like moving from data engines to [datastructures](docs/dsys.md#pools), or [services on those datastructures](docs/tspace.md).
+**[Stacked Engines](docs/FFI.md#stacked-engines).** Do we need engines on engines?  Yes!  A stacked engine runs guests *derived* from the layers above: they are not linked into the binary, and may involve a caching JIT cross-compilation pipeline.  For something like the [wasm support](#wasm) that is the point, and there are other reasons too, like wrangling DSLs, or moving from data engines to [datastructures](docs/dsys.md#pools) and [services on those datastructures](docs/tspace.md).  Stacked engines are *user-space*, with no C layer, so they live in the [standard library](#stdlib) and can be user-defined and distributed as [modules](#modules) via [bundling](#bundling) or [payload](#payloads).
 
 <dl>
 <dt>Stacked Engines</dt>
 <dd>
+
 | Guest | Version | From | Adds | Default |
 | --- | --- | --- | --- | --- |
 | [golang](docs/wasm.md#golang) | tinygo 0.39.0 | [hub.docker.com/r/tinygo](https://hub.docker.com/r/tinygo/tinygo), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
 | [zig](docs/wasm.md#zig) | 0.13.0 | [pkgs.alpinelinux.org](https://pkgs.alpinelinux.org/package/v3.21/community/x86_64/zig), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
-| [amklang](docs/FFI.md#stacked-engines) | amk's own | make itself, registered by the prelude: `@amklang.target` as `@amk.target`, `@amklang.import`, `@amklang.exec`, `@amklang.argv`, and `$(amklang prog)`, `$(amklang.exec prog)`, `$(amklang.argv argv, prog)` in a fork of this make | 0 MB | on |
+| [amklang](docs/FFI.md#stacked-engines) | amk's own | make itself, registered by the prelude; exec and argv run in a fork of this make | 0 MB | on |
 | [bash](docs/FFI.md#stacked-engines) | lua 5.4.8 | the bash on `PATH`, on the [lua guest](#lua): `@bash.target` | 0 MB | with lua |
 
 </dd>
 </dl>
-
-
-
-**[Stacked Engines](docs/FFI.md#stacked-engines)** are a different category, and they run guests which are *derived* in some sense from the foundational layers above.  These guests are non-native, not linked into the binary, and may involve a caching JIT cross-compilation pipeline.  This engine category is *user-space* (i.e. no C layer, so they can be defined in the [standard library](#stdlib)) and can be user-defined (i.e. distributed as [modules](#modules) via [bundling](#bundling) or [payload](#payloads)).
 
 **Interface Style** and **Access Mode** are properties of the engine API for each guest.  This section is an overview of each mode / style with examples, but it's a quick guide, and not a full reference.  The API aims to be more or less uniform for all engines.. but guest capabilities do differ somewhat in terms of what they can support.  See the [full FFI documentation](docs/FFI.md) for the gory details.
 

@@ -58,9 +58,6 @@
                 <mxCell id="tspace" value="tuple spaces" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#F2F2F2;strokeColor=#A6A6A6;fontColor=#1a1a1a;fontSize=13;" parent="1" vertex="1">
                     <mxGeometry x="1105" y="380" width="110" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="ws" value="workspaces" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#F2F2F2;strokeColor=#A6A6A6;fontColor=#1a1a1a;fontSize=13;" parent="1" vertex="1">
-                    <mxGeometry x="1225" y="380" width="110" height="40" as="geometry"/>
-                </mxCell>
                 <mxCell id="e_amk_lang" style="html=1;endArrow=classic;strokeColor=#808080;strokeWidth=3;rounded=1;" parent="1" source="amk" target="lang" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
@@ -110,9 +107,6 @@
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_sqlite_tspace" style="html=1;endArrow=classic;strokeColor=#808080;strokeWidth=2;rounded=1;" parent="1" source="sqlite" target="tspace" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e_sqlite_ws" style="html=1;endArrow=classic;strokeColor=#808080;strokeWidth=2;rounded=1;" parent="1" source="sqlite" target="ws" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>

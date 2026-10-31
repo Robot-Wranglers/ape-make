@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "workflow.json",
-  "title": "@workflow",
-  "description": "a task graph under @workflow, compiled by workflow.jq to a net; that each need names a task, and that needs hold no cycle, are checked by the compile",
+  "title": "@workflow.dag",
+  "description": "a task graph under @workflow.dag, compiled by workflow.jq to a net; that each need names a task, and that needs hold no cycle, are checked by the compile",
   "type": "object",
   "additionalProperties": false,
   "required": ["tasks"],

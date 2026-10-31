@@ -1,5 +1,4 @@
 <!-- header # runtime "`concept :: runtime`" | ^ ../README.md#references | Pools #pools | Multiprocessing #multiprocessing | Reactor #tuplespace-reactor | Automata #automata | Plex #plex | Actors #actor-model | Deadlines #deadlines | Demos #demos | Refs #references -->
-<h1><a id="runtime"></a><a href="../README.md#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.up.dark.svg"><img src="img/hdr/docs-runtime.runtime.up.svg" alt="up"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.title.dark.svg"><img src="img/hdr/docs-runtime.runtime.title.svg" alt="concept :: runtime"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.8.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.8.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.7.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.7.svg" alt="Demos"></picture></a><a href="#deadlines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.6.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.6.svg" alt="Deadlines"></picture></a><a href="#actor-model"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.5.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.5.svg" alt="Actors"></picture></a><a href="#plex"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.4.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.4.svg" alt="Plex"></picture></a><a href="#automata"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.3.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.3.svg" alt="Automata"></picture></a><a href="#tuplespace-reactor"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.2.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.2.svg" alt="Reactor"></picture></a><a href="#multiprocessing"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.1.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.1.svg" alt="Multiprocessing"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.runtime.0.dark.svg"><img align=right src="img/hdr/docs-runtime.runtime.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 The `amk` runtime supports a bunch of different concurrency models.  [Jump to examples](#demos) if you insist, but it helps if we start with a taxonomy.  
@@ -51,7 +50,7 @@ As with [engine kinds](../README.md#engines), concurrency breaks down into flavo
 <dd>
 <p><strong>Unit:</strong> an event: a transition's firing, whose step is a target, a job, or a body in any guest.</p>
 <p><strong>Scheduler:</strong> the model's run, <code>&lt;name&gt;.__main__</code>, which steps until nothing can fire.</p>
-<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow</code> or <code>@kahn</code> above a JSON define.</p>
+<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow.dag</code> or <code>@kahn</code> above a JSON define.</p>
 <p><strong>Parameters:</strong> the model and its form; see <a href="dsys.md">dsys</a>.</p>
 </dd>
 </dl>
@@ -62,7 +61,7 @@ As with [engine kinds](../README.md#engines), concurrency breaks down into flavo
 | Multiprocessing | A process forked from the [zygote](zygote.md#fork-and-the-fresh-copy) | OS kernel, driven by a guest | signals, exit status, and mail | Preemptive multiprocessing; Message passing over pipes; Futures (`amk.acall`, `amk.exited`) | None; calls on the guest handle, and `$$AMK_MAIL` in a recipe | [the host handle](FFI.md#host-handle), [the zygote](zygote.md) |
 | Actor Model | a program in a guest runtime | a backend, under a group's charter | the group handle, events, and restarts | actor model with supervision trees; cooperative multitasking; structured concurrency | `@actor.group` above a JSON charter; `@<group>.actor (<engine>) {opts}` above a define; `<group>.run` | this page |
 | Workspaces | a tuple or row held by a data engine | the engine's owner: blocking verbs, versions, and triggers | the data itself | generative communication (Linda), blackboard; bound handlers make it a programmable tuple centre; `wait` is a condition variable on a version | `$(<space>.<verb> ...)` callforms; `@<space>.reflex <engine> (pattern)` above a define; `${tspace.sh}` verbs in a recipe | [version and wait](data-engines.md#version-and-wait), [the tuple space](tspace.md) |
-| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
+| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow.dag`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
 
 Targets are make's own concurrency and need nothing from a guest. Jobs are the host handle's
 `amk.spawn`, `amk.wait` and the rest of job control, and a guest's `amk.acall` is one job
@@ -105,7 +104,6 @@ group's members. [Pools](pool.md) has the forms and the handles; [dsys](dsys.md)
 on them and [where each flavor takes its tokens](dsys.md#pool-users).
 
 <!-- header multiprocessing "Multiprocessing" | Jobs #jobs | Job pools #job-pools -->
-<h2><a id="multiprocessing"></a>Multiprocessing<a href="#job-pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.multiprocessing.1.dark.svg"><img align=right src="img/hdr/docs-runtime.multiprocessing.1.svg" alt="Job pools"></picture></a><a href="#jobs"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.multiprocessing.0.dark.svg"><img align=right src="img/hdr/docs-runtime.multiprocessing.0.svg" alt="Jobs"></picture></a><br clear="all"></h2>
 <!-- /header -->
 
 A job is a fork of the parsed image running a goal list, and a pool of jobs bounds how
@@ -138,7 +136,6 @@ guest that wants no pool uses the module's own verbs instead. The decorator, the
 call from every guest are in [jobman](jobman.md).
 
 <!-- header tuplespace-reactor "Tuplespace Reactor" | Owner #owner | Reactions #reactions | Workers #reactor-workers -->
-<h2><a id="tuplespace-reactor"></a>Tuplespace Reactor<a href="#reactor-workers"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.2.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.2.svg" alt="Workers"></picture></a><a href="#reactions"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.1.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.1.svg" alt="Reactions"></picture></a><a href="#owner"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-runtime.tuplespace-reactor.0.dark.svg"><img align=right src="img/hdr/docs-runtime.tuplespace-reactor.0.svg" alt="Owner"></picture></a><br clear="all"></h2>
 <!-- /header -->
 
 The reactor is the one flavor with no scheduler of its own: the data is the coordination.
@@ -295,7 +292,7 @@ The [dsys module](dsys.md) provides:
 | Form | Model |
 | --- | --- |
 | [`@petri`](petri.md) | a Petri net, written by hand |
-| [`@workflow`](workflow.md) | a task graph, each task's outcome a token's label |
+| [`@workflow.dag`](workflow.md) | a task graph, each task's outcome a token's label |
 | [`@kahn`](kahn.md) | a Kahn network, its channels labeled places |
 | [`@fsm`](fsm.md) | a state machine, xstate config or scxml, its states places holding one token and its events open places |
 
@@ -402,11 +399,11 @@ slow := $(wasm.exec deadline 100 fib 45)
 | [`supervise-3.amk`](../demos/supervise-3.amk) | the charter as data under `"backend": "effection"`, every kind, a nested group giving up |
 | [`actors-1.amk`](../demos/actors-1.amk) | the same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded in [the actor module](actor.md#syntax) |
 | [`actors-2.amk`](../demos/actors-2.amk) | goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
+| [`plex-choice.amk`](../demos/plex-choice.amk) | choice on the plex: `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search; embedded in [the plex module](plex.md#choice) |
 | [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
 | [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
 | [`petri-csp.amk`](../demos/petri-csp.amk) | a rendezvous as a Petri net: two micropy senders and a slow js receiver, each send returning once its value is received |
-| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
+| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow.dag`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
 | [`kahn-parity.amk`](../demos/kahn-parity.amk) | a Kahn network: open labeled pools as channels, produced to from a step's fork |
 | [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 

@@ -107,6 +107,7 @@ see [the FFI](FFI.md#guest-handle). A guest's answer is the make function's text
 | `$(amk.pool.release name, label)` | on a labeled pool, gives back `label`, which this process must hold | empty |
 | `$(amk.pool.produce name)`, `$(amk.pool.produce name, label)` | adds one token with none held, a label on a labeled pool, which may be new; on a strict pool only the process that opened it, on an open pool any process; never `goals` | empty |
 | `$(amk.pool.consume name)`, `$(amk.pool.consume name, ms)` | takes a token for good, waiting as acquire does; the same processes as produce, and only while this one holds none of the pool | `1` or the label, or empty |
+| `$(amk.pool.close name)` | drops this process's copy of the pool: its pipe closed here, what it held forgotten, every other process's copy untouched; the name may then be opened again, and this process is that pool's opener; never `goals` | empty |
 | `$(amk.pool.<name>.<verb> ...)` | any verb above, bound under the pool's own name | as the verb |
 
 What a process holds goes back when it exits, labels as they were taken, and a fork's
@@ -181,6 +182,7 @@ Every refusal is fatal and names the pool.
 | A name that is a verb | `amk.pool: held is a verb, not a name a pool may take` |
 | More than 64 pools | `amk.pool: 64 pools are open, no room for name` |
 | A verb on a pool not open | `amk.pool.held: no pool named nothing` |
+| A bound verb on a pool this process closed | `amk.pool: p is closed in this process` |
 | A release with no token held | `amk.pool: one: nothing held to release` |
 | A key `amk.pool` lacks | `amk.pool: p: no key colour` |
 | A size and labels that disagree | `amk.pool: p: size 3 disagrees with the labels` |

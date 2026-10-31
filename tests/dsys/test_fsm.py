@@ -8,6 +8,7 @@ state, always fires without an event and first, the subset refuses the rest, the
 """
 
 import json
+import time
 
 import pytest
 
@@ -51,7 +52,7 @@ def test_the_door_normalizes_to_a_definition_the_xstate_schema_accepts(amk, tmp_
     " --slurpfile s $(fsm._lib)/schema/xstate.machine.json,$(prog),$(amk.val.json5 door)))",
   ])
   assert r.returncode == 0, r.stdout + r.stderr
-  assert r.stdout.split() == ["0", '["done.invoke.hinge"]'], r.stdout
+  assert r.stdout.split() == ["0", '["done.invoke.0.door.checking"]'], r.stdout
 
 
 def test_a_chain_of_states_runs_its_events_to_its_final_state(amk, tmp_path):
@@ -143,15 +144,29 @@ def test_the_door_runs_its_actions_its_service_and_its_guards(amk, tmp_path):
     "show: door.__main__", "\t@echo 'state: $(door.state ) trace: $(door.trace)'",
   ], "show")
   assert r.returncode == 0, r.stdout + r.stderr
-  want = ["bolted on []", "latched on [unlock]", "jam", "latched on [done.invoke.hinge]", "ok",
-          "swung on [done.invoke.hinge]", "latched on [push]", "snap"]
+  want = ["bolted on []", "latched on [unlock]", "jam", "latched on [done.invoke.0.door.checking]", "ok",
+          "swung on [done.invoke.0.door.checking]", "latched on [push]", "snap"]
   assert [ln for ln in r.stdout.splitlines() if ln in want] == want, r.stdout
   assert [ln for ln in r.stdout.splitlines() if ln.strip().isdigit()] == [], r.stdout
   assert r.stderr.count("Error 1") == 1, r.stderr
   state = r.stdout.rstrip().splitlines()[-1]
-  assert state.startswith("state: broken trace: locked.unlock closed.pull checking.invoke checking.done.invoke.hinge "), state
-  assert " checking.done.invoke.hinge.1 " in state and " checking.done.invoke.hinge.3 " in state, state
-  assert state.endswith("checking.done.invoke.hinge.2"), state
+  done = "checking.done.invoke.0.door.checking"
+  assert state.startswith(f"state: broken trace: locked.unlock closed.pull checking.invoke {done} "), state
+  assert f" {done}.1 " in state and f" {done}.3 " in state, state
+  assert state.endswith(f"{done}.2"), state
+
+
+def test_a_machine_with_no_id_binds_its_event_under_its_name_and_a_final_runs_its_entry(amk, tmp_path):
+  m = {"initial": "a", "states": {
+    "a": {"on": {"go": "b"}}, "b": {"type": "final", "entry": "arrive"}}}
+  r = run(amk, tmp_path, [
+    "@fsm", "define m", json.dumps(m), "endef",
+    "arrive:", "\t@echo 'arrived on [$(m.event)]'",
+    "$(m.send go)",
+    "show: m.__main__", "\t@echo '[$(m.trace)]'",
+  ], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.splitlines()[-2:] == ["arrived on [go]", "[a.go]"], r.stdout
 
 
 def test_each_top_level_final_state_is_an_acceptance_marking(amk, tmp_path):
@@ -255,11 +270,161 @@ def test_a_service_inside_a_parallel_state_is_a_position_of_its_region(amk, tmp_
   r = run(amk, tmp_path, [
     "@fsm", "define m", json.dumps(m), "endef", "svc:", "\t@echo served",
     "$(m.send go)",
-    "show: m.__main__", "\t@echo 'state: $(m.state ) trace: $(m.trace) out: $(m.p.r.c.output)'",
+    "show: m.__main__", "\t@echo 'state: $(m.state ) trace: $(m.trace)'",
   ], "show")
   assert r.returncode == 0, r.stdout + r.stderr
   assert "served" in r.stdout, r.stdout
-  assert "state: pass trace: p.r.c.invoke p.c.invoked-d.go p.c.invoked-e.done.invoke.svc p.c.invoked-e.done.invoke.svc.1 out: served" in r.stdout, r.stdout
+  assert "state: pass trace: p.r.c.invoke p.c.invoked-d.go p.c.invoked-e.done.invoke.0.m.p.r.c p.c.invoked-e.done.invoke.0.m.p.r.c.1" in r.stdout, r.stdout
+
+
+def test_services_in_two_regions_overlap(amk, tmp_path):
+  m = {"id": "m", "initial": "p", "states": {
+    "p": {"type": "parallel", "onDone": "end", "states": {
+      "r": {"initial": "a", "states": {"a": {"invoke": {"src": "nap1", "onDone": "x"}}, "x": {"type": "final"}}},
+      "s": {"initial": "b", "states": {"b": {"invoke": {"src": "nap2", "onDone": "y"}}, "y": {"type": "final"}}}}},
+    "end": {"type": "final"}}}
+  t0 = time.monotonic()
+  r = run(amk, tmp_path, ["@fsm", "define m", json.dumps(m), "endef",
+    "nap1 nap2:", "\t@sleep 3", "show: m.__main__", "\t@echo 'state: $(m.state )'"], "show")
+  took = time.monotonic() - t0
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "state: end" in r.stdout, r.stdout
+  assert took < 5.5, took
+
+
+def child(name, src):
+  return ["@fsm", f"define {name}", json.dumps({"id": name, "initial": "a", "states": {
+    "a": {"invoke": {"src": src, "onDone": "z"}}, "z": {"type": "final"}}}), "endef"]
+
+
+def test_a_machine_invokes_another_machine_in_place(amk, tmp_path):
+  r = run(amk, tmp_path, [*child("c", "work"), "work:", "\t@echo worked", *child("sup", "c.__main__"),
+    "show: sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "worked" in r.stdout and "state: z" in r.stdout, r.stdout
+
+
+def test_regions_invoke_machines_at_once_and_one_machine_twice(amk, tmp_path):
+  m = {"id": "sup", "initial": "p", "states": {
+    "p": {"type": "parallel", "onDone": "end", "states": {
+      r: {"initial": "a", "states": {"a": {"invoke": {"src": src, "onDone": "x"}}, "x": {"type": "final"}}}
+      for r, src in [("r", "c1.__main__"), ("s", "c2.__main__"), ("t", "c1.__main__")]}},
+    "end": {"type": "final"}}}
+  t0 = time.monotonic()
+  r = run(amk, tmp_path, [*child("c1", "nap1"), *child("c2", "nap2"), "nap1 nap2:", "\t@sleep 3; echo $@",
+    "@fsm", "define sup", json.dumps(m), "endef", "show: sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
+  took = time.monotonic() - t0
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.count("nap1") == 2 and "nap2" in r.stdout, r.stdout
+  assert "state: end" in r.stdout, r.stdout
+  assert took < 5.5, took
+
+
+KID = ["@fsm", "define kid", json.dumps({"id": "kid", "initial": "a", "states": {
+  "a": {"on": {"go": "b"}}, "b": {"type": "final", "entry": "arrived"}}}), "endef",
+  "arrived:", "\t@echo arrived $(kid.instance)"]
+
+
+def test_a_job_beside_a_supervisor_sends_to_its_running_child(amk, tmp_path):
+  sup = {"id": "sup", "initial": "calling", "states": {
+    "calling": {"invoke": {"src": "kid.__main__", "onDone": "done"}}, "done": {"type": "final"}}}
+  r = run(amk, tmp_path, [*KID, "@fsm", "define sup", json.dumps(sup), "endef",
+    "nap:", "\t@sleep 1", "tell: nap", "\t@echo tells $(kid.send go)",
+    "spawn:", "\t@echo spawned $(amk.goal.spawn tell)",
+    "show: spawn sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "arrived 0.sup.calling" in r.stdout and "state: done" in r.stdout, r.stdout
+
+
+def test_two_instances_of_one_machine_each_take_their_own_event(amk, tmp_path):
+  sup = {"id": "sup", "initial": "p", "states": {
+    "p": {"type": "parallel", "onDone": "end", "states": {
+      reg: {"initial": "a", "states": {"a": {"invoke": {"src": "kid.__main__", "onDone": "x"}}, "x": {"type": "final"}}}
+      for reg in ["r", "s"]}},
+    "end": {"type": "final"}}}
+  r = run(amk, tmp_path, [*KID, "@fsm", "define sup", json.dumps(sup), "endef",
+    "nap:", "\t@sleep 1", "tell.s: nap", "\t@echo $(fsm.send 0.sup.p.s.a, go)",
+    "nap.again: tell.s", "\t@sleep 1", "tell.r: nap.again", "\t@echo $(fsm.send 0.sup.p.r.a, go)",
+    "spawn:", "\t@echo spawned $(amk.goal.spawn tell.r)",
+    "show: spawn sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  arrivals = [l for l in r.stdout.splitlines() if l.startswith("arrived")]
+  assert arrivals == ["arrived 0.sup.p.s.a", "arrived 0.sup.p.r.a"], r.stdout
+  assert "state: end" in r.stdout, r.stdout
+
+
+def test_a_send_to_a_machine_with_several_instances_is_refused(amk, tmp_path):
+  sup = {"id": "sup", "initial": "p", "states": {
+    "p": {"type": "parallel", "states": {
+      reg: {"initial": "a", "states": {"a": {"invoke": {"src": "kid.__main__"}}}} for reg in ["r", "s"]}}}}
+  r = run(amk, tmp_path, [*KID, "@fsm", "define sup", json.dumps(sup), "endef", "$(kid.send go)"])
+  assert r.returncode != 0, r.stdout
+  assert "kid: a token for ev.go is ambiguous among instances 0.sup.p.r.a 0.sup.p.s.a" in r.stderr, r.stderr
+
+
+def test_a_region_of_a_supervisor_steers_the_child_another_region_invokes(amk, tmp_path):
+  sup = {"id": "sup", "initial": "p", "states": {
+    "p": {"type": "parallel", "onDone": "end", "states": {
+      "r": {"initial": "a", "states": {"a": {"invoke": {"src": "kid.__main__", "onDone": "x"}}, "x": {"type": "final"}}},
+      "s": {"initial": "a", "states": {"a": {"invoke": {"src": "teller", "onDone": "x"}}, "x": {"type": "final"}}}}},
+    "end": {"type": "final"}}}
+  r = run(amk, tmp_path, [*KID, "@fsm", "define sup", json.dumps(sup), "endef",
+    "nap:", "\t@sleep 1",
+    "teller: nap", "\t@echo tells $(kid.send go)",
+    "show: sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "arrived 0.sup.p.r.a" in r.stdout and "state: end" in r.stdout, r.stdout
+
+
+def test_a_child_machine_sends_to_its_parent_while_both_run(amk, tmp_path):
+  kid = {"id": "kid", "initial": "a", "states": {"a": {"entry": "ping", "always": "b"}, "b": {"type": "final"}}}
+  sup = {"id": "sup", "initial": "calling", "states": {
+    "calling": {"invoke": {"src": "kid.__main__", "onDone": "waiting"}},
+    "waiting": {"on": {"ping": "done"}}, "done": {"type": "final"}}}
+  r = run(amk, tmp_path, ["@fsm", "define kid", json.dumps(kid), "endef",
+    "ping:", "\t@echo pings $(sup.send ping)",
+    "@fsm", "define sup", json.dumps(sup), "endef",
+    "show: sup.__main__", "\t@echo '[$(sup.trace)]'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[calling.invoke calling.done.invoke.0.sup.calling waiting.ping]" in r.stdout, r.stdout
+
+
+def test_a_job_beside_a_machine_sends_to_it_while_it_runs(amk, tmp_path):
+  m = {"id": "m", "initial": "a", "states": {
+    "a": {"on": {"go": "b"}}, "b": {"on": {"stop": "c"}}, "c": {"type": "final"}}}
+  r = run(amk, tmp_path, ["@fsm", "define m", json.dumps(m), "endef",
+    "nap.%:", "\t@sleep 0.5",
+    "send.%: nap.%", "\t@echo sends $* $(m.send $*)",
+    "visitor: send.go send.stop", "\t@true",
+    "spawn:", "\t@echo spawned $(amk.goal.spawn visitor)",
+    "show: spawn m.__main__", "\t@echo '[$(m.trace)]'"], "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "[a.go b.stop]" in r.stdout, r.stdout
+
+
+def test_a_send_to_an_instance_that_has_ended_is_refused(amk, tmp_path):
+  kid = {"id": "kid", "initial": "a", "states": {"a": {"always": "b", "on": {"go": "b"}}, "b": {"type": "final"}}}
+  sup = {"id": "sup", "initial": "calling", "states": {
+    "calling": {"invoke": {"src": "kid.__main__", "onDone": "done"}}, "done": {"type": "final"}}}
+  r = run(amk, tmp_path, ["@fsm", "define kid", json.dumps(kid), "endef",
+    "@fsm", "define sup", json.dumps(sup), "endef",
+    "late: sup.__main__", "\t@echo late $(kid.send go)"], "late")
+  assert r.returncode != 0, r.stdout
+  assert "kid: instance 0.sup.calling is not running, so nothing takes a token for ev.go" in r.stderr, r.stderr
+
+
+def test_a_job_forked_before_an_instance_ended_is_refused_a_send_to_it(amk, tmp_path):
+  kid = {"id": "kid", "initial": "a", "states": {"a": {"always": "b", "on": {"go": "b"}}, "b": {"type": "final"}}}
+  sup = {"id": "sup", "initial": "calling", "states": {
+    "calling": {"invoke": {"src": "kid.__main__", "onDone": "done"}}, "done": {"type": "final"}}}
+  r = run(amk, tmp_path, ["@fsm", "define kid", json.dumps(kid), "endef",
+    "@fsm", "define sup", json.dumps(sup), "endef",
+    "nap:", "\t@sleep 1",
+    "late: nap", "\t@echo late $(kid.send go)",
+    "spawn:", "\t@echo spawned $(eval pid := $(amk.goal.spawn late))",
+    "show: spawn sup.__main__", "\t@echo 'state: $(sup.state )' $(amk.job.wait $(pid))"], "show")
+  assert "state: done" in r.stdout, r.stdout + r.stderr
+  assert "kid: instance 0.sup.calling is not running, so nothing takes a token for ev.go" in r.stderr, r.stderr
 
 
 @pytest.mark.parametrize("config,want", [

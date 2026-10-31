@@ -1,5 +1,4 @@
 <!-- header # plex "`mod :: amk.plex`" |Concepts #concepts | Syntax #syntax | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="plex"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.up.dark.svg"><img src="img/hdr/docs-plex.plex.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.mod.dark.svg"><img src="img/hdr/docs-plex.plex.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.title.dark.svg"><img src="img/hdr/docs-plex.plex.title.svg" alt=" :: amk.plex"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.7.dark.svg"><img align=right src="img/hdr/docs-plex.plex.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.6.dark.svg"><img align=right src="img/hdr/docs-plex.plex.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.5.dark.svg"><img align=right src="img/hdr/docs-plex.plex.5.svg" alt="Errors"></picture></a><a href="#choice"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.4.dark.svg"><img align=right src="img/hdr/docs-plex.plex.4.svg" alt="Choice"></picture></a><a href="#plex-uses"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.3.dark.svg"><img align=right src="img/hdr/docs-plex.plex.3.svg" alt="Uses"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.2.dark.svg"><img align=right src="img/hdr/docs-plex.plex.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.1.dark.svg"><img align=right src="img/hdr/docs-plex.plex.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.0.dark.svg"><img align=right src="img/hdr/docs-plex.plex.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -99,7 +98,67 @@ plex, one task per option; on `(make-plex 'lifo)` the leaves come in `amb`'s ord
 a fifo plex the branches interleave, each start before any end, so a choice becomes a task
 that can yield, carry a deadline, and share the plex with other work. Choice is an s7
 matter: a js generator cannot be resumed twice, so Effection has no `shift`.
-`demos/stdlib-amb-2.amk` shows all three.
+
+Both orders as a demo: three branches interleaving on a fifo plex, then
+[the amb graph walk](amb.md#example-search) on a lifo plex, finding `amb`'s paths in
+`amb`'s order:
+
+```Makefile
+__main__: branches search
+
+# Each option a task on a fifo plex: every branch starts before any ends.
+@s7.target
+define branches
+  (load "/zip/lib/plex/init.scm" (rootlet))
+  (load "amb.scm" (rootlet))
+  (define p (make-plex))
+  (p 'run
+    (lambda ()
+      (reset
+        (lambda ()
+          (let ((name (amb-fork p '("one" "two" "three"))))
+            (format #t "~A starts~%" name)
+            (p 'yield)
+            (format #t "~A ends~%" name))))))
+endef
+
+# The graph walk on a lifo plex finds amb's paths in amb's order.
+@s7.target
+define search
+  (load "/zip/lib/plex/init.scm" (rootlet))
+  (load "amb.scm" (rootlet))
+  (define edges '((a b c) (b c d) (c d) (d b e) (e)))
+  (define (walk choose node goal seen)
+    (if (eq? node goal)
+      (format #t "  ~A~%" (reverse (cons node seen)))
+      (let ((next (choose (cdr (assq node edges)))))
+        (unless (memq next seen)
+          (walk choose next goal (cons node seen))))))
+  (format #t "amb:~%")
+  (reset (lambda () (walk amb 'a 'e ())))
+  (format #t "amb-fork, lifo:~%")
+  (let* ((p (make-plex 'lifo)) (choose (lambda (o) (amb-fork p o))))
+    (p 'run (lambda () (reset (lambda () (walk choose 'a 'e ()))))))
+endef
+```
+
+```
+$ amk -f demos/plex-choice.amk
+one starts
+two starts
+three starts
+one ends
+two ends
+three ends
+amb:
+  (a b c d e)
+  (a b d e)
+  (a c d e)
+amb-fork, lifo:
+  (a b c d e)
+  (a b d e)
+  (a c d e)
+```
 
 <a id="errors"></a>
 
@@ -119,7 +178,7 @@ has them.
 
 | Demo | Shows |
 | --- | --- |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
+| [`plex-choice.amk`](../demos/plex-choice.amk), embedded under [choice](#choice) | `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search |
 | [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
 | [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 

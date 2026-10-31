@@ -2,7 +2,7 @@
 
 The compiler is a jq library of definitions, so it is pinned whole against the worked
 example of its rules, by its definitions alone through include, by its refusals, and end
-to end through @workflow on the success and the failure path.
+to end through @workflow.dag on the success and the failure path.
 """
 
 import json
@@ -130,16 +130,22 @@ PARITY = {
 }
 
 
+IDLE = {"split.idle": 1, "even.idle": 1, "odd.idle": 1}
+
+
 def test_a_kahn_network_compiles_to_an_open_net_with_reads_as_arcs(amk, tmp_path):
   r = jq(amk, tmp_path, "kahn", PARITY, lib="kahn")
   assert r.returncode == 0, r.stdout + r.stderr
   net = json.loads(r.stdout)
-  assert net["places"] == PARITY["channels"]
+  assert net["places"] == {**PARITY["channels"], **IDLE}
   assert net["transitions"] == ["split", "even", "odd"]
-  assert net["arcs"] == [["numbers", "split"], ["evens", "even"], ["odds", "odd"]]
+  assert net["arcs"] == [["numbers", "split"], ["evens", "even"], ["odds", "odd"],
+    ["split.idle", "split"], ["split", "split.idle"], ["even.idle", "even"], ["even", "even.idle"],
+    ["odd.idle", "odd"], ["odd", "odd.idle"]]
+  assert {s["kind"] for s in net["amk"]["steps"].values()} == {"agoal"}
   assert net["amk"]["strategy"] == "open" and "final" not in net["amk"]
   r = jq(amk, tmp_path, "kahn | .amk.final", {**PARITY, "final": {}}, lib="kahn")
-  assert r.returncode == 0 and json.loads(r.stdout) == {}, r.stdout + r.stderr
+  assert r.returncode == 0 and json.loads(r.stdout) == IDLE, r.stdout + r.stderr
 
 
 @pytest.mark.parametrize("change,want", [
@@ -152,12 +158,18 @@ def test_a_kahn_network_that_could_lose_determinism_is_refused(amk, tmp_path, ch
   assert r.returncode != 0 and want in r.stderr, r.stderr
 
 
+def test_a_channel_named_like_a_control_place_is_refused(amk, tmp_path):
+  wf = {**PARITY, "channels": {**PARITY["channels"], "even.idle": []}}
+  r = jq(amk, tmp_path, "kahn", wf, lib="kahn")
+  assert r.returncode != 0 and "even.idle: is a channel and the control place of process even" in r.stderr, r.stderr
+
+
 @pytest.mark.engines("lua", "jq")
 def test_load_kahn_makes_kahn_usable_without_workflow(amk, tmp_path):
   mk = tmp_path / "kahn.mk"
   mk.write_text("\n".join([
     "load dsys/kahn",
-    "$(if $(filter undefined,$(origin workflow_star)),,$(error workflow came along))",
+    "$(if $(filter undefined,$(origin workflow.dag_star)),,$(error workflow came along))",
     "@kahn", "define parity", json.dumps(PARITY), "endef",
     "@lua.target", "define split",
     '  local n = tonumber(amk.var["parity.split.token"])',
@@ -169,7 +181,11 @@ def test_load_kahn_makes_kahn_usable_without_workflow(amk, tmp_path):
   ]))
   r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "even 2\nodd 1\nodd 3\n[numbers=0 evens=0 odds=0]" in r.stdout, r.stdout
+  lines = r.stdout.splitlines()
+  assert [l for l in lines if l.startswith("odd ")] == ["odd 1", "odd 3"], r.stdout
+  assert [l for l in lines if l.startswith("even ")] == ["even 2"], r.stdout
+  assert ("[numbers=0 evens=0 odds=0 split.idle=1 even.idle=1 odd.idle=1"
+    " split.busy=0 even.busy=0 odd.busy=0]") in lines, r.stdout
 
 
 @pytest.mark.engines("jq")
@@ -177,12 +193,12 @@ def test_kahn_and_workflow_register_as_stacked_engines_over_jq(amk, tmp_path):
   mk = tmp_path / "engines.mk"
   mk.write_text("\n".join([
     "load dsys/kahn", "load dsys/workflow",
-    "$(info [$(filter petri kahn workflow,$(amk.engines))] $(amk.engine.ext.kahn)/$(amk.engine.ext.workflow)"
-    " $(amk.engine.kahn.guest)/$(amk.engine.workflow.guest))", "all:", "\t@true", "",
+    "$(info [$(filter petri kahn workflow.dag,$(amk.engines))] $(amk.engine.ext.kahn)/$(amk.engine.ext.workflow)"
+    " $(amk.engine.kahn.guest)/$(amk.engine.workflow.dag.guest))", "all:", "\t@true", "",
   ]))
   r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "[petri kahn workflow] kahn/workflow jq/jq" in r.stdout, r.stdout
+  assert "[petri kahn workflow.dag] kahn/workflow.dag jq/jq" in r.stdout, r.stdout
 
 
 @pytest.mark.engines("lua", "jq")
@@ -194,14 +210,14 @@ def test_a_created_kahn_network_is_joined_by_procs_and_versioned(amk, tmp_path):
     "$(kahn.create fb, $(fb.src))",
     "v0 := $(kahn.version fb)",
     "@fb.proc/lua (c)", "define p", '  print("p " .. amk.var["fb.p.token"])', "endef",
-    "$(workflow.create wf)",
+    "$(workflow.dag.create wf)",
     "show: fb.__main__",
-    "\t@echo '[$(filter kahn workflow,$(amk.data.engines))] moved=$(if $(filter $(v0),$(fb.version)),no,yes)"
+    "\t@echo '[$(filter kahn workflow.dag,$(amk.data.engines))] moved=$(if $(filter $(v0),$(fb.version)),no,yes)"
     " [$(fb.trace)] [$(wf.exec .tasks | length)]'", "",
   ]))
   r = sh(amk, ["-s", "-f", str(mk), "show"], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "p 1\np 2\n[kahn workflow] moved=yes [p p] [0]" in r.stdout, r.stdout
+  assert "p 1\np 2\n[kahn workflow.dag] moved=yes [p p] [0]" in r.stdout, r.stdout
 
 
 @pytest.mark.engines("jq")
@@ -215,7 +231,7 @@ def test_a_kahn_net_binds_its_source_and_library_to_exec(amk, tmp_path):
   ]))
   r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "src=3 net=3 ch=3" in r.stdout, r.stdout
+  assert "src=3 net=9 ch=3" in r.stdout, r.stdout
 
 
 @pytest.mark.engines("jq")
@@ -242,7 +258,8 @@ def test_a_kahn_net_binds_its_source_and_library_to_exec(amk, tmp_path):
 ])
 def test_a_decorated_body_is_checked_against_its_schema(amk, tmp_path, deco, body, want):
   mk = tmp_path / "net.mk"
-  mk.write_text("\n".join([f"load dsys/{deco}", f"@{deco}", "define net", json.dumps(body), "endef", ""]))
+  at = "workflow.dag" if deco == "workflow" else deco
+  mk.write_text("\n".join([f"load dsys/{deco}", f"@{at}", "define net", json.dumps(body), "endef", ""]))
   r = sh(amk, ["-s", "-f", str(mk)], cwd=tmp_path, timeout=120)
   assert r.returncode != 0, r.stdout + r.stderr
   assert f"net: does not meet schema/{deco}.json: {want}" in r.stderr, r.stderr
@@ -266,7 +283,7 @@ def release(test_body="@echo 'test $(release.test.token)'", package_body="@echo 
   return "\n".join([
     "load dsys/workflow",
     "$(amk.pool runners, 2)",
-    "@workflow", "define release", json.dumps(RELEASE), "endef",
+    "@workflow.dag", "define release", json.dumps(RELEASE), "endef",
     "checkout:", "\t@echo checkout",
     "test:", f"\t{test_body}",
     "package:", f"\t{package_body}",

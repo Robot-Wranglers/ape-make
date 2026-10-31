@@ -11,7 +11,7 @@
 #define AMK_POOL_WIDTH 32
 #define AMK_POOL_PIPE 16384
 
-/* A pool: its ledger, its size, what this process holds, the bytes in one token, 1 unlabeled, the labels held, the process that opened it, whether produce or consume ran here, whether its strategy is open, and its give-back at exit and forgetting at fork.  */
+/* A pool: its ledger, its size, what this process holds, the bytes in one token, 1 unlabeled, the labels held, the process that opened it, whether produce or consume ran here, whether its strategy is open, whether this process closed it, and its give-back at exit and forgetting at fork.  */
 struct amk_pool {
   const char *name;
   unsigned int size;
@@ -23,19 +23,26 @@ struct amk_pool {
   pid_t opener;
   int resized;
   int open;
+  int closed;
   void (*give_back) (struct amk_pool *p);
   void (*forget) (struct amk_pool *p);
 };
-static struct amk_pool amk_pools[AMK_POOLS] = { { "goals", 0, 0, NULL, 1, NULL, 0, 0, 0, 0, NULL, NULL } };
+static struct amk_pool amk_pools[AMK_POOLS] = { { "goals", 0, 0, NULL, 1, NULL, 0, 0, 0, 0, 0, NULL, NULL } };
 static unsigned int amk_pools_len = 1;
+
+/* A pool's slot by name, a closed one only when asked, since a closed slot waits to be opened again.  */
+static int
+amk_pool_slot (const char *name, int closed) {
+  unsigned int i;
+  for (i = 0; i < amk_pools_len; ++i)
+    if (amk_pools[i].closed == closed && strcmp (amk_pools[i].name, name) == 0)
+      return (int) i;
+  return -1;
+}
 
 static int
 amk_pool_find (const char *name) {
-  unsigned int i;
-  for (i = 0; i < amk_pools_len; ++i)
-    if (strcmp (amk_pools[i].name, name) == 0)
-      return (int) i;
-  return -1;
+  return amk_pool_slot (name, 0);
 }
 
 static unsigned int
@@ -46,7 +53,7 @@ amk_pool_named (const char *fn, const char *name) {
   return (unsigned int) c;
 }
 
-static const char *const amk_pool_verbs[] = { "size", "held", "auth", "acquire", "release", "produce", "consume", NULL };
+static const char *const amk_pool_verbs[] = { "size", "held", "auth", "acquire", "release", "produce", "consume", "close", NULL };
 static char *amk_func_pool_bound (void *state, const char *fn, unsigned int argc, char **argv);
 
 /* The pool's verbs as make functions of its own name, amk.pool.name.verb, so a guest reaches them as fields of its handle.  */
@@ -120,7 +127,8 @@ amk_pool_forget_all (struct amk_pool *p) {
 /* A new pool: a pipe-style ledger of size + tokens by the jobserver's own setup, or, given labels, one whole token per label, and empty at size 0; its tokens must fit the pipe, and a name that is a verb would shadow the verbs.  */
 static void
 amk_pool_open (const char *name, unsigned int size, char **labels, int open) {
-  unsigned int i = amk_pools_len;
+  int again = amk_pool_slot (name, 1);
+  unsigned int i = again >= 0 ? (unsigned int) again : amk_pools_len;
   unsigned int width = labels != NULL ? AMK_POOL_WIDTH : 1;
   const char *const *v;
   struct amk_pool *p;
@@ -151,8 +159,24 @@ amk_pool_open (const char *name, unsigned int size, char **labels, int open) {
       amk_pool_write_label (p, 1, labels[k]);
   } else
     jobserver_setup_on (p->js, (int) size, "pipe");
+  if (again >= 0)
+    return;
   amk_pools_len = i + 1;
   amk_pool_bind (i);
+}
+
+/* close: this process's copy of the pool dropped, its pipe closed here and what it held forgotten, the slot kept for the name to be opened again.  */
+static char *
+amk_pool_close (unsigned int c) {
+  struct amk_pool *p = &amk_pools[c];
+  if (c == 0)
+    O (fatal, reading_file, "amk.pool: goals is the jobserver, sized by -j");
+  jobserver_clear_on (p->js);
+  free (p->held_labels);
+  p->held_labels = NULL;
+  p->held = p->held_cap = 0;
+  p->closed = 1;
+  return xstrdup ("");
 }
 
 /* The goals pool's size: make's slot count while it holds one, else the -j in MAKEFLAGS once the jobserver owns the count.  */
@@ -294,6 +318,8 @@ amk_func_pool (void *state, const char *fn, unsigned int argc, char **argv) {
     out = xmalloc (len);
     out[0] = '\0';
     for (i = 0; i < amk_pools_len; ++i) {
+      if (amk_pools[i].closed)
+        continue;
       if (i > 0)
         strcat (out, " ");
       strcat (out, amk_pools[i].name);
@@ -383,6 +409,10 @@ static char *
 amk_pool_verb (unsigned int c, const char *verb, unsigned int argc, char **argv) {
   struct amk_pool *p = &amk_pools[c];
   const char *arg = argc > 0 ? amk_trim (argv[0]) : "";
+  if (p->closed)
+    OS (fatal, reading_file, "amk.pool: %s is closed in this process", p->name);
+  if (strcmp (verb, "close") == 0)
+    return amk_pool_close (c);
   if (strcmp (verb, "size") == 0)
     return amk_pool_number (amk_pool_size (c));
   if (strcmp (verb, "held") == 0)

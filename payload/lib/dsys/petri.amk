@@ -34,7 +34,7 @@ petri._place = $(word 1,$(subst :, ,$(1)))
 petri._weight = $(word 2,$(subst :, ,$(1)))
 petri._times = $(wordlist 1,$(1),$(petri._n))
 petri._pool = $(or \
-  $(call petri._weight,$(filter $(2):%,$($(1).pools))),$(1).$(2))
+  $(call petri._weight,$(filter $(2):%,$($(1).ports) $($(1).pools))),$(1).$(2))
 petri._size = $(amk.pool.size $(call petri._pool,$(1),$(2)))
 $(amk.fxn! petri._size)
 
@@ -44,18 +44,79 @@ petri._busy = $(words $(foreach p,$($(1).inflight), \
 petri._count = $(strip $(if $(filter $(2),$($(1).busy)), \
   $(call petri._busy,$(1),$(2:%.busy=%)),$(call petri._size,$(1),$(2))))
 
-# Each place a pool, open to the environment if declared so, else the net's strategy.
+# A place's pool, <net>.<place> unless named; open if declared, else by strategy
 petri._strategy = $(if $(filter $(2),$($(1).open)),open,$($(1).strategy))
-petri._open.count = $(amk.pool $(1).$(2), $($(1).init.$(2)), \
+petri._open.count = $(amk.pool $(3), $($(1).init.$(2)), \
   strategy=$(call petri._strategy,$(1),$(2)))
 petri._open.labels = $(if $($(1).init.$(2)), \
-  $(amk.pool $(1).$(2), labels=$($(1).init.$(2)), \
+  $(amk.pool $(3), labels=$($(1).init.$(2)), \
     strategy=$(call petri._strategy,$(1),$(2))), \
-  $(amk.pool $(1).$(2), labeled=true, \
+  $(amk.pool $(3), labeled=true, \
     strategy=$(call petri._strategy,$(1),$(2))))
-petri._open.place = $(if $(filter $(2),$($(1).labeled)), \
-  $(call petri._open.labels,$(1),$(2)),$(call petri._open.count,$(1),$(2)))
+petri._open.as = $(if $(filter $(2),$($(1).labeled)), \
+  $(call petri._open.labels,$(1),$(2),$(3)), \
+  $(call petri._open.count,$(1),$(2),$(3)))
+petri._open.place = $(call petri._open.as,$(1),$(2),$(1).$(2))
 petri._open = $(foreach p,$($(1).places),$(call petri._open.place,$(1),$(p)))
+
+# A run in a fork that did not open the net opens it afresh, but for ports.
+petri._set = $(if $(filter-out undefined,$(origin $(1))),$($(1)))
+petri._fresh.places = $(if $(call petri._set,$(1).instance), \
+  $(filter-out $($(1).open),$($(1).places)),$($(1).places))
+petri._own.places = $(if $(filter $(amk.sys pid),$($(1).opener)),, \
+  $(foreach p,$(call petri._fresh.places,$(1)), \
+    $(amk.pool.close $(1).$(p))$(call petri._open.place,$(1),$(p))) \
+  $(call petri._ports,$(1)) \
+  $(eval $(1).opener := $(amk.sys pid)))
+petri._ports = $(foreach i,$(call petri._set,$(1).instance), \
+  $(eval $(1).ports := $(foreach p,$($(1).open),$(p):$(i).$(p))))
+
+# A step running a net with open places runs an instance, ports opened at load.
+petri._child = $(patsubst %.__main__,%, \
+  $(filter %.__main__,$($(1).$(2).run)))
+petri._named = $(or $($(1).$(2).instance),$(1).$(2))
+petri._wire = $(foreach n,$(petri.nets),$(foreach t,$($(n).transitions), \
+  $(foreach c,$(filter $(petri.nets),$(call petri._child,$(n),$(t))), \
+    $(if $($(c).open),$(call petri._instance,$(n),$(t),$(c),$(strip \
+      $(call petri._named,$(n),$(t))))))))
+petri._instance = $(if $(filter $(4),$(call petri._set,$(3).instances)),, \
+  $(eval $(3).instances += $(4))$(eval $(4).net := $(3)) \
+  $(eval $(1).$(2).as := $(4)) \
+  $(foreach p,$($(3).open),$(call petri._open.as,$(3),$(p),$(4).$(p))) \
+  $(amk.pool petri.live.$(4), 0, strategy=open) \
+  $(eval .PHONY: $(4).__main__) \
+  $(eval $(4).__main__:; $$(call petri._as,$(3),$(4))))
+petri._as = $(eval $(1).instance := $(2)) \
+  $(call $(call petri._own,$(1),run),$(1))
+
+# What a step runs: its instance, a token in its live pool from firing to end.
+petri._of = $(call petri._set,$(1).$(2).as)
+petri._runs = $(or $(addsuffix .__main__,$(call petri._of,$(1),$(2))), \
+  $($(1).$(2).run))
+petri._begin = $(foreach i,$(call petri._of,$(1),$(2)), \
+  $(if $(filter-out 0,$(call petri._busy,$(1),$(2))), \
+    $(error $(1): $(2) is already running $($(i).net) as instance $(i))) \
+  $(amk.pool.produce petri.live.$(i)))
+petri._end = $(foreach i,$(call petri._of,$(1),$(2)), \
+  $(if $(amk.pool.consume petri.live.$(i), 0),))
+
+# A token put from outside: into the instance a net runs as, named or lone.
+petri._net = $(or $(call petri._set,$(1).net),$(1))
+petri._lone = $(if $(word 2,$(2)),$(error $(1): a token for $(3) is \
+  ambiguous among instances $(2)),$(or $(2),$(1)))
+petri._at = $(or $(call petri._set,$(1).instance), \
+  $(if $(call petri._set,$(1).net),$(1), \
+    $(call petri._lone,$(1),$(call petri._set,$(1).instances),$(2))))
+petri._live = $(filter-out 0,$(amk.pool.size petri.live.$(1)))
+petri._to = $(foreach i,$(call petri._at,$(1),$(2)), \
+  $(if $(call petri._set,$(i).net),$(if $(call petri._live,$(i)),, \
+    $(error $(1): instance $(i) is not running, so nothing takes a \
+      token for $(2)))) \
+  $(i))
+petri.put = $(foreach i,$(call petri._to,$(1),$(2)), \
+  $(amk.pool.produce $(if $(call petri._set,$(i).net),$(i).$(2), \
+    $(call petri._pool,$(1),$(2)))))
+$(amk.fxn! petri.put)
 
 # A net loaded again keeps the pools and tokens of the places it opened.
 petri._open.new = $(foreach p,$($(1).places), \
@@ -164,16 +225,18 @@ $(strip
   $(eval $(1).$(2).outcome :=)
   $(eval $(1).$(2).output :=)
   $(call petri._bind,$(1),$(2))
+  $(call petri._begin,$(1),$(2))
   $(if $(filter $($(1).$(2).kind),$(petri.async)),
     $(if $($(1).$(2).run),
       $(call petri._launch,$(1),$(2)),$(call petri._done,$(1),$(2))),
     $(if $($(1).$(2).run),
-      $(call petri._run.$($(1).$(2).kind),$(1),$(2),$($(1).$(2).run)))
+      $(call petri._run.$($(1).$(2).kind),$(1),$(2),
+        $(call petri._runs,$(1),$(2))))
     $(call petri._done,$(1),$(2))))
 endef
 
 # An agoal step as a job of this image, kept in flight with its firing's labels.
-petri._launch = $(foreach p,$(amk.goal.spawn $($(1).$(2).run)), \
+petri._launch = $(foreach p,$(amk.goal.spawn $(call petri._runs,$(1),$(2))), \
   $(eval $(1).inflight += $(p)) \
   $(eval $(1).job.$(p) := $(2)) \
   $(eval $(1).job.$(p).token := $($(1).$(2).token)) \
@@ -191,6 +254,7 @@ $(strip
   $(foreach g,$($(1).$(2).gives),
     $(call petri._put,$(1),$(call petri._place,$(g)),$(call petri._weight,$(g))))
   $(eval $(1).trace += $(2))
+  $(call petri._end,$(1),$(2))
   $(if $($(1).inflight),,$(call petri._invariants,$(1),$(2))))
 endef
 
@@ -243,12 +307,12 @@ petri._loop = $(eval $(1).next := $(call petri._next,$(1))) \
       $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t))) \
       $(call petri._loop,$(1))))
 petri._final = $(call petri._exec,$(1),stuck($$net; $$marking))
-petri.run = $(strip $(call petri._fresh,$(1)) \
+petri.run = $(strip $(call petri._fresh,$(1))$(call petri._own.places,$(1)) \
   $(call petri._loop,$(1))$(call petri._final,$(1)))
 $(amk.fxn! petri.run)
 
 # One firing, the first enabled, or none: the transition fired is the value.
-petri.step = $(strip $(call petri._fresh,$(1)) \
+petri.step = $(strip $(call petri._fresh,$(1))$(call petri._own.places,$(1)) \
   $(eval $(1).next := $(call petri._next,$(1))) \
   $(foreach t,$(filter-out -,$(word 1,$($(1).next))), \
     $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t))$(t))))
@@ -275,6 +339,7 @@ $(strip
   $(jq.import $(1), $(2))
   $(eval $(1).form := $(if $(filter undefined,$(origin 3)),petri,$(3)))
   $(eval $(1).source ?= $(1))
+  $(eval $(1).ports :=)
   $(eval $(petri._plan $(1),$(2)))
   $(call petri._planned,$(1))
   $(amk.fxn! $(1).exec, petri.exec, $(1))
@@ -286,12 +351,15 @@ $(strip
       $(error $(1): place $(call petri._place,$(e)) names pool
         $(call petri._weight,$(e)), which is not open)))
   $(call petri._open,$(1))
+  $(eval $(1).opener := $(amk.sys pid))
   $(amk.fxn! $(1).marking, petri.marking, $(1))
   $(amk.fxn! $(1).state, $(call petri._own,$(1),state), $(1))
   $(amk.fxn! $(1).states, petri.states, $(1))
   $(eval petri.goal := $(.DEFAULT_GOAL))
   $(eval .PHONY: $(1).__main__)
   $(eval $(call petri.run.rule,$(1)))
+  $(eval petri.nets += $(1))
+  $(petri._wire)
   $(eval .DEFAULT_GOAL := $(petri.goal)))
 endef
 

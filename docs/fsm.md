@@ -1,47 +1,64 @@
 <!-- header # fsm "`mod :: dsys/fsm`" |Syntax #syntax | Events #events | Actions #actions | Services #services | Guards #guards | SCXML #scxml | Reduction #reduction | API #api | Subset #subset | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="fsm"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.up.dark.svg"><img src="img/hdr/docs-fsm.fsm.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.mod.dark.svg"><img src="img/hdr/docs-fsm.fsm.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.title.dark.svg"><img src="img/hdr/docs-fsm.fsm.title.svg" alt=" :: dsys/fsm"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.12.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.12.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.11.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.11.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.10.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.10.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.9.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.9.svg" alt="Errors"></picture></a><a href="#subset"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.8.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.8.svg" alt="Subset"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.7.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.7.svg" alt="API"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.6.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.6.svg" alt="Reduction"></picture></a><a href="#scxml"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.5.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.5.svg" alt="SCXML"></picture></a><a href="#guards"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.4.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.4.svg" alt="Guards"></picture></a><a href="#services"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.3.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.3.svg" alt="Services"></picture></a><a href="#actions"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.2.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.2.svg" alt="Actions"></picture></a><a href="#events"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.1.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.1.svg" alt="Events"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-fsm.fsm.0.dark.svg"><img align=right src="img/hdr/docs-fsm.fsm.0.svg" alt="Syntax"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
 
-SCXML, State Chart XML[^scxml], is the W3C standard notation for statecharts: state
-machines extended with nesting, parallel regions and history. An SCXML document names:
+The `@fsm` syntax declares a finite state machine as data.  The interesting part though is how that connects back to everything else.
 
-* the states, nested as compound states or run side by side as parallel regions,
-* the events that move the machine between states, and
-* the actions it runs on entry, on exit and on each transition.
+> Machine nodes represent *any kind of compute in any kind of guest engine that amk supports*, and transition rules represent **control flow**.
 
-Because SCXML is a standard, a machine written or drawn in another statechart tool can come
-here as a file. xstate follows the same semantics, with JSON in place of XML.
+FSM support is one part of the broader [dsys](dsys.md) toolkit, which covers various use-cases in distributed systems and discrete-event systems.
 
-Part of the [dsys toolkit](dsys.md), the `@fsm` syntax declares a state machine as data, in the shape of an xstate machine config[^xstate], and compiles it to an open [Petri net](petri.md):
+## Example 
 
 ```Makefile
 load dsys/fsm
 
 @fsm
 define door
-  {"initial": "closed", "states": {"opened": {"entry": "greet", ...}, ...}}
+  {
+    "id": "door",
+    "initial": "closed",
+    "states": {
+      "closed": { "entry": "knock", "on": { "open": "opened" } },
+      "opened": { "entry": "greet", "on": { "leave": "gone" } },
+      "gone":   { "type": "final" }
+    }
+  }
 endef
+
+knock:
+	@echo knock knock
+	$(door.send open)
 
 greet:
 	@echo opened by $(door.event)
+	$(door.send leave)
 
-$(door.send open)
 __main__: door.__main__
 ```
 
-The define is data, targets such as `greet` do the work, and `door.__main__` runs the
-machine over the events it was sent. The full config is under [syntax](#syntax), and the
-JSON shape under [schema](#schema).
+Each entry action sends the event that moves the machine on, while the machine runs.
 
-* every leaf state is a place, and the machine's configuration is where its tokens are,
-* every event is an open place the environment feeds through the machine's `send` call, and
-* a transition fires when its source holds the token and its event holds one.
+The define block holds a data-driven machine specification, but individual actions can reference the target graph, and can use any guest language that amk has an engine for.  See the full config details under [syntax](#syntax), and the JSON schema [here](#schema).  
 
-The same machine reads from an SCXML document, [converted](#scxml) in the Lua guest and
-lowered through the same config, so `load ./door.scxml` and `@fsm.import` over XML
-declare it too. The [subset](#subset) section lists what of SCXML is supported.
+## Background 
+
+FSM support is backed by State Chart XML[^scxml] (SCXML), a standard notation from W3C, which supports state machines extended with nesting, parallel regions and history. An SCXML document names:
+
+* States, nested as compound states and allowing parallel regions.
+* Events, which move the machine between states
+* Actions for transition, including separate entry / exit actions.
+
+A related standard is xstate[^xstate], basically using JSON in place of XML.  Since `amk` works with either/both standards and [converts](#scxml) between them.. a machine written with another statechart tool can be dispatched or analyzed in `amk` too.
+
+Rather than working with either specification *directly*, FSM configs in these formats are compiled (or actually, "lifted" since this is a higher abstraction rather than a lower one!) into a petri net.
+
+See [dsys/petri](petri.md) for more details, but at a high level:
+
+* States become places, the machine's config describes tokens
+* Events are also places, fed tokens through the machine's `send` call
+* Transitions fire when tokens match
 
 <a id="syntax"></a>
 
@@ -56,22 +73,48 @@ declare it too. The [subset](#subset) section lists what of SCXML is supported.
 | `@fsm.exec (name)` above a define | a jq program over the compiled net, printed at parse |
 | `$(fsm.compile name)` | the compiled net's JSON, without loading it |
 
-A config is a machine object with `initial` and `states`; each state has the keys below.
-A target names a sibling by its bare name, a child by a leading dot, or any state by `#`
-and its path under the machine, as `#door.closed`. A target or an `initial` may be a list,
-one leaf per region of a parallel state below, and the regions it leaves out enter by
-their own initials.
+A config is a machine object of `id`, `initial` and `states`, each state an object of the keys below:
+
+```Makefile
+@fsm
+define door
+  {
+    "initial": "closed",
+    "states": {
+      "closed": { "on": { "open": "opened" } },        // a sibling, by bare name
+      "opened": {
+        "initial": "ajar",
+        "on": {
+          "slam":  "#door.closed",                     // any state, by its path
+          "reset": ".ajar",                            // a child, by a leading dot
+          "leave": "gone"
+        },
+        "states": { "ajar": {}, "wide": {} }
+      },
+      "gone": { "type": "final", "entry": "wave" }
+    }
+  }
+endef
+```
+
+| Target | Names |
+| --- | --- |
+| `closed` | a sibling |
+| `.ajar` | a child |
+| `#door.closed` | any state, by its path under the machine |
+| `["#m.p.r.b", "#m.p.s.d"]` | one leaf per region of a parallel state; a region left out enters by its own `initial` |
 
 | Key | Value |
 | --- | --- |
+| `id` | the machine's name in event bindings and state paths; by default the define's name, on the machine only |
 | `initial` | the state entered when this one is, a child or any state below it; required on a compound state |
 | `states` | the children, which make the state compound; `"type": "parallel"` makes each child a region active at once |
-| `type` | `atomic`, `compound`, `parallel` or `final`; the default follows the keys |
+| `type` | `atomic`, `compound`, `parallel` or `final`; the default follows the keys, and a final state takes only `entry` |
 | `on` | each event descriptor and its transition: a target, or an object with `target` |
 | `always` | the eventless transition, taken as soon as the state is entered |
 | `onDone` | the transition taken when a child final state is entered, or every region of a parallel has ended |
 | `entry`, `exit` | targets run when the state is entered and left, in any guest; see [actions](#actions) |
-| `invoke` | a service run on entry, `{ "src": target, "onDone": .., "onError": .. }`; see [services](#services) |
+| `invoke` | a service run on entry, `{ "src": target, "onDone": .., "onError": .. }`, and an optional `id` naming its events `done.invoke.<id>` and `error.platform.<id>`, by default xstate's `0.<state id>`; see [services](#services) |
 | `guard` on a transition | a variable answering by its value, a target by its exit status, or `@state` for a state being active; see [guards](#guards) |
 
 A transition with no target stays in its state and consumes the event. A compound state's
@@ -102,8 +145,9 @@ re-enters it, as xstate's external self-transition does.
 
 ## Services
 
-`invoke` runs its `src` target as a step when the state is entered, and its value is the
-service's output, read back as `<name>.<state>.output`. The state then takes `onDone`, a
+`invoke` runs its `src` target as a step when the state is entered. Outside a parallel
+state its value is the service's output, read back as `<name>.<state>.output`; inside one
+a service passes what it makes through files, as any target does. The state then takes `onDone`, a
 target or a list of guarded alternatives, or `onError` when the service failed. A state
 with no `onError` stops the run when its service fails.
 
@@ -117,8 +161,10 @@ with no `onError` stops the run when its service fails.
 
 While the service runs, the machine is in the invoking state; once it has answered, the
 machine holds its outcome until `onDone` or `onError` moves it, and the state's own event
-transitions do not fire in between. Inside a parallel state the other regions go on taking
-their events meanwhile, and a transition out of the parallel takes the outcome with it.
+transitions do not fire in between. Inside a parallel state each service runs as a
+[job](petri.md#amk-block), so services in different regions run at the same time. Every
+transition of a parallel state takes a position from each region, so none fires until each
+region's service has answered, and a service is never cancelled by leaving its state.
 
 <a id="guards"></a>
 
@@ -152,16 +198,33 @@ each region took is settled together as scxml selects.
 ## Events
 
 The environment feeds a machine's events as tokens. The machine's `send` call puts one in
-the event's place, and the run fires what the token enables:
+the event's place, and the run fires what the token enables. Event places are
+[open](petri.md#endings), so a running machine with no event to take waits for one, and
+any step may send while it runs: an action, a service, or a job beside the machine.
 
 ```Makefile
-$(door.send unlock)
-$(door.send open)
-$(door.send leave)
-
-__main__: door.__main__
-	@echo '[$(door.trace)] [$(door.marking )]'
+knock:
+	@echo knock knock
+	$(door.send open)
 ```
+
+A machine [invoked](#services) by another runs as a petri
+[instance](petri.md#amk-block), named by the invoke id, by default `0.<state id>`, its
+events its ports. A send names the instance as scxml's `#_<invokeid>` does, and a send to
+the machine itself reaches its one instance; it is refused when the machine has several
+instances, or when the instance is not running, before it starts or after it ends:
+
+```Makefile
+tell:
+	@sleep 1
+	$(fsm.send 0.sup.calling, go)
+
+__main__: sup.__main__
+	@echo spawned $(amk.goal.spawn tell)
+```
+
+A `src` that is no loaded machine runs as a plain service. Each instance opens one pool
+per event and one more for whether it runs, against the cap of 64.
 
 An event descriptor under `on` is a name, a partial wildcard `foo.*` taking every name
 under `foo`, or `*` taking any event. The most specific descriptor at the nearest state
@@ -251,7 +314,9 @@ xstate's `machine.schema.json` describes, so a conformant xstate tool reads it.
 | Call | Does | Answers |
 | --- | --- | --- |
 | `<name>.__main__` | runs the machine as its net; typically `__main__: <name>.__main__` | a target |
-| `$(<name>.send event)` | feeds one event, routed to its place or the closest wildcard's | nothing |
+| `$(<name>.send event)` | feeds one event, routed to its place or the closest wildcard's; to the machine's one running [instance](#events) when it has one | nothing |
+| `$(fsm.send <invoke id>, event)` | feeds one event to a running instance, by its invoke id | nothing |
+| `$(<name>.instance)` | in an instance's run, its invoke id | a variable |
 | `$(<name>.state )` | the active states, leaf paths under the machine | words |
 | `$(<name>.event)`, `$(<name>.config)`, `$(<name>.<state>.output)` | the event of the move whose actions are running, the configuration a guard is asked about, and a service's last output | variables |
 | `$(<name>.step )` | one firing, or none | the transition fired |
@@ -307,7 +372,7 @@ normalizer and compiler then refuse what a schema cannot say:
 
 | Demo | Shows |
 | --- | --- |
-| [`dsys-fsm.amk`](../demos/dsys-fsm.amk) | a door whose entry actions run in lua, micropy and s7, a hinge service in js whose answer a variable guard and a target guard route on, and events sent ahead of the run |
+| [`dsys-fsm.amk`](../demos/dsys-fsm.amk) | a door whose entry actions run in lua, micropy and s7, a hinge service in js whose answer a variable guard and a target guard route on, and entry actions that send the next event |
 
 <a id="references"></a>
 

@@ -1,5 +1,4 @@
 <!-- header # amb "`mod :: lisp :: amb`" |Concepts #concepts | Syntax #syntax | API #api | Search #example-search | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="amb"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.up.dark.svg"><img src="img/hdr/docs-amb.amb.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.mod.dark.svg"><img src="img/hdr/docs-amb.amb.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.title.dark.svg"><img src="img/hdr/docs-amb.amb.title.svg" alt=" :: lisp :: amb"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.6.dark.svg"><img align=right src="img/hdr/docs-amb.amb.6.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.5.dark.svg"><img align=right src="img/hdr/docs-amb.amb.5.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.4.dark.svg"><img align=right src="img/hdr/docs-amb.amb.4.svg" alt="Errors"></picture></a><a href="#example-search"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.3.dark.svg"><img align=right src="img/hdr/docs-amb.amb.3.svg" alt="Search"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.2.dark.svg"><img align=right src="img/hdr/docs-amb.amb.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.1.dark.svg"><img align=right src="img/hdr/docs-amb.amb.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.0.dark.svg"><img align=right src="img/hdr/docs-amb.amb.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -113,74 +112,39 @@ endef
 depth first. A branch is the body between its first `amb` and its end, and a value is
 collected only when the body returns.
 
-Both choices above as a demo, `fail` pruning the even options, and two nested `amb`s in
-search order:
-
-```Makefile
-__main__: choice
-
-@s7.target
-define choice
-  (load "amb.scm" (rootlet))
-  (format #t "odd tens: ~A~%"
-    (amb-collect
-      (lambda ()
-        (let ((x (amb '(1 2 3 4))))
-          (if (even? x) (fail))
-          (* x 10)))))
-  (format #t "pairs: ~A~%"
-    (amb-collect
-      (lambda ()
-        (let* ((x (amb '(1 2))) (y (amb '(a b))))
-          (list x y)))))
-endef
-```
-
 <a id="example-search"></a>
 <a id="writing-a-search"></a>
 
 ## Example (Search)
 
-A search is a body under `amb-collect` that chooses, checks, and returns:
+A search is a body under `amb-collect` that chooses, checks, and returns. Every simple path
+through a graph is one `amb` per step and one `fail` per revisit; the recursion is the
+search, and the edge from `d` back to `b` is the cycle the `fail` cuts:
 
-```scheme
-(define (pythagorean n)
-  (amb-collect
-    (lambda ()
-      (let* ((range (let loop ((i n) (acc ())) (if (< i 1) acc (loop (- i 1) (cons i acc)))))
-             (a (amb range))
-             (b (amb range))
-             (c (amb range)))
-        (if (or (> a b) (not (= (+ (* a a) (* b b)) (* c c)))) (fail))
-        (list a b c)))))
+```Makefile
+__main__: graph
 
-(pythagorean 10)                        ; ((3 4 5) (6 8 10))
+@s7.target
+define graph
+  (load "amb.scm" (rootlet))
+  (define edges '((a b c) (b c d) (c d) (d b e) (e)))
+  (define (walk node goal seen)
+    (if (eq? node goal)
+      (reverse (cons node seen))
+      (let ((next (amb (cdr (assq node edges)))))
+        (if (memq next seen) (fail))
+        (walk next goal (cons node seen)))))
+  (format #t "paths: ~A~%" (amb-collect (lambda () (walk 'a 'e ()))))
+endef
+```
+
+```
+$ amk -f demos/stdlib-amb-graph.amk
+paths: ((a b c d e) (a b d e) (a c d e))
 ```
 
 The `exhausted` thunk is where a search undoes what a choice point set up, since it runs
 after the last option's branch and before the enclosing choice moves on.
-
-The same search as a demo, every right triangle with sides up to 20, from three choices and
-one check:
-
-```Makefile
-__main__: search
-
-@s7.target
-define search
-  (load "amb.scm" (rootlet))
-  (define (upto n)
-    (let loop ((i n) (acc ()))
-      (if (< i 1) acc (loop (- i 1) (cons i acc)))))
-  (define (triples n)
-    (amb-collect
-      (lambda ()
-        (let* ((a (amb (upto n))) (b (amb (upto n))) (c (amb (upto n))))
-          (if (or (> a b) (not (= (+ (* a a) (* b b)) (* c c)))) (fail))
-          (list a b c)))))
-  (format #t "triples: ~A~%" (triples 20))
-endef
-```
 
 <a id="errors"></a>
 
@@ -199,29 +163,16 @@ Each runs from the repository with `amk -f`, or any one target by name.
 | Demo | Targets | Shows |
 | --- | --- | --- |
 | [`stdlib-amb-control.amk`](../demos/stdlib-amb-control.amk), embedded under [delimited control](#delimited-control) | `control` | the three `reset` and `shift` forms above |
-| [`stdlib-amb-choice.amk`](../demos/stdlib-amb-choice.amk), embedded under [choice](#choice) | `choice` | `amb` with `fail`, and nested `amb` in search order |
-| [`stdlib-amb-search.amk`](../demos/stdlib-amb-search.amk), embedded under [the search](#example-search) | `search` | every right triangle with sides up to 20 |
+| [`stdlib-amb-graph.amk`](../demos/stdlib-amb-graph.amk), embedded under [the search](#example-search) | `graph` | every simple path from `a` to `e` in a graph with a cycle |
 | [`stdlib-amb-yinyang.amk`](../demos/stdlib-amb-yinyang.amk), embedded below | `yinyang` | the yin-yang puzzle, `@*@**@***` and on, stopped by a counter after 20 characters |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | `tasks` | cooperative multitasking: a ready list of continuations, `fork`, `yield`, three counters interleaving |
-| | `branches` | the same scheduler with `shift` as the forker, the rest of the body queued once per option |
+
+The same graph walk run as tasks on a plex is [`plex-choice.amk`](../demos/plex-choice.amk),
+embedded under [plex choice](plex.md#choice).
 
 ```
 $ amk -f demos/stdlib-amb-yinyang.amk
 yin-yang: @*@**@***@****@*****
-$ amk -f demos/stdlib-amb-2.amk branches
-one starts
-two starts
-three starts
-one ends
-two ends
-three ends
 ```
-
-The yin-yang puzzle and the scheduler are adapted from the examples in
-Call-with-current-continuation[^callcc] on Wikipedia. Two things differ from the page. The page's overridden `exit` is a
-`finish` continuation, so the s7 process stays the engine's. And a task's end stays
-non-returning, as the page's `exit` is: a scheduler whose tasks return into its loop
-replays that loop's frame through every continuation it captured.
 
 The yin-yang puzzle, in which `yin` and `yang` each hold their own binding's continuation
 and a counter escapes after 20 characters, adapted from the
@@ -261,4 +212,3 @@ endef
 - Oleg Kiselyov, [Continuations and Delimited Control](https://okmij.org/ftp/continuations/): tutorials and papers, beginning with [an introduction to programming with shift and reset](https://okmij.org/ftp/continuations/#tutorial), and a section on [search with delimited control](https://okmij.org/ftp/continuations/#reify-search) that is the shape of `amb-collect`.
 
 [^filinski]: Andrzej Filinski, "Representing Monads", POPL 1994: `shift` and `reset` from `call/cc` and one mutable cell, which is this file's construction.
-[^callcc]: Wikipedia, [Call-with-current-continuation, Examples](https://en.wikipedia.org/wiki/Call-with-current-continuation#Examples).

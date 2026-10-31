@@ -1,0 +1,19 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/stdlib-amb-graph.amk
+#
+
+__main__: graph
+
+@s7.target
+define graph
+  (load "amb.scm" (rootlet))
+  (define edges '((a b c) (b c d) (c d) (d b e) (e)))
+  (define (walk node goal seen)
+    (if (eq? node goal)
+      (reverse (cons node seen))
+      (let ((next (amb (cdr (assq node edges)))))
+        (if (memq next seen) (fail))
+        (walk next goal (cons node seen)))))
+  (format #t "paths: ~A~%" (amb-collect (lambda () (walk 'a 'e ()))))
+endef
