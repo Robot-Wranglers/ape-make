@@ -224,6 +224,8 @@ Inside a bundle, `include` can resolve against the payload, so can [`load`](#mod
 
 The problem this solves is that certain platforms (looking at you MacOS, but also minimal containers) may default to having *other* utilities besides `make` which are missing by default, or non-GNU, or pinned to incredibly ancient versions.  Usual suspects might include things like *bash, awk, sed, jq*.  Luckily this is solvable with some combination of APEs and bundling, so, `amk` ships with those and a few more.
 
+--------------
+
 <a id="tools"></a><br/>
 
 ### Tools
@@ -249,6 +251,8 @@ check:
 
 In a few cases the standard guests are also [*special guests*](#engines), which we'll discuss in more detail later.  Briefly though, `jq` and `awk` are *linked* as well as bundled.  Thus `jq` is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have suddenly grown [sophisticated datastructures](docs/data-engines.md) and a query-language, with no speed penalty.
 
+--------------
+
 <a id="libraries"></a><br/>
 
 ### Vendored Libraries
@@ -263,6 +267,8 @@ A library is portable if its platform is.  Your own libraries [bundle](#bundling
 | mip | [micropython](#micropy) | micropython-lib | [github.com/micropython](https://github.com/micropython/micropython-lib) | `load mip` for pinned [micropy](#micropy) packages, a json define under `@mip.install` whose name is their install target (see [these docs](docs/mip.md)) |
 
 See also the [modules documentation](#modules) for more details about usage.
+
+--------------
 
 <a id="modules"></a><a id="stdlib"></a><a id="lib"></a>
 
@@ -480,7 +486,6 @@ No extra semantics.. just syntactic sugar.  The sugar is general too, and there'
 
 There are other smaller extensions to grammar, but they aren't related to the the engine API.  See the full docs [here](docs/grammar.md)
 
---------------
 
 <a id="access-mode"></a>
 
@@ -491,6 +496,8 @@ There are other smaller extensions to grammar, but they aren't related to the th
 1. [Exec Mode](#exec-mode):  Statefulness / persistent guest namespaces
 1. [Import Mode](#import-mode): Lifting namespaces (functions + variables) into host
 1. [Bridge Mode](#bridge-mode): Guest-to-host actions or reads; Guest-to-guest calls
+
+--------------
 
 <a id="tool-mode"></a>
 
@@ -521,6 +528,8 @@ my_target:; awk ...
 # equivalently, and introducing the way amk calls itself.
 my_other_target:; ${amk} --awk ...
 ```
+
+--------------
 
 <a id="eval-mode"></a>
 
@@ -580,6 +589,8 @@ both := $(work.exec print(total);) $(js.exec print(total);)
 ```
 
 See [namespaces](docs/FFI.md#namespaces) for every form.
+
+--------------
 
 <a id="import-mode"></a>
 
@@ -692,6 +703,8 @@ An example with an argv
 longest := $(awk.argv -v RS=[[:space:]]+, length > n { n = length; w = $$0 } END { print w }, make awk portable jq)
 ```
 
+--------------
+
 <a id="lua"></a>
 
 #### Lua
@@ -716,6 +729,8 @@ scores := {"ada": 3, "bob": 7, "cy": 5}
 top := $(lua ${lua.top}, $(scores))
 ```
 
+--------------
+
 <a id="s7"></a> <a id="lisp"></a>
 
 #### S7 (Lisp)
@@ -734,6 +749,8 @@ define s7.fact
 endef
 big := $(s7 ${s7.fact})
 ```
+
+--------------
 
 <a id="micropy"></a> <a id="python"></a>
 
@@ -765,6 +782,8 @@ scores := {"ada": 3, "bob": 7, "cy": 5}
 top := $(micropy* py.top, scores)
 ```
 
+--------------
+
 <a id="js"></a><a id="javascript"></a>
 
 #### Javascript
@@ -789,6 +808,8 @@ pkgs := [{"name": "make", "year": 1976}, {"name": "cmk", "year": 2024}]
 newest := $(js ${js.newest}, $(pkgs))
 ```
 
+--------------
+
 <a id="wasm"></a>
 #### WASM
 
@@ -804,6 +825,8 @@ exports := $(wasm.import src/wasm3-0.9.0/test/lang/fib32.wasm)
 twenty := $(fib 20)
 ten := $(wasm.exec fib 10)
 ```
+
+--------------
 
 <a id="golang"></a><a id="go"></a>
 
@@ -836,6 +859,8 @@ load ./demos/data/my_functions.go
 sums := $(add 2 3) $(square 7)
 ```
 
+--------------
+
 <a id="zig"></a>
 
 #### Zig
@@ -866,6 +891,8 @@ load ./demos/data/my_functions.zig
 sums := $(add 2 3) $(square 7)
 ```
 
+--------------
+
 <a id="sqlite"></a><a id="sql"></a>
 
 #### SQL (sqlite)
@@ -895,6 +922,8 @@ A recipe reaches the same database over the call channel, so shell stages and en
 stages share one store. [demos/tuplespace-1.amk](demos/tuplespace-1.amk) builds a Linda tuple
 space on it, with workers in four languages under `-j4`. The `sqlite3` command line is
 `amk --sqlite`, one in-memory database for its arguments and then stdin.
+
+--------------
 
 <a id="jq"></a>
 

@@ -675,9 +675,9 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
 	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
 
-# The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so it runs without this file's undefined-variable warnings.
+# The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so the prelude's undefined-variable warnings are shown only when the suite fails.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
-	  out=$$(env MAKEFLAGS=-s sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode"); \
+	  out=$$(sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode" 2>&1); \
 	  echo "gmsl-tests $$mode: $$(echo "$$out" | tail -1)"; \
 	  case "$$out" in *'; 0 tests failed'*) ;; *) echo "$$out" >&2; exit 1;; esac; \
 	done

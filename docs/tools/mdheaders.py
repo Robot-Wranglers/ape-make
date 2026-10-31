@@ -122,7 +122,8 @@ def up_svg(t):
 
 
 def button_svg(text, t):
-  size, pad, gap = 13, 10, 3
+  # No gap of its own, since GitHub pads every right-floated image by 20px.
+  size, pad, gap = 12, 7, 0.5
   w = text_width(text, size)
   return svg(w + 2 * pad + 2 * gap, ROW,
              f'<rect x="{gap}" y="8.5" width="{w + 2 * pad:.0f}" height="24" rx="12" fill="{t["fill"]}" stroke="{t["edge"]}"/>'
