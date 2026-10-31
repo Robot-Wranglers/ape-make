@@ -4,7 +4,8 @@ take their rows in the table. The profiler times every builtin and every call of
 and a call keeps its argument count for amk.args. A function a guest defines is credited
 to the engine that defined it. The engine builtins
 register from the engine rows, each with a star twin. The guest handle's call runs a make
-function or macro, and a guest asks whether a name is one.
+function or macro, and a guest asks whether a name is one. A call that is an immediate
+assignment's whole value is armed with that variable's name once its arguments are expanded.
 
 --- a/src/function.c
 +++ b/src/function.c
@@ -206,7 +207,35 @@ function or macro, and a guest asks whether a name is one.
 
    return o;
  }
-@@ -2768,6 +2906,7 @@
+@@ -2599,13 +2737,15 @@
+   char *abeg = NULL;
+   char **argv, **argvp;
+   unsigned int nargs;
++  int amk_depth;
+
+   beg = *stringp + 1;
+
+   entry_p = lookup_function (beg);
+
+   if (!entry_p)
+     return 0;
++  amk_depth = amk_lhs_enter ();
+
+   /* We found a builtin function.  Find the beginning of its arguments (skip
+      whitespace after the name).  */
+@@ -2690,7 +2834,11 @@
+   *argvp = NULL;
+
+   /* Finally!  Run the function...  */
++  /* Its arguments expanded, the call an assignment's whole value makes may take that variable's name.  */
++  amk_lhs_arm (amk_depth, entry_p->name);
+   *op = expand_builtin_function (*op, nargs, argv, entry_p);
++  amk_lhs_arm (-1, NULL);
++  amk_lhs_leave ();
+
+   /* Free memory.  */
+   if (entry_p->expand_args)
+@@ -2768,6 +2910,7 @@
        sprintf (num, "%u", i);
        define_variable (num, strlen (num), *argv, o_automatic, 0);
      }

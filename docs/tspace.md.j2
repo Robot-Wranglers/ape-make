@@ -4,9 +4,13 @@
 <!-- /header -->
 
 <a id="overview"></a>
-Tuplespaces are a kind of "shared blackboard" where the usual idea is pattern-matching over typed data, safe concurrent reads/writes, decent helpers for things like uniform random samples, and so on.
+Tuplespaces are a "shared blackboard" type of datastructure.  The usual idea is pattern-matching over loosely-typed data, plus safe concurrent reads/writes, decent helpers for things like uniform random samples, and so on.  
 
-For `amk` tuplespaces are implemented on top of an in-process [sqlite workspace](data-engines.md#sqlite-workspaces), , describing a [stacked engine](FFI.md#stacked-engines) built on a [data-engine](data-engines.md).  It's .  Indirectly tuplespaces are also the backbone of the [reactor model](runtime.md#tuplespace-reactor) that's available as a runtime [concurrency flavor](runtime.md).  Like the backing store, [in-memory](#usage-basic) is default but [filesystem-backed](#usage-filesystem) is another option.
+For a *specific* type of job you can probably do better with a more specific choice of modern infrastructure.  But if you want something that can build queues, mailboxes, or just complex locking, or if you want *zero* infrastructure for a in-process polyglot environment that may not be able to share a heap.. the distributed system classics still make a lot of sense.  (And maybe it is much the same for ultra-modern agentic systems, huh?)
+
+---------
+
+For `amk`, tuplespaces are implemented on top of an in-process [sqlite workspace](data-engines.md#sqlite-workspaces), describing a [stacked engine](FFI.md#stacked-engines) built on a [data-engine](data-engines.md).  Indirectly tuplespaces are also the backbone of the [reactor model](runtime.md#tuplespace-reactor) that's available as a runtime [concurrency flavor](runtime.md).  Like the backing store, [in-memory](#usage-basic) is default but [filesystem-backed](#usage-filesystem) is another option.
 
 Tuplespaces in `amk` support a standard instruction set of [CRUD and other operations](#verbs), including things like uniform random sampling, but also [pattern-matching dispatch](#routed-bound-workers) with guest-handlers bound to the space.  Besides turning any space into an event-loop / reactor pattern, tuplespaces can be used with other concurrency models.  See the [actors example here](#usage-actors).
 
@@ -466,7 +470,7 @@ type becomes when a guest reads a tuple back.
 | null | `nil` | `None` | `null` | `'null` |
 | array | table | `list` | array | vector |
 | object | table | `dict` | object | hash table |
-| Awhole tuple | table | `list` | array | list |
+| A whole tuple | table | `list` | array | list |
 
 <a id="fields-in-a-decorator"></a>
 
@@ -493,11 +497,11 @@ to json. The table gives each case and how it is read or refused.
 
 | Rule | |
 | --- | --- |
-| Aformal in `out` | refused: `out takes actuals only` |
-| Anunknown `?` formal | refused: `unknown formal` |
-| Astring beginning with `?` in a pattern | read as a formal |
-| Alua type name in a pattern | read as a formal; in `out`, a string |
-| Ajs float with no fraction, such as `7.0` | sent as `7`, stored as an integer |
+| A formal in `out` | refused: `out takes actuals only` |
+| An unknown `?` formal | refused: `unknown formal` |
+| A string beginning with `?` in a pattern | read as a formal |
+| A lua type name in a pattern | read as a formal; in `out`, a string |
+| A js float with no fraction, such as `7.0` | sent as `7`, stored as an integer |
 
 <a id="errors"></a>
 
@@ -505,20 +509,20 @@ to json. The table gives each case and how it is read or refused.
 
 | Condition | Message |
 | --- | --- |
-| Aformal in `out` | `out takes actuals only` |
-| Anunknown `?` formal | `unknown formal` |
-| Ablocking verb in an expansion, in the owner | `the operation parked, and the owner would wait on itself` |
-| Aguest reaching `amk.tspace` with no space loaded | `amk.tspace: the makefile has no tuple space; add load tspace` |
-| Areflex with no engine | `body: @shop.reflex needs an engine` |
-| Areflex in an engine that cannot compile one | `awk cannot compile a reflex` |
-| A`reflexes` strategy other than `exclusive` or `shared` | `SKY: reflexes is exclusive or shared, not maybe` |
-| Astrategy axis other than `reflexes`, or another key the [schema](#schema) refuses | `SHOP: does not meet schema/tspace.json: Property strategy: Additional property 'pick' not allowed` |
-| Areflex overlapping another on an exclusive space | `a handler is refused: its pattern overlaps another`, with the at lines, a witness tuple and the fields |
-| Afield type outside the field types | `float32 is not a type` |
-| Afield named after its space | `a field cannot be named after its space` |
-| Afield name used twice | `a field name is used twice` |
-| Ahandler pattern overlapping another's | `overlaps`, naming both at lines, a witness tuple and the fields |
-| Aheld request when the owner exits | status 3, and the caller ends |
+| A formal in `out` | `out takes actuals only` |
+| An unknown `?` formal | `unknown formal` |
+| A blocking verb in an expansion, in the owner | `the operation parked, and the owner would wait on itself` |
+| A guest reaching `amk.tspace` with no space loaded | `amk.tspace: the makefile has no tuple space; add load tspace` |
+| A reflex with no engine | `body: @shop.reflex needs an engine` |
+| A reflex in an engine that cannot compile one | `awk cannot compile a reflex` |
+| A `reflexes` strategy other than `exclusive` or `shared` | `SKY: reflexes is exclusive or shared, not maybe` |
+| A strategy axis other than `reflexes`, or another key the [schema](#schema) refuses | `SHOP: does not meet schema/tspace.json: Property strategy: Additional property 'pick' not allowed` |
+| A reflex overlapping another on an exclusive space | `a handler is refused: its pattern overlaps another`, with the at lines, a witness tuple and the fields |
+| A field type outside the field types | `float32 is not a type` |
+| A field named after its space | `a field cannot be named after its space` |
+| A field name used twice | `a field name is used twice` |
+| A handler pattern overlapping another's | `overlaps`, naming both at lines, a witness tuple and the fields |
+| A held request when the owner exits | status 3, and the caller ends |
 
 <a id="demos"></a>
 

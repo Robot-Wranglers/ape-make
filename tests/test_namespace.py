@@ -180,7 +180,7 @@ def test_a_language_namespace_keeps_its_own_state(amk, engines, tmp_path, engine
   ("$(lua.ns.create s, run)", "create takes no program"),
   ("$(awk.ns.create s)", "awk has no state or workspace interface"),
   ("$(jq.ns w, create)\n$(lua.ns w, create)", "namespace w belongs to jq"),
-  ("$(jq.ns jq, create)", "jq.exec is a make function already"),
+  ("$(jq.ns jq, create)", "jq.get is a make function already"),
   ("$(micropy.ns w, create)", "create is not supported for micropy"),
 ])
 def test_a_bad_namespace_call_is_fatal(amk, tmp_path, line, message):

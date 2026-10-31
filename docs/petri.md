@@ -1,5 +1,5 @@
 <!-- header # petri "`mod :: dsys/petri`" |Concepts #concepts | Syntax #syntax | Runtime #amk-block | Endings #endings | Strategy #strategy | API #api | Reduction #reduction | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="petri"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.up.dark.svg"><img src="img/hdr/docs-petri.petri.up.svg" alt="up to dsys"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.title.dark.svg"><img src="img/hdr/docs-petri.petri.title.svg" alt="mod :: dsys/petri"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.10.dark.svg"><img align=right src="img/hdr/docs-petri.petri.10.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.9.dark.svg"><img align=right src="img/hdr/docs-petri.petri.9.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.8.dark.svg"><img align=right src="img/hdr/docs-petri.petri.8.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.7.dark.svg"><img align=right src="img/hdr/docs-petri.petri.7.svg" alt="Errors"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.6.dark.svg"><img align=right src="img/hdr/docs-petri.petri.6.svg" alt="Reduction"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.5.dark.svg"><img align=right src="img/hdr/docs-petri.petri.5.svg" alt="API"></picture></a><a href="#strategy"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.4.dark.svg"><img align=right src="img/hdr/docs-petri.petri.4.svg" alt="Strategy"></picture></a><a href="#endings"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.3.dark.svg"><img align=right src="img/hdr/docs-petri.petri.3.svg" alt="Endings"></picture></a><a href="#amk-block"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.2.dark.svg"><img align=right src="img/hdr/docs-petri.petri.2.svg" alt="Runtime"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.1.dark.svg"><img align=right src="img/hdr/docs-petri.petri.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.0.dark.svg"><img align=right src="img/hdr/docs-petri.petri.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<h1><a id="petri"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.up.dark.svg"><img src="img/hdr/docs-petri.petri.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.mod.dark.svg"><img src="img/hdr/docs-petri.petri.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.title.dark.svg"><img src="img/hdr/docs-petri.petri.title.svg" alt=" :: dsys/petri"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.10.dark.svg"><img align=right src="img/hdr/docs-petri.petri.10.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.9.dark.svg"><img align=right src="img/hdr/docs-petri.petri.9.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.8.dark.svg"><img align=right src="img/hdr/docs-petri.petri.8.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.7.dark.svg"><img align=right src="img/hdr/docs-petri.petri.7.svg" alt="Errors"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.6.dark.svg"><img align=right src="img/hdr/docs-petri.petri.6.svg" alt="Reduction"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.5.dark.svg"><img align=right src="img/hdr/docs-petri.petri.5.svg" alt="API"></picture></a><a href="#strategy"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.4.dark.svg"><img align=right src="img/hdr/docs-petri.petri.4.svg" alt="Strategy"></picture></a><a href="#endings"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.3.dark.svg"><img align=right src="img/hdr/docs-petri.petri.3.svg" alt="Endings"></picture></a><a href="#amk-block"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.2.dark.svg"><img align=right src="img/hdr/docs-petri.petri.2.svg" alt="Runtime"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.1.dark.svg"><img align=right src="img/hdr/docs-petri.petri.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-petri.petri.0.dark.svg"><img align=right src="img/hdr/docs-petri.petri.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -10,7 +10,15 @@ Part of the [dsys toolkit](dsys.md), the `@petri` syntax embeds a petri net[^mur
 load dsys/petri
 
 @petri
-define my_net { .. } endef
+define flow
+  {"places": {"ready": 1, "done": 0}, "transitions": ["work"], "arcs": [...],
+   "amk": {"steps": {"work": {"run": "build"}}}}
+endef
+
+build:
+	@echo working
+
+__main__: flow.__main__
 ```
 
 Unless you *directly* want to encode a [discrete-event dynamic system](runtime.md#automata) as a petri net.. you probably will not use `@petri` directly.  Petri nets are primarily a *compilation target*, i.e. a lingua franca that everything from [state machines](fsm.md) to workflows can use, lowered or lifted as needed.  See also the main docs for the [dsys topic](dsys.md), see [`dsys/workflow`](workflow.md): `@workflow` for a task graph, and [`dsys/kahn`](kahn.md): `@kahn` for a Kahn network.
@@ -273,12 +281,12 @@ routes the form's extension to it.
 
 | Condition | Message |
 | --- | --- |
-| Anarc that does not join a place and a transition | `n: arc a to b does not join a place and a transition` |
+| An arc that does not join a place and a transition | `n: arc a to b does not join a place and a transition` |
 | `amk.open` naming no place | `n: open place c is not a place of the net` |
-| Aplace named like an agoal transition's in-flight count | `n: t.busy is both a place and the in-flight count of a transition` |
-| Afinal marking missed with no open place | `n: stuck with b at 1, the final marking wants 0` |
+| A place named like an agoal transition's in-flight count | `n: t.busy is both a place and the in-flight count of a transition` |
+| A final marking missed with no open place | `n: stuck with b at 1, the final marking wants 0` |
 | Every one of several final markings missed | `n: stuck at a=0 b=1 c=0, none of 2 final markings met` |
-| Anopen net waiting past `petri.patience` | `n: quiescent for 1s, nothing enabled and nothing arrived in in` |
+| An open net waiting past `petri.patience` | `n: quiescent for 1s, nothing enabled and nothing arrived in in` |
 
 <a id="demos"></a>
 

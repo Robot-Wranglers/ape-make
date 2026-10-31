@@ -28,7 +28,8 @@ The title is the heading's text, so it shows in GitHub's outline. A title in bac
 smaller than heading text so a long name leaves room for the buttons; its alt text is the
 title. A drawn title naming a module starts with an arrow: a submodule, "`mod :: dsys/petri`",
 gets a left arrow to its parent module's page, dsys.md beside it, and any other module an
-up arrow to the --index page and anchor. A link labeled ^, "| ^ ../README.md#engines", is
+up arrow to the --index page and anchor. With --index, the word "mod" in a module
+title is its own image, linked to that index. A link labeled ^, "| ^ ../README.md#engines", is
 an up arrow to its target on any header, ahead of both. The other links are buttons
 on the right of the same line, and levels 3 and below get a rule underneath, where GitHub
 draws none of its own.
@@ -261,6 +262,18 @@ def unanchored(page):
       prev = line
 
 
+def index_href(page, index):
+  path, _, frag = index.partition("#")
+  return Path(os.path.relpath(Path.cwd() / path, page.path.parent)).as_posix() + (f"#{frag}" if frag else "")
+
+
+def mod_split(h, index):
+  """A module title split at its prefix, `mod` and ` :: dsys/petri`, when the prefix links back to the index."""
+  if index and h.drawn and h.title.startswith("mod ::"):
+    return "mod", h.title[3:]
+  return None
+
+
 def nav_of(page, h, index):
   """Where a module title's arrow goes: a submodule, `mod :: dsys/petri`, left to dsys.md beside it; any other module up to the index."""
   if h.up:
@@ -270,9 +283,7 @@ def nav_of(page, h, index):
   if parent := h.title.rpartition("::")[2].strip().rpartition("/")[0]:
     return f'{parent.rpartition("/")[2]}.md', f"up to {parent}", left_svg
   if index:
-    path, _, frag = index.partition("#")
-    href = Path(os.path.relpath(Path.cwd() / path, page.path.parent)).as_posix() + (f"#{frag}" if frag else "")
-    return href, "up to the module index", up_svg
+    return index_href(page, index), "up to the module index", up_svg
   return None
 
 
@@ -291,6 +302,9 @@ def render(page, h, img, index=None):
                     for i, (label, target) in reversed(list(enumerate(h.links))))
   rule = picture(src(f"{RULE}.svg"), "", " width=2000 height=1") if h.level > 2 else ""
   title = picture(src(f"{base}.title.svg"), h.title) if h.drawn else escape(h.title)
+  if split := mod_split(h, index):
+    title = (f'<a href="{escape(index_href(page, index))}">{picture(src(f"{base}.mod.svg"), split[0])}</a>'
+             f'{picture(src(f"{base}.title.svg"), split[1])}')
   if nav := nav_of(page, h, index):
     href, alt, _ = nav
     title = f'<a href="{escape(href)}">{picture(src(f"{base}.up.svg"), alt)}</a>{title}'
@@ -301,6 +315,8 @@ def render(page, h, img, index=None):
 def images(page, h, index=None):
   base = f"{page.slug}.{h.id}"
   out = themed(f"{base}.title", lambda t: title_svg(h.title, t)) if h.drawn else {}
+  if split := mod_split(h, index):
+    out = themed(f"{base}.mod", lambda t: title_svg(split[0], t)) | themed(f"{base}.title", lambda t: title_svg(split[1], t))
   if nav := nav_of(page, h, index):
     out |= themed(f"{base}.up", nav[2])
   for i, (label, _) in enumerate(h.links):

@@ -13,8 +13,8 @@ load dsys/jobman
 
 __main__: show.locks run.workers run.readers
 
-$(amk.mutex door)
-$(amk.horcrux book, 3)
+door := $(amk.mutex )
+book := $(amk.horcrux 3)
 
 show.locks:
 	@echo "pools: $(amk.pool )"

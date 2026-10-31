@@ -235,17 +235,17 @@ g1: exited noisy 1
 
 | Condition | Message |
 | --- | --- |
-| Akind the backend does not list | `no kind goal` |
-| Amember in an engine with no actor support | `m: awk cannot run an actor; lua js micropy s7 can` |
+| A kind the backend does not list | `no kind goal` |
+| A member in an engine with no actor support | `m: awk cannot run an actor; lua js micropy s7 can` |
 | `@<group>.actor` with no engine | `m: @g1.actor needs an engine; lua js micropy s7` |
-| Acharter naming a pool that is not open | `g1: no pool named nope; open it first` |
-| A`strategy`, `mailbox` or other key the [schema](#schema) refuses, for the charter or a member joining late | `g1: does not meet schema/group.json: Property strategy: Value "rest_for_one" not in enum; one of "one_for_one"` |
+| A charter naming a pool that is not open | `g1: no pool named nope; open it first` |
+| A `strategy`, `mailbox` or other key the [schema](#schema) refuses, for the charter or a member joining late | `g1: does not meet schema/group.json: Property strategy: Value "rest_for_one" not in enum; one of "one_for_one"` |
 | Inboxes and replies past the pool cap | `g1: 3 inboxes and replies do not fit; 62 of 64 pools are open` |
-| Anask from a member without `ask` | `g1: a does not ask; give it ask=true` |
+| An ask from a member without `ask` | `g1: a does not ask; give it ask=true` |
 | `cast` or `recv` on a group with no mailboxes | `g1: no mailboxes; the charter's mailbox is none` |
-| Amember restarted more than `intensity` times | the event `g1: gave_up g1, delta: too many restarts` |
-| Ans7 call member that yields | `actor: delta is a call member and cannot yield; give it kind=scoped` |
-| Ans7 handle verb it lacks | `actor: no verb spawn` |
+| A member restarted more than `intensity` times | the event `g1: gave_up g1, delta: too many restarts` |
+| An s7 call member that yields | `actor: delta is a call member and cannot yield; give it kind=scoped` |
+| An s7 handle verb it lacks | `actor: no verb spawn` |
 
 <a id="demos"></a>
 

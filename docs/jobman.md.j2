@@ -15,7 +15,19 @@ jobs it spawned, waits only on them, and can race them or end them all.
 
 ```Makefile
 load {{ parent }}/{{ name }}
+
+@jobman
+define ci
+  { "size": 2, "fail_fast": true }
+endef
+
+@lua.target
+define __main__
+  for _, r in ipairs(amk.jobman.ci.map({ {'lint'}, {'test'}, {'build'} })) do print(r.status) end
+endef
 ```
+
+The jobman runs the goals `lint`, `test` and `build`, two at a time, as jobs; your targets do the work.
 
 Where jobs sit among the other concurrency flavors is in
 [the runtime](runtime.md#multiprocessing); the fork itself is in
@@ -201,15 +213,15 @@ it still had running. A guest may also call the job functions bare, `amk.kill(pi
 
 | Condition | Message |
 | --- | --- |
-| Abody that fails [the jobman schema]({{ root }}/payload/lib/dsys/schema/jobman.json) under `@jobman` | `odd: does not meet schema/jobman.json: Additional property 'colour' not allowed` |
-| Aspawn of no goals, or more than 63 | `$(amk.spawn ...): between 1 and 63 goals` |
-| Aspawn option other than `foreground=` and `stdout=` | `$(amk.spawn ...): no option 'x'; options are foreground= and stdout=` |
-| Afork that fails | `$(amk.spawn ...): fork failed` |
-| Apid or signal that is not a number | `$(amk.kill ...): pid 'twelve' is not a number` |
+| A body that fails [the jobman schema]({{ root }}/payload/lib/dsys/schema/jobman.json) under `@jobman` | `odd: does not meet schema/jobman.json: Additional property 'colour' not allowed` |
+| A spawn of no goals, or more than 63 | `$(amk.spawn ...): between 1 and 63 goals` |
+| A spawn option other than `foreground=` and `stdout=` | `$(amk.spawn ...): no option 'x'; options are foreground= and stdout=` |
+| A fork that fails | `$(amk.spawn ...): fork failed` |
+| A pid or signal that is not a number | `$(amk.kill ...): pid 'twelve' is not a number` |
 | Job control with no pid | `$(amk.kill ...): no pid` |
-| Ans7 handle verb it lacks | `amk-jobman: no verb spawnn` |
-| Ans7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
-| Apool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
+| An s7 handle verb it lacks | `amk-jobman: no verb spawnn` |
+| An s7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
+| A pool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
 
 A failure from a job function is fatal at a plain expansion, and a guest catches it
 through `amk.call`.

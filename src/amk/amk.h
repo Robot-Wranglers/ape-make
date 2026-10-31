@@ -145,6 +145,18 @@ char *amk_func_args (char *o, char **argv, const char *funcname);
 unsigned int amk_call_argc (void);
 void amk_args_macro (void);
 char *amk_func_fxn (char *o, char **argv, const char *funcname);
+/* The name an immediate assignment offers the one call that is its whole value: the call depth that call runs at, the variable, and the function armed with it.  */
+struct amk_lhs
+  {
+    int depth;
+    const char *var;
+    const char *armed;
+  };
+void amk_lhs_open (struct amk_lhs *saved, const char *varname, const char *value);
+void amk_lhs_close (struct amk_lhs *saved);
+int amk_lhs_enter (void);
+void amk_lhs_arm (int depth, const char *funcname);
+void amk_lhs_leave (void);
 char *amk_func_resolves (char *o, char **argv, const char *funcname);
 char *amk_trim (char *s);
 char *amk_kwarg (char *arg, char **value);

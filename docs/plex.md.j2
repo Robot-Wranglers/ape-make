@@ -76,12 +76,12 @@ A group under a charter is one use of the plex. These need no charter:
 
 | Use | js | s7 |
 | --- | --- | --- |
-| Aprocess with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
-| Adeadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
+| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
+| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
 | Several asks in flight, joined | `all` over `until(amk.acall(..))` | `fork` each, `run` |
 | Cleanup bound to a scope, a socket or a workspace owner | `resource`, `ensure` | none |
-| Astream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
-| Ahand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code]({{ root }}/payload/lib/actor/init.scm) |
+| A stream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
+| A hand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code]({{ root }}/payload/lib/actor/init.scm) |
 
 A js guest writes these from the primitives in the
 Effection documentation[^effection-docs]; nothing of a group is
@@ -108,8 +108,8 @@ matter: a js generator cannot be resumed twice, so Effection has no `shift`.
 
 | Condition | Message |
 | --- | --- |
-| Ans7 plex verb it lacks | `plex: no verb spawn` |
-| Ans7 `shift` with no enclosing `reset` | `shift outside reset` |
+| An s7 plex verb it lacks | `plex: no verb spawn` |
+| An s7 `shift` with no enclosing `reset` | `shift outside reset` |
 
 A js plex raises what Effection raises; its documentation[^effection-docs]
 has them.

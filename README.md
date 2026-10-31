@@ -1073,6 +1073,7 @@ Related pages:
 
 - [The FFI](docs/FFI.md), every engine's interface in full.
 - [The runtime](docs/runtime.md), the concurrency flavors.
+- [Pools](docs/pool.md), the shared-state primitive the runtime builds on.
 - [Data engines](docs/data-engines.md), workspaces in jq and sqlite.
 - [Payloads](docs/payloads.md) and [the zygote](docs/zygote.md), how the binary carries files and serves requests.
 

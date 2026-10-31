@@ -1,5 +1,5 @@
 <!-- header # dsys "`mod :: dsys`" |Pools #pools | Locks #locks | Users #pool-users | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="dsys"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.up.dark.svg"><img src="img/hdr/docs-dsys.dsys.up.svg" alt="up to the module index"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.title.dark.svg"><img src="img/hdr/docs-dsys.dsys.title.svg" alt="mod :: dsys"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.5.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.4.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.3.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.3.svg" alt="Errors"></picture></a><a href="#pool-users"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.2.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.2.svg" alt="Users"></picture></a><a href="#locks"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.1.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.1.svg" alt="Locks"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.0.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
+<h1><a id="dsys"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.up.dark.svg"><img src="img/hdr/docs-dsys.dsys.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.mod.dark.svg"><img src="img/hdr/docs-dsys.dsys.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.title.dark.svg"><img src="img/hdr/docs-dsys.dsys.title.svg" alt=" :: dsys"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.5.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.4.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.3.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.3.svg" alt="Errors"></picture></a><a href="#pool-users"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.2.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.2.svg" alt="Users"></picture></a><a href="#locks"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.1.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.1.svg" alt="Locks"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.0.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -67,8 +67,8 @@ case opens each lock once in the makefile and takes it from guest targets:
 ```Makefile
 load dsys/locks
 
-$(amk.mutex door)
-$(amk.horcrux book, 3)
+door := $(amk.mutex )
+book := $(amk.horcrux 3)
 
 @micropy.target
 define writer
@@ -84,6 +84,25 @@ define reader
   amk.horcrux.book.rlock();
   amk.horcrux.book.runlock();
 endef
+```
+
+A factory that is the whole value of an immediate assignment (`:=`, `::=`, `:::=`) takes its
+name from the variable and returns it. As a statement, it takes the name as its first argument
+and returns nothing. Each pair below opens the same lock:
+
+```Makefile
+door := $(amk.mutex )
+$(amk.mutex door)
+
+book := $(amk.horcrux 3)
+$(amk.horcrux book, 3)
+```
+
+The verbs are make functions named for the lock, and make finds a function only by its literal
+name, so a verb is called with the name spelled out:
+
+```Makefile
+$(amk.mutex.door.lock )
 ```
 
 Under the guests' fields are the factories and their verbs as make functions:
@@ -120,8 +139,8 @@ See also [pool errors](pool.md#errors).
 
 | Condition | Message |
 | --- | --- |
-| Abody that fails [the pool schema](#pool-decorator) under `@pool` | `odd: does not meet schema/pool.json: Additional property 'colour' not allowed` |
-| Anactor charter naming a pool not open | `no pool named nope` |
+| A body that fails [the pool schema](#pool-decorator) under `@pool` | `odd: does not meet schema/pool.json: Additional property 'colour' not allowed` |
+| An actor charter naming a pool not open | `no pool named nope` |
 
 <a id="demos"></a>
 

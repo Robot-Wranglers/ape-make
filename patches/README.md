@@ -28,7 +28,7 @@ hook, or an existing hook moves. Each patch opens with a note naming every hook 
 | `amk_goal.c` | goal references in imported bodies, their resolution after the parse, and the values spliced into a body |
 | `amk_mode.c` | the mode table, the `amk.mode` builtin and its setter, and the setting lookup modes share |
 | `amk_dataflow.c` | the `dataflow` mode: value records, failed values moved aside, kept files, early cutoff, and body freshness |
-| `amk_builtins.c` | `amk.require`, `amk.sys`, `amk.dedent`, `cksum`, `re.match`, `amk.args`, `amk.kwarg`, and the argument trim and key=value split builtins share |
+| `amk_builtins.c` | `amk.require`, `amk.sys`, `amk.dedent`, `cksum`, `re.match`, `amk.args`, `amk.kwarg`, `amk.fxn!` and the `amk.lhs` its calls see, and the argument trim and key=value split builtins share |
 | `amk_profile.c` | the function profiler |
 
 Code that reads one of make's own statics stays in make's file as a bridge, so that static
@@ -45,7 +45,7 @@ stays static: the served child's goal handling in `main.c`, the function-table b
 | `0003-expand.patch` | the profiler times recursive variable expansion |
 | `0004-file.patch` | the table of files is shared; a served child never removes intermediates |
 | `0005-filedef.patch` | an imported target's fields on the file, the value a target keeps, the value kinds, and the goal reference type |
-| `0006-function.patch` | builtin rows, the star builtin, handles, engine registration, the profiler around builtins and `call`, the argument count of `call` for `amk.args`, the bindings ledger, and the guest handle's call |
+| `0006-function.patch` | builtin rows, the star builtin, handles, engine registration, the profiler around builtins and `call`, the argument count of `call` for `amk.args`, the bindings ledger, the guest handle's call, and the arming of an assignment's whole-value call |
 | `0007-job.patch` | the blocking wait, spawned children, halt, recipe events, the imported target's job, a kept recipe value's output, and each child's call pair and stdin pipe |
 | `0008-job-h.patch` | a recipe child's call pair |
 | `0009-load.patch` | a `load` line is amk's, since an ape cannot `dlopen`: the file goes to the engine that claims its extension, and is never rebuilt |
@@ -54,6 +54,7 @@ stays static: the served child's goal handling in `main.c`, the function-table b
 | `0012-posixos.patch` | the jobserver's state as a ledger, make's own being one of them, with every verb taking the ledger; the wait serves call requests too |
 | `0013-read.patch` | the prelude, the at line above a define, the remembered first-rule goal, the imported target's rule, and the `./` a load line keeps |
 | `0014-mode.patch` | the event sites a mode listens on: the settled parse, a failed target before its deletion, and an imported target's job start |
+| `0015-variable.patch` | an immediate assignment offers its variable's name to the one call that is its whole value |
 
 ## Overlays
 

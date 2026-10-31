@@ -24,10 +24,21 @@ jobs:
             *.tar.gz
             *.tar.xz
             *.zip
+            *.ape
+            json.bash-*
             cosmocc
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
           restore-keys: |
             deps-${{ runner.os }}-
+      # The cosmos tools have no per-file mirror, so a missing one comes out of the release zip GitHub hosts; verify checks the digest either way.
+      - name: Fetch cosmos tools from the GitHub mirror
+        run: |
+          v=$(make -s -f Makefile --eval='v: ; @echo $(cosmos.version)' v)
+          missing=$(for t in sed bash; do [ -f "$t-$v.ape" ] || echo "$t"; done)
+          [ -z "$missing" ] && exit 0
+          curl -fsSL --retry 3 -o cosmos.zip.part "https://github.com/jart/cosmopolitan/releases/download/$v/cosmos-$v.zip"
+          for t in $missing; do unzip -p cosmos.zip.part "bin/$t" > "$t-$v.ape"; done
+          rm cosmos.zip.part
       - name: Fetch and verify inputs
         run: make deps
       - name: Unpack and patch

@@ -6,6 +6,16 @@
 
 <a id="overview"></a>
 
+SCXML, State Chart XML[^scxml], is the W3C standard notation for statecharts: state
+machines extended with nesting, parallel regions and history. An SCXML document names:
+
+* the states, nested as compound states or run side by side as parallel regions,
+* the events that move the machine between states, and
+* the actions it runs on entry, on exit and on each transition.
+
+Because SCXML is a standard, a machine written or drawn in another statechart tool can come
+here as a file. xstate follows the same semantics, with JSON in place of XML.
+
 Part of the [dsys toolkit](dsys.md), the `@fsm` syntax declares a state machine as data, in the shape of an xstate machine config[^xstate], and compiles it to an open [Petri net](petri.md):
 
 ```Makefile
@@ -13,25 +23,27 @@ load dsys/{{ name }}
 
 @{{ name }}
 define door
-  {
-    "id": "door", "initial": "locked",
-    "states": {
-      "locked": { "on": { "unlock": "closed" } },
-      "closed": { "on": { "lock": "locked", "open": "opened" } },
-      "opened": { "on": { "close": "closed", "leave": "gone" } },
-      "gone":   { "type": "final" }
-    }
-  }
+  {"initial": "closed", "states": {"opened": {"entry": "greet", ...}, ...}}
 endef
+
+greet:
+	@echo opened by $(door.event)
+
+$(door.send open)
+__main__: door.__main__
 ```
+
+The define is data, targets such as `greet` do the work, and `door.__main__` runs the
+machine over the events it was sent. The full config is under [syntax](#syntax), and the
+JSON shape under [schema](#schema).
 
 * every leaf state is a place, and the machine's configuration is where its tokens are,
 * every event is an open place the environment feeds through the machine's `send` call, and
 * a transition fires when its source holds the token and its event holds one.
 
-The same machine reads from an scxml document[^scxml], [converted](#scxml) in the Lua guest
-and lowered through the same config, so `load door.scxml` and `@{{ name }}.import` over XML
-declare it too.
+The same machine reads from an SCXML document, [converted](#scxml) in the Lua guest and
+lowered through the same config, so `load ./door.scxml` and `@{{ name }}.import` over XML
+declare it too. The [subset](#subset) section lists what of SCXML is supported.
 
 <a id="syntax"></a>
 
@@ -219,14 +231,14 @@ own machine schema, then compiles it to a net for `petri.load`:
 
 | Machine part | Becomes |
 | --- | --- |
-| Aleaf state | a place of its path under the machine, `closed` or `s0.s01`, holding the token when active |
-| Theinitial configuration | one token per active leaf, through each compound's `initial` and every region of a parallel; a list of initials or targets settles each named leaf and the regions left unnamed by default |
-| Anevent | an open place `ev.<event>`; a wildcard, a sentinel `ev.<prefix>._` or `ev._` |
-| Atransition under `on` | a net transition `<leaf>.<event>` from the leaf and the event's place to the leaves entered |
+| A leaf state | a place of its path under the machine, `closed` or `s0.s01`, holding the token when active |
+| The initial configuration | one token per active leaf, through each compound's `initial` and every region of a parallel; a list of initials or targets settles each named leaf and the regions left unnamed by default |
+| An event | an open place `ev.<event>`; a wildcard, a sentinel `ev.<prefix>._` or `ev._` |
+| A transition under `on` | a net transition `<leaf>.<event>` from the leaf and the event's place to the leaves entered |
 | `always` | a transition `<leaf>.always` with no event place, listed first |
-| Atransition of a parallel state | one per configuration of its regions and event, moving every region's token |
-| Anested final | an arc from the entering transition to `ev.done.state.<parent>`, when the entered configuration handles it |
-| Atop-level final | an acceptance marking; several finals, a [list of them](petri.md#endings); the final drops every event it is sent |
+| A transition of a parallel state | one per configuration of its regions and event, moving every region's token |
+| A nested final | an arc from the entering transition to `ev.done.state.<parent>`, when the entered configuration handles it |
+| A top-level final | an acceptance marking; several finals, a [list of them](petri.md#endings); the final drops every event it is sent |
 | `entry` and `exit` | the net transition's step, the exits then the entries as its targets, `<name>.event` bound |
 | `invoke` | a transition `<leaf>.invoke` into a labeled place `<leaf>.invoked`, its step the service, its label the outcome; `onDone` and `onError` leave that place by the label; inside a parallel state the invoked place is one more position of its region, `<leaf>.invoked` in the configuration's name |
 | Guarded alternatives | a picker transition into a labeled place `<leaf>.<event>.choice`, its step a generated target printing the first alternative whose guard holds, the configuration bound as `<name>.config`; one transition per alternative out of it by that label, and one back when none held; inside a parallel state one picker per configuration, printing each guarded region's choice joined by `-` |
@@ -284,12 +296,12 @@ normalizer and compiler then refuse what a schema cannot say:
 | Condition | Message |
 | --- | --- |
 | `initial` naming no state below | `door: initial nope is no state` |
-| Atarget naming no state | `door.closed: target door.gone2 is no state` |
+| A target naming no state | `door.closed: target door.gone2 is no state` |
 | Several targets not one per region | `door.closed: targets a b are not one per region of a parallel state` |
-| Aguard written as an expression | `door.closed: guard x > 1 is an expression, not a name` |
+| A guard written as an expression | `door.closed: guard x > 1 is an expression, not a name` |
 | Guarded `always` with no fallback | `door.closed: an eventless transition with guards needs an unguarded alternative` |
-| Ahistory state | `door.h: history is outside the subset` |
-| Aparallel inside a parallel | `door.p.q: a parallel state inside a parallel state is not lowered yet` |
+| A history state | `door.h: history is outside the subset` |
+| A parallel inside a parallel | `door.p.q: a parallel state inside a parallel state is not lowered yet` |
 
 <a id="demos"></a>
 

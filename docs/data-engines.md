@@ -8,7 +8,7 @@ Data-engines are interesting because besides the [simple stuff](#creating-a-work
 
 The core data-engines are `jq` and `sqlite`, both embedded/linked into the `amk` binary with no need for external prerequisites.  Derived datastructures might *just* be datastructures, but might also be a [stacked engine](FFI.md#stacked-engines) in their own right.  For example the tuplespace *does* support it's own concept of [workspace](#creating-a-workspace) and despite having an [instruction set](tspace.md#operations) of its own, it supports raw SQL like the [sqlite engine](#sqlite-workspaces) that it extends.
 
-<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: jq and sqlite, with tuple spaces and workspaces under sqlite"></p>
+<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: petri under jq, with fsm, kahn and workflow under petri, and tuple spaces under sqlite"></p>
 
 <!--Engines derived from these  their state is a workspace, a jq value or a sqlite
 database, that programs read and change through a fixed set of verbs. The verbs and the

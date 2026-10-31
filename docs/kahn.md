@@ -1,5 +1,5 @@
 <!-- header # kahn "`mod :: dsys/kahn`" |Syntax #syntax | Reduction #reduction | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="kahn"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.up.dark.svg"><img src="img/hdr/docs-kahn.kahn.up.svg" alt="up to dsys"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.title.dark.svg"><img src="img/hdr/docs-kahn.kahn.title.svg" alt="mod :: dsys/kahn"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.6.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.6.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.5.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.4.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.3.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.2.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.2.svg" alt="API"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.1.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.1.svg" alt="Reduction"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.0.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.0.svg" alt="Syntax"></picture></a><br clear="all"></h1>
+<h1><a id="kahn"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.up.dark.svg"><img src="img/hdr/docs-kahn.kahn.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.mod.dark.svg"><img src="img/hdr/docs-kahn.kahn.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.title.dark.svg"><img src="img/hdr/docs-kahn.kahn.title.svg" alt=" :: dsys/kahn"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.6.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.6.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.5.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.4.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.3.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.2.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.2.svg" alt="API"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.1.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.1.svg" alt="Reduction"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-kahn.kahn.0.dark.svg"><img align=right src="img/hdr/docs-kahn.kahn.0.svg" alt="Syntax"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -9,19 +9,18 @@ Part of the [dsys toolkit](dsys.md), the `@kahn` syntax declares a Kahn process 
 ```Makefile
 load dsys/kahn
 
-@kahn
+@kahn.target
 define parity
-  {
-    "channels": { "numbers": ["1", "2", "3"], "evens": [], "odds": [] },
-    "processes": {
-      "split": { "run": "split", "reads": ["numbers"], "writes": ["evens", "odds"] },
-      "even":  { "run": "even", "reads": ["evens"] },
-      "odd":   { "run": "odd", "reads": ["odds"] }
-    },
-    "final": {}
-  }
+  {"channels": {"numbers": ["1", "2", "3"], "evens": [], "odds": []}}
+endef
+
+@parity.proc/lua (numbers > evens odds)
+define split
+  ... -- produce parity.split.token into parity.evens or parity.odds
 endef
 ```
+
+`make parity` runs the network: each number in `numbers` fires `split` once.
 
 * every channel is a labeled [pool](pool.md),
 * a process fires once it can read one token from each channel it reads, and
@@ -80,10 +79,10 @@ A step reads the token it took as `<name>.<process>.token` and writes with `amk.
 
 | Network part | Becomes |
 | --- | --- |
-| Achannel | a labeled place of the same name |
-| Aprocess | a transition with an arc from each channel it reads |
+| A channel | a labeled place of the same name |
+| A process | a transition with an arc from each channel it reads |
 | `writes` | no arcs: the step produces into its channels |
-| Thenetwork | an open net, strategy `open`, with a final marking only when `final` is given |
+| The network | an open net, strategy `open`, with a final marking only when `final` is given |
 
 Without `final`, a network that loops ends holding tokens and waits as an open net does, under `petri.patience`.
 
@@ -114,9 +113,9 @@ then refuses what a schema cannot say, before any net exists:
 
 | Condition | Message |
 | --- | --- |
-| Aread or write that is no channel | `p: names c, which is no channel` |
-| Achannel with two readers | `c: has 2 readers, not 1` |
-| Achannel with two writers | `c: has 2 writers, not 1` |
+| A read or write that is no channel | `p: names c, which is no channel` |
+| A channel with two readers | `c: has 2 readers, not 1` |
+| A channel with two writers | `c: has 2 writers, not 1` |
 
 The `kahn.compile` function runs the compiler alone, without the schema, so a malformed body
 given to it directly fails as a jq error.
@@ -128,7 +127,7 @@ line is refused for:
 | Condition | Message |
 | --- | --- |
 | No engine | `p: a .proc needs an engine` |
-| Anengine with no target form | `p: nope has no @nope.target for a process body` |
+| An engine with no target form | `p: nope has no @nope.target for a process body` |
 
 <a id="demos"></a>
 

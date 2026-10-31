@@ -1,5 +1,5 @@
 <!-- header # plex "`mod :: amk.plex`" |Concepts #concepts | Syntax #syntax | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="plex"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.up.dark.svg"><img src="img/hdr/docs-plex.plex.up.svg" alt="up to the module index"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.title.dark.svg"><img src="img/hdr/docs-plex.plex.title.svg" alt="mod :: amk.plex"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.7.dark.svg"><img align=right src="img/hdr/docs-plex.plex.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.6.dark.svg"><img align=right src="img/hdr/docs-plex.plex.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.5.dark.svg"><img align=right src="img/hdr/docs-plex.plex.5.svg" alt="Errors"></picture></a><a href="#choice"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.4.dark.svg"><img align=right src="img/hdr/docs-plex.plex.4.svg" alt="Choice"></picture></a><a href="#plex-uses"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.3.dark.svg"><img align=right src="img/hdr/docs-plex.plex.3.svg" alt="Uses"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.2.dark.svg"><img align=right src="img/hdr/docs-plex.plex.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.1.dark.svg"><img align=right src="img/hdr/docs-plex.plex.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.0.dark.svg"><img align=right src="img/hdr/docs-plex.plex.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<h1><a id="plex"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.up.dark.svg"><img src="img/hdr/docs-plex.plex.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.mod.dark.svg"><img src="img/hdr/docs-plex.plex.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.title.dark.svg"><img src="img/hdr/docs-plex.plex.title.svg" alt=" :: amk.plex"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.7.dark.svg"><img align=right src="img/hdr/docs-plex.plex.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.6.dark.svg"><img align=right src="img/hdr/docs-plex.plex.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.5.dark.svg"><img align=right src="img/hdr/docs-plex.plex.5.svg" alt="Errors"></picture></a><a href="#choice"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.4.dark.svg"><img align=right src="img/hdr/docs-plex.plex.4.svg" alt="Choice"></picture></a><a href="#plex-uses"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.3.dark.svg"><img align=right src="img/hdr/docs-plex.plex.3.svg" alt="Uses"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.2.dark.svg"><img align=right src="img/hdr/docs-plex.plex.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.1.dark.svg"><img align=right src="img/hdr/docs-plex.plex.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.0.dark.svg"><img align=right src="img/hdr/docs-plex.plex.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -75,12 +75,12 @@ A group under a charter is one use of the plex. These need no charter:
 
 | Use | js | s7 |
 | --- | --- | --- |
-| Aprocess with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
-| Adeadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
+| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
+| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
 | Several asks in flight, joined | `all` over `until(amk.acall(..))` | `fork` each, `run` |
 | Cleanup bound to a scope, a socket or a workspace owner | `resource`, `ensure` | none |
-| Astream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
-| Ahand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code](../payload/lib/actor/init.scm) |
+| A stream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
+| A hand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code](../payload/lib/actor/init.scm) |
 
 A js guest writes these from the primitives in the
 Effection documentation[^effection-docs]; nothing of a group is
@@ -107,8 +107,8 @@ matter: a js generator cannot be resumed twice, so Effection has no `shift`.
 
 | Condition | Message |
 | --- | --- |
-| Ans7 plex verb it lacks | `plex: no verb spawn` |
-| Ans7 `shift` with no enclosing `reset` | `shift outside reset` |
+| An s7 plex verb it lacks | `plex: no verb spawn` |
+| An s7 `shift` with no enclosing `reset` | `shift outside reset` |
 
 A js plex raises what Effection raises; its documentation[^effection-docs]
 has them.

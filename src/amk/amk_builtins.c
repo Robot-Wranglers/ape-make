@@ -431,13 +431,86 @@ struct amk_fxn
     char **bound;
   };
 
-/* A call of a promoted function: the variable called as call would call it, with the bound arguments first and every argument trimmed.  */
+static struct amk_lhs amk_lhs = { -1, NULL, NULL };
+static int amk_lhs_depth;
+
+/* An immediate assignment's value, when it is one call and nothing else around it, offers that call the variable's name; the outer offer is kept for close.  */
+void
+amk_lhs_open (struct amk_lhs *saved, const char *varname, const char *value)
+{
+  const char *p = value;
+  char open, close;
+  int depth = 0;
+
+  *saved = amk_lhs;
+  amk_lhs.depth = -1;
+  amk_lhs.armed = NULL;
+  amk_lhs.var = varname;
+  NEXT_TOKEN (p);
+  if (p[0] != '$' || (p[1] != '(' && p[1] != '{'))
+    return;
+  open = p[1];
+  close = open == '(' ? ')' : '}';
+  for (value = p + 2; *value != '\0'; ++value)
+    if (*value == open)
+      ++depth;
+    else if (*value == close && --depth < 0)
+      break;
+  if (*value == '\0')
+    return;
+  ++value;
+  NEXT_TOKEN (value);
+  if (*value == '\0')
+    amk_lhs.depth = amk_lhs_depth;
+}
+
+void
+amk_lhs_close (struct amk_lhs *saved)
+{
+  amk_lhs = *saved;
+}
+
+/* A function call opens one level deeper, and the depth it was opened at is its own.  */
+int
+amk_lhs_enter (void)
+{
+  return amk_lhs_depth++;
+}
+
+void
+amk_lhs_leave (void)
+{
+  --amk_lhs_depth;
+}
+
+/* The call opened at depth runs next, its arguments expanded; it is the offered one or none is.  */
+void
+amk_lhs_arm (int depth, const char *funcname)
+{
+  amk_lhs.armed = depth >= 0 && depth == amk_lhs.depth ? funcname : NULL;
+}
+
+/* The variable's name when the promoted function name is the armed call, taken once.  */
+static const char *
+amk_lhs_take (const char *name)
+{
+  if (amk_lhs.armed == NULL || !streq (amk_lhs.armed, name))
+    return NULL;
+  amk_lhs.armed = NULL;
+  amk_lhs.depth = -1;
+  return amk_lhs.var;
+}
+
+/* A call of a promoted function: the variable called as call would call it, with the bound arguments first and every argument trimmed; its body sees amk.lhs as the variable it is assigned to, or empty.  */
 static char *
 amk_fxn_call (void *state, const char *name, unsigned int argc, char **argv)
 {
   struct amk_fxn *x = state;
   const char **args = xmalloc ((x->nbound + argc + 1) * sizeof *args);
   const char *err = NULL;
+  const char *lhs = amk_lhs_take (name);
+  struct variable *outer = lhs == NULL ? lookup_variable (STRING_SIZE_TUPLE ("amk.lhs")) : NULL;
+  int scoped = lhs != NULL || (outer != NULL && outer->value[0] != '\0');
   unsigned int i;
   char *r;
 
@@ -445,7 +518,14 @@ amk_fxn_call (void *state, const char *name, unsigned int argc, char **argv)
     args[i] = x->bound[i];
   for (i = 0; i < argc; ++i)
     args[x->nbound + i] = amk_trim (argv[i]);
+  if (scoped)
+    {
+      push_new_variable_scope ();
+      define_variable_cname ("amk.lhs", lhs != NULL ? lhs : "", o_automatic, 0);
+    }
   r = amk_call_as (x->kind, x->var, x->nbound + argc, args, &err);
+  if (scoped)
+    pop_variable_scope ();
   free (args);
   /* A failure under the alias is raised under the alias's name: fatal at an expansion, an error in a guest whose call is open.  */
   if (r == NULL)

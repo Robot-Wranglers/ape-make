@@ -1,0 +1,44 @@
+Hooks in variable.c: an immediate assignment, simple or POSIX, opens its variable's name to
+the one call that is its whole value, for the expansion of that value only.
+
+--- a/src/variable.c
++++ b/src/variable.c
+@@ -30,6 +30,7 @@
+ #include "pathstuff.h"
+ #endif
+ #include "hash.h"
++#include "amk.h"
+
+ /* Incremented every time we enter target_environment().  */
+ unsigned long long env_recursion = 0;
+@@ -1308,16 +1309,26 @@
+          We have to allocate memory since otherwise it'll clobber the
+          variable buffer, and we may still need that if we're looking at a
+          target-specific variable.  */
+-      newval = alloc_value = allocated_variable_expand (value);
++      {
++        /* A whole value that is one call offers that call this variable's name.  */
++        struct amk_lhs saved;
++        amk_lhs_open (&saved, varname, value);
++        newval = alloc_value = allocated_variable_expand (value);
++        amk_lhs_close (&saved);
++      }
+       break;
+     case f_expand:
+       {
+         /* A POSIX "var :::= value" assignment.  Expand the value, then it
+            becomes a recursive variable.  After expansion convert all '$'
+            tokens to '$$' to resolve to '$' when recursively expanded.  */
+-        char *t = allocated_variable_expand (value);
+-        char *np = alloc_value = xmalloc (strlen (t) * 2 + 1);
+-        char *op = t;
++        struct amk_lhs saved;
++        char *t, *np, *op;
++        amk_lhs_open (&saved, varname, value);
++        t = allocated_variable_expand (value);
++        amk_lhs_close (&saved);
++        np = alloc_value = xmalloc (strlen (t) * 2 + 1);
++        op = t;
+         while (op[0] != '\0')
+           {
+             if (op[0] == '$')

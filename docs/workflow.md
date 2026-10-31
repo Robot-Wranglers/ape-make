@@ -1,5 +1,5 @@
 <!-- header # workflow "`mod :: dsys/workflow`" |Syntax #syntax | Reduction #reduction | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="workflow"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.up.dark.svg"><img src="img/hdr/docs-workflow.workflow.up.svg" alt="up to dsys"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.title.dark.svg"><img src="img/hdr/docs-workflow.workflow.title.svg" alt="mod :: dsys/workflow"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.6.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.6.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.5.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.4.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.3.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.2.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.2.svg" alt="API"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.1.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.1.svg" alt="Reduction"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.0.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.0.svg" alt="Syntax"></picture></a><br clear="all"></h1>
+<h1><a id="workflow"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.up.dark.svg"><img src="img/hdr/docs-workflow.workflow.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.mod.dark.svg"><img src="img/hdr/docs-workflow.workflow.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.title.dark.svg"><img src="img/hdr/docs-workflow.workflow.title.svg" alt=" :: dsys/workflow"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.6.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.6.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.5.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.4.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.3.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.2.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.2.svg" alt="API"></picture></a><a href="#reduction"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.1.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.1.svg" alt="Reduction"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-workflow.workflow.0.dark.svg"><img align=right src="img/hdr/docs-workflow.workflow.0.svg" alt="Syntax"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -11,9 +11,13 @@ load dsys/workflow
 
 @workflow
 define release
-  { "tasks": { "build": { "run": "build" },
-               "ship": { "run": "ship", "needs": ["build"] } } }
+  {"tasks": {"build": {"run": "build"}, "ship": {"run": "ship", "needs": ["build"]}}}
 endef
+
+build ship:
+	@echo $@
+
+__main__: release.__main__
 ```
 
 * each task runs a target, in any [guest engine](FFI.md),
@@ -52,13 +56,13 @@ A task whose `when` does not hold is skipped, and its skip passes on as its outc
 
 | Task part | Becomes |
 | --- | --- |
-| Aneed | a labeled place `<need>.to.<task>`, its token the need's outcome |
-| Atask with no needs | a place `<task>.ready` holding one `success` token |
-| Thetask | a transition guarded by `when`, its step of kind `goal.maybe`, its outcome the token's label |
+| A need | a labeled place `<need>.to.<task>`, its token the need's outcome |
+| A task with no needs | a place `<task>.ready` holding one `success` token |
+| The task | a transition guarded by `when`, its step of kind `goal.maybe`, its outcome the token's label |
 | `when` other than `done` | a second transition `<task>.skip` guarded by the opposite |
 | `over` | transitions `<task>.split` and `<task>.join` around places `<task>.items` and `<task>.results` |
 | `pool` | an arc from the pool into the task and back |
-| Atask nothing needs | a place `<task>.end`; the final marking wants one token in each |
+| A task nothing needs | a place `<task>.end`; the final marking wants one token in each |
 
 <a id="api"></a>
 
@@ -87,8 +91,8 @@ schema cannot say, before any net exists:
 
 | Condition | Message |
 | --- | --- |
-| Aneed that is no task | `t: needs n, which is no task` |
-| Acycle in `needs` | `t: is on a cycle in needs` |
+| A need that is no task | `t: needs n, which is no task` |
+| A cycle in `needs` | `t: is on a cycle in needs` |
 
 The `workflow.compile` function runs the compiler alone, without the schema, so a malformed
 body given to it directly fails as a jq error.

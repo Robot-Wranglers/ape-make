@@ -111,7 +111,7 @@ spawn of no goals, fails naming the host function, as under
 
 | Condition | Answer |
 | --- | --- |
-| Await for a pid that is not a job of this process | empty, as `amk.wait` |
+| A wait for a pid that is not a job of this process | empty, as `amk.wait` |
 | `amk.job.spawn` without `kind=`, or with an unknown kind | `amk.job.spawn: give kind=name, one of goal=.. goals=.. call=..; got 'fast'` |
 | `amk.goal.spawn` of more than one goal | `amk.goal.spawn: one goal, got 'a b'; use amk.goals.spawn for a list` |
 | `amk.job.send` outside a job | empty |

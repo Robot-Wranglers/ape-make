@@ -456,6 +456,25 @@ def test_the_horcrux_factory_shares_pieces_with_readers_and_all_with_a_writer(am
   assert out == ["3", "1", "11", "1", "", "3", "0", "131", "", "00"]
 
 
+def test_the_mutex_factory_takes_its_name_from_the_assignment(amk, tmp_path):
+  out = shown(amk, tmp_path, "\n".join([
+    "load dsys/locks",
+    "door := $(amk.mutex )",
+    "$(info [$(door)][$(amk.pool door)][$(amk.mutex.door.trylock )][$(amk.mutex.door.trylock )])",
+  ]))
+  assert out == ["door", "1", "1", ""]
+
+
+def test_the_horcrux_factory_takes_its_name_from_the_assignment_and_its_size_alone(amk, tmp_path):
+  out = shown(amk, tmp_path, "\n".join([
+    "load dsys/locks",
+    "book := $(amk.horcrux 3)",
+    "$(info [$(book)][$(amk.pool book)][$(amk.pool book.w)])",
+    "$(info [$(amk.horcrux.book.rlock )][$(amk.pool.book.held )])",
+  ]))
+  assert out == ["book", "3", "1", "1", "1"]
+
+
 @pytest.mark.engines("lua")
 def test_a_guest_locks_a_named_mutex_as_a_field(amk, tmp_path):
   out = shown(amk, tmp_path, "\n".join([

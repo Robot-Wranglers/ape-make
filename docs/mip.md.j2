@@ -73,9 +73,9 @@ serve: deps
 
 | Condition | Message |
 | --- | --- |
-| Amanifest that breaks the schema | `deps: does not meet schema/mip.json: ...`, and nothing is fetched |
-| Aninstall whose digest does not match its pin | `mip: microdot digests to <sha>; pin it as its sha256 in deps`, and the build stops with nothing published |
-| Apackage with no pin | the same line on stderr as a warning; the install completes and its digest is kept in the stamp |
+| A manifest that breaks the schema | `deps: does not meet schema/mip.json: ...`, and nothing is fetched |
+| An install whose digest does not match its pin | `mip: microdot digests to <sha>; pin it as its sha256 in deps`, and the build stops with nothing published |
+| A package with no pin | the same line on stderr as a warning; the install completes and its digest is kept in the stamp |
 
 <a id="demos"></a>
 

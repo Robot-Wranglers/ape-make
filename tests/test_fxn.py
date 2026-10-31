@@ -52,6 +52,26 @@ def test_amk_args_sees_the_bound_and_given_arguments(amk, tmp_path):
   assert 'got=[["x","a","b"]]' in r.stdout, r.stdout + r.stderr
 
 
+def test_a_call_that_is_a_whole_immediate_assignment_sees_its_variable(amk, tmp_path):
+  r = run(amk, tmp_path, "\n".join([
+    "probe = <$(amk.lhs)|$(1)>",
+    "$(amk.fxn! probe)",
+    "inner = <$(amk.lhs)|$(1)>",
+    "$(amk.fxn! inner)",
+    "outer = $(inner $(1))",
+    "$(amk.fxn! outer)",
+    "x := $(probe a)",
+    "y ::= $(probe a)",
+    "z := pre $(probe a)",
+    "w = $(probe a)",
+    "v := $(probe $(probe b))",
+    "u := $(outer c)",
+    "$(info got=[$(x)] [$(y)] [$(z)] [$(w)] [$(v)] [$(u)] [$(probe a)])",
+  ]))
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "got=[<x|a>] [<y|a>] [pre <|a>] [<|a>] [<v|<|b>>] [<|c>] [<|a>]" in r.stdout, r.stdout + r.stderr
+
+
 @pytest.mark.parametrize("body,error", [
   ("v = 1\n$(amk.fxn! abspath, v)", "abspath is a make function already"),
   ("v = 1\n$(amk.fxn! w, v)\n$(amk.fxn! w, v)", "w is a make function already"),

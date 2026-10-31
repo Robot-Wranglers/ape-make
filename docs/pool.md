@@ -1,5 +1,5 @@
-<!-- header # pool "`concept :: pool`" | Overview #overview | Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="pool"></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.title.dark.svg"><img src="img/hdr/docs-pool.pool.title.svg" alt="concept :: pool"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.6.dark.svg"><img align=right src="img/hdr/docs-pool.pool.6.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.5.dark.svg"><img align=right src="img/hdr/docs-pool.pool.5.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.4.dark.svg"><img align=right src="img/hdr/docs-pool.pool.4.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.3.dark.svg"><img align=right src="img/hdr/docs-pool.pool.3.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.2.dark.svg"><img align=right src="img/hdr/docs-pool.pool.2.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.1.dark.svg"><img align=right src="img/hdr/docs-pool.pool.1.svg" alt="Concepts"></picture></a><a href="#overview"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.0.dark.svg"><img align=right src="img/hdr/docs-pool.pool.0.svg" alt="Overview"></picture></a><br clear="all"></h1>
+<!-- header # pool "`concept :: pool`" | ^ ../README.md#references | Overview #overview | Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
+<h1><a id="pool"></a><a href="../README.md#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.up.dark.svg"><img src="img/hdr/docs-pool.pool.up.svg" alt="up"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.title.dark.svg"><img src="img/hdr/docs-pool.pool.title.svg" alt="concept :: pool"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.6.dark.svg"><img align=right src="img/hdr/docs-pool.pool.6.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.5.dark.svg"><img align=right src="img/hdr/docs-pool.pool.5.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.4.dark.svg"><img align=right src="img/hdr/docs-pool.pool.4.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.3.dark.svg"><img align=right src="img/hdr/docs-pool.pool.3.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.2.dark.svg"><img align=right src="img/hdr/docs-pool.pool.2.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.1.dark.svg"><img align=right src="img/hdr/docs-pool.pool.1.svg" alt="Concepts"></picture></a><a href="#overview"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-pool.pool.0.dark.svg"><img align=right src="img/hdr/docs-pool.pool.0.svg" alt="Overview"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -30,8 +30,8 @@ An open place is a named, ordered store of tokens, counted or labeled, that any 
 | Labeled Pool | A pool whose every token is its label, 1 to 31 bytes with no whitespace |
 | Strategy | `default`, also `strict`: only the opener resizes, and keeps the size; `open`: any process resizes, and the size is the kernel's count |
 | `goals` | the pool make already had, sized by `-j` |
-| `__jobs__` | the default job pool, opened by `load dsys/jobman`, with its jobman, as [jobman](jobman.md#concepts) describes |
-| A Job's Pools | a job keeps the pools of the image it forked from, so jobs contend for the same tokens |
+| `__jobs__` | the default [job](job.md) pool, opened by `load dsys/jobman`, with its jobman, as [jobman](jobman.md#concepts) describes |
+| A Job's Pools | a [job](job.md) keeps the pools of the image it forked from, so jobs contend for the same tokens |
 | Held Tokens at Exit | a process gives back every token it holds when it ends, a recipe child included |
 
 
@@ -171,40 +171,40 @@ Every refusal is fatal and names the pool.
 
 | Condition | Message |
 | --- | --- |
-| Openinga pool already open | `amk.pool: workers is already open` |
-| Opening`goals` | `amk.pool: goals is the jobserver, sized by -j` |
-| Asize that is not a number | `amk.pool: odd: size two is not a number` |
+| Opening a pool already open | `amk.pool: workers is already open` |
+| Opening `goals` | `amk.pool: goals is the jobserver, sized by -j` |
+| A size that is not a number | `amk.pool: odd: size two is not a number` |
 | Neither a size nor labels | `amk.pool: odd needs a size or labels` |
 | `labeled=` other than `true` or `false` | `amk.pool: odd: labeled is true or false, not yes` |
 | `labeled=true` with a size above 0 | `amk.pool: odd: a labeled pool takes its tokens from labels, not size 2` |
-| Aname that is a verb | `amk.pool: held is a verb, not a name a pool may take` |
-| Morethan 64 pools | `amk.pool: 64 pools are open, no room for name` |
-| Averb on a pool not open | `amk.pool.held: no pool named nothing` |
-| Arelease with no token held | `amk.pool: one: nothing held to release` |
-| Akey `amk.pool` lacks | `amk.pool: p: no key colour` |
-| Asize and labels that disagree | `amk.pool: p: size 3 disagrees with the labels` |
+| A name that is a verb | `amk.pool: held is a verb, not a name a pool may take` |
+| More than 64 pools | `amk.pool: 64 pools are open, no room for name` |
+| A verb on a pool not open | `amk.pool.held: no pool named nothing` |
+| A release with no token held | `amk.pool: one: nothing held to release` |
+| A key `amk.pool` lacks | `amk.pool: p: no key colour` |
+| A size and labels that disagree | `amk.pool: p: size 3 disagrees with the labels` |
 | `label_gen=` | `amk.pool: p: label_gen is reserved, not yet supported` |
-| A`strategy=` other than `default`, `strict` or `open` | `amk.pool: p: strategy lifo; one of default strict open` |
-| Moretokens than the pipe holds, at open | `amk.pool: 512 tokens fill the pipe, and p has more` |
-| Aproduce past what the pipe holds | `amk.pool: 512 tokens fill the pipe, and p has them` |
-| Alabel that is empty or longer than 31 bytes | `amk.pool: p: label 'x' is not 1 to 31 bytes` |
-| Alabel with whitespace | `amk.pool: p: label 'a b' has whitespace` |
+| A `strategy=` other than `default`, `strict` or `open` | `amk.pool: p: strategy lifo; one of default strict open` |
+| More tokens than the pipe holds, at open | `amk.pool: 512 tokens fill the pipe, and p has more` |
+| A produce past what the pipe holds | `amk.pool: 512 tokens fill the pipe, and p has them` |
+| A label that is empty or longer than 31 bytes | `amk.pool: p: label 'x' is not 1 to 31 bytes` |
+| A label with whitespace | `amk.pool: p: label 'a b' has whitespace` |
 | `size` of a strict pool in a fork once produce or consume ran before it | `amk.pool: p: the size is kept only by the process that opened it once produce or consume ran` |
 | produce or consume on a strict pool outside the opener | `amk.pool: p: only the process that opened it may produce` |
-| Anacquired token that is not a whole label | `amk.pool: p: a token that is no label` |
-| Anopen pool whose pipe cannot be counted | `amk.pool: p: cannot count the pipe` |
+| An acquired token that is not a whole label | `amk.pool: p: a token that is no label` |
+| An open pool whose pipe cannot be counted | `amk.pool: p: cannot count the pipe` |
 | consume while holding a token of the pool | `amk.pool: p: consume takes a fresh token, and this process holds one` |
 | produce with a label on an unlabeled pool | `amk.pool: p: produce takes a label only on a labeled pool` |
 | `auth` on a labeled pool | `amk.pool: p: a labeled pool gives no auth` |
-| Abare release with more than one label held | `amk.pool: p: release names a label unless exactly one is held` |
-| Arelease of a label this process does not hold | `amk.pool: p: z is not held here` |
-| Arelease naming a label on an unlabeled pool | `amk.pool: p: release takes a label only on a labeled pool` |
+| A bare release with more than one label held | `amk.pool: p: release names a label unless exactly one is held` |
+| A release of a label this process does not hold | `amk.pool: p: z is not held here` |
+| A release naming a label on an unlabeled pool | `amk.pool: p: release takes a label only on a labeled pool` |
 
 <a id="demos"></a>
 
 ## Demos
 
-Three jobs serialize through a pool of one from micropy, on the pool's own verbs:
+Three [jobs](job.md) serialize through a pool of one from micropy, on the pool's own verbs:
 
 ```Makefile
 load dsys/pool
@@ -245,7 +245,7 @@ endef
 
 | Demo | Shows |
 | --- | --- |
-| [`pool-basic.amk`](../demos/pool-basic.amk) | a pool of one token as a mutex: three spawned jobs, each a micropy worker taking and giving back the token through `amk.pool.door`; embedded above |
+| [`pool-basic.amk`](../demos/pool-basic.amk) | a pool of one token as a mutex: three spawned [jobs](job.md), each a micropy worker taking and giving back the token through `amk.pool.door`; embedded above |
 
 
 The structures built on pools have their demos in [dsys](dsys.md#demos).

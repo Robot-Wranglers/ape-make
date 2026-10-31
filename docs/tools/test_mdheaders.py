@@ -196,6 +196,10 @@ def test_a_module_title_gets_an_up_arrow_to_the_index_relative_to_its_page(repo)
   (repo / "docs" / "tspace.md").write_text('<!-- header # ts "`mod :: amk.tspace`" -->\n<!-- /header -->\n')
   assert run("--index", "README.md#module-index", "docs/tspace.md") == 0
   assert '<h1><a id="ts"></a><a href="../README.md#module-index"><picture>' in (repo / "docs" / "tspace.md").read_text()
+  text = (repo / "docs" / "tspace.md").read_text()
+  assert ('<a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" '
+          'srcset="../img/docs-tspace.ts.mod.dark.svg"><img src="../img/docs-tspace.ts.mod.svg" alt="mod"></picture></a>') in text
+  assert 'alt=" :: amk.tspace"' in text
   run("docs/tspace.md")
   assert "README.md" not in (repo / "docs" / "tspace.md").read_text()
 

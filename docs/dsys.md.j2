@@ -68,8 +68,8 @@ case opens each lock once in the makefile and takes it from guest targets:
 ```Makefile
 load {{ name }}/locks
 
-$(amk.mutex door)
-$(amk.horcrux book, 3)
+door := $(amk.mutex )
+book := $(amk.horcrux 3)
 
 @micropy.target
 define writer
@@ -85,6 +85,25 @@ define reader
   amk.horcrux.book.rlock();
   amk.horcrux.book.runlock();
 endef
+```
+
+A factory that is the whole value of an immediate assignment (`:=`, `::=`, `:::=`) takes its
+name from the variable and returns it. As a statement, it takes the name as its first argument
+and returns nothing. Each pair below opens the same lock:
+
+```Makefile
+door := $(amk.mutex )
+$(amk.mutex door)
+
+book := $(amk.horcrux 3)
+$(amk.horcrux book, 3)
+```
+
+The verbs are make functions named for the lock, and make finds a function only by its literal
+name, so a verb is called with the name spelled out:
+
+```Makefile
+$(amk.mutex.door.lock )
 ```
 
 Under the guests' fields are the factories and their verbs as make functions:
@@ -121,8 +140,8 @@ See also [pool errors](pool.md#errors).
 
 | Condition | Message |
 | --- | --- |
-| Abody that fails [the pool schema](#pool-decorator) under `@pool` | `odd: does not meet schema/pool.json: Additional property 'colour' not allowed` |
-| Anactor charter naming a pool not open | `no pool named nope` |
+| A body that fails [the pool schema](#pool-decorator) under `@pool` | `odd: does not meet schema/pool.json: Additional property 'colour' not allowed` |
+| An actor charter naming a pool not open | `no pool named nope` |
 
 <a id="demos"></a>
 

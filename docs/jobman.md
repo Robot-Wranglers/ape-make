@@ -1,5 +1,5 @@
 <!-- header # jobman "`mod :: dsys/jobman`" |Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="jobman"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.up.dark.svg"><img src="img/hdr/docs-jobman.jobman.up.svg" alt="up to dsys"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.title.dark.svg"><img src="img/hdr/docs-jobman.jobman.title.svg" alt="mod :: dsys/jobman"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.5.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.4.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.3.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.2.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.1.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.0.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<h1><a id="jobman"></a><a href="dsys.md"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.up.dark.svg"><img src="img/hdr/docs-jobman.jobman.up.svg" alt="up to dsys"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.mod.dark.svg"><img src="img/hdr/docs-jobman.jobman.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.title.dark.svg"><img src="img/hdr/docs-jobman.jobman.title.svg" alt=" :: dsys/jobman"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.5.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.4.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.3.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.3.svg" alt="Errors"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.2.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.1.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-jobman.jobman.0.dark.svg"><img align=right src="img/hdr/docs-jobman.jobman.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -13,7 +13,19 @@ jobs it spawned, waits only on them, and can race them or end them all.
 
 ```Makefile
 load dsys/jobman
+
+@jobman
+define ci
+  { "size": 2, "fail_fast": true }
+endef
+
+@lua.target
+define __main__
+  for _, r in ipairs(amk.jobman.ci.map({ {'lint'}, {'test'}, {'build'} })) do print(r.status) end
+endef
 ```
+
+The jobman runs the goals `lint`, `test` and `build`, two at a time, as jobs; your targets do the work.
 
 Where jobs sit among the other concurrency flavors is in
 [the runtime](runtime.md#multiprocessing); the fork itself is in
@@ -199,15 +211,15 @@ it still had running. A guest may also call the job functions bare, `amk.kill(pi
 
 | Condition | Message |
 | --- | --- |
-| Abody that fails [the jobman schema](../payload/lib/dsys/schema/jobman.json) under `@jobman` | `odd: does not meet schema/jobman.json: Additional property 'colour' not allowed` |
-| Aspawn of no goals, or more than 63 | `$(amk.spawn ...): between 1 and 63 goals` |
-| Aspawn option other than `foreground=` and `stdout=` | `$(amk.spawn ...): no option 'x'; options are foreground= and stdout=` |
-| Afork that fails | `$(amk.spawn ...): fork failed` |
-| Apid or signal that is not a number | `$(amk.kill ...): pid 'twelve' is not a number` |
+| A body that fails [the jobman schema](../payload/lib/dsys/schema/jobman.json) under `@jobman` | `odd: does not meet schema/jobman.json: Additional property 'colour' not allowed` |
+| A spawn of no goals, or more than 63 | `$(amk.spawn ...): between 1 and 63 goals` |
+| A spawn option other than `foreground=` and `stdout=` | `$(amk.spawn ...): no option 'x'; options are foreground= and stdout=` |
+| A fork that fails | `$(amk.spawn ...): fork failed` |
+| A pid or signal that is not a number | `$(amk.kill ...): pid 'twelve' is not a number` |
 | Job control with no pid | `$(amk.kill ...): no pid` |
-| Ans7 handle verb it lacks | `amk-jobman: no verb spawnn` |
-| Ans7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
-| Apool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
+| An s7 handle verb it lacks | `amk-jobman: no verb spawnn` |
+| An s7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
+| A pool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
 
 A failure from a job function is fatal at a plain expansion, and a guest catches it
 through `amk.call`.
