@@ -265,6 +265,7 @@ A library is portable if its platform is.  Your own libraries [bundle](#bundling
 | dkjson | [lua](#lua) | 2.8 | [dkolf.de](http://dkolf.de/dkjson-lua/) | `require("dkjson")` inside [`$(lua)`](#lua) for JSON |
 | utemplate | [micropython](#micropy) | 1.4.1 | [pypi.org](https://pypi.org/project/utemplate/) | `load utmpl` for jinja-style templates (see [these docs](docs/utmpl.md)) |
 | mip | [micropython](#micropy) | micropython-lib | [github.com/micropython](https://github.com/micropython/micropython-lib) | `load mip` for pinned [micropy](#micropy) packages, a json define under `@mip.install` whose name is their install target (see [these docs](docs/mip.md)) |
+| trilog.amk | trilog | in-tree | this repository | `load trilog` or `load prolog` for `findall`, `assertz` and `retract` helpers, bound per namespace as handles |
 
 See also the [modules documentation](#modules) for more details about usage.
 
@@ -369,6 +370,7 @@ Most guest engines are embedded, i.e. linked into `amk` directly.
 | --- | --- | --- | --- | --- |
 | [jq](#jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | 1.9 MB | on |
 | [sqlite](#sqlite) | 3.53.4 | [sqlite.org](https://sqlite.org/download.html) | 1.0 MB | on |
+| [trilog](docs/data-engines.md#trilog-workspaces) (prolog) | c3f7dcb | [github.com/mattvonrocketstein](https://github.com/mattvonrocketstein/trilog/tree/dev), a pin of upstream's `dev` | 0.3 MB | on |
 
  </dd>
 </dl>

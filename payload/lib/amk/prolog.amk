@@ -1,0 +1,6 @@
+#
+# payload/lib/amk/prolog.amk:
+#  the trilog library under the language's name, so load prolog
+#  gives what load trilog gives.
+#
+load trilog

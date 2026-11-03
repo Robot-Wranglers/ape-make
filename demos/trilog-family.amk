@@ -1,0 +1,43 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/trilog-family.amk:
+#  the classic: parent facts, a grandparent rule,
+#  and make asking who is whose grandparent.
+#
+
+load trilog
+
+# The at line makes workspace family from the define: facts, then rules.
+@trilog.import
+define family
+  parent(tom, bob).
+  parent(tom, liz).
+  parent(bob, ann).
+  parent(bob, pat).
+  parent(pat, jim).
+  grandparent(G, C) :- parent(G, P), parent(P, C).
+  elder(C, G) :- grandparent(G, C).
+  sibling(A, B) :- parent(P, A), parent(P, B), A \= B.
+endef
+
+# The findall handle answers every last argument the others allow, as a list.
+got.tom  := $(family.findall grandparent, tom)
+got.jim  := $(family.findall elder, jim)
+got.sibs := $(family.findall sibling, ann)
+
+# A birth is an update, and the rule sees it at once.
+born := $(family.update assertz(parent(liz, sue)))
+got.tom.now := $(family.findall grandparent, tom)
+
+want.tom     := ["ann","pat"]
+want.jim     := ["bob"]
+want.sibs    := ["pat"]
+want.tom.now := ["ann","pat","sue"]
+
+__main__:
+	echo 'tom is grandparent of: $(got.tom)'
+	echo 'jim has grandparent:   $(got.jim)'
+	echo 'ann has sibling:       $(got.sibs)'
+	echo 'after sue is born:     $(got.tom.now)'
+	$(foreach k,tom jim sibs tom.now,\
+	  $(if $(subst $(want.$k),,$(got.$k)),$(error $k: want $(want.$k))))

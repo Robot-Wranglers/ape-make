@@ -1,5 +1,5 @@
-<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | Refs #references -->
-<h1><a id="data-engines"></a><a href="../README.md#engines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.up.dark.svg"><img src="img/hdr/docs-data-engines.data-engines.up.svg" alt="up"></picture></a>Data Engines<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.7.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.7.svg" alt="Refs"></picture></a><a href="#sqlite-workspaces"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.6.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.6.svg" alt="sqlite"></picture></a><a href="#jq-workspaces"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.5.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.5.svg" alt="jq"></picture></a><a href="#backings"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.4.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.4.svg" alt="Backings"></picture></a><a href="#deadlines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.3.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.3.svg" alt="Deadlines"></picture></a><a href="#failures"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.2.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.2.svg" alt="Failures"></picture></a><a href="#workspace-CRUD"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.1.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.1.svg" alt="CRUD"></picture></a><a href="#creating-a-workspace"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.0.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.0.svg" alt="Workspaces"></picture></a><br clear="all"></h1>
+<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | trilog #trilog-workspaces | Refs #references -->
+<h1><a id="data-engines"></a><a href="../README.md#engines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.up.dark.svg"><img src="img/hdr/docs-data-engines.data-engines.up.svg" alt="up"></picture></a>Data Engines<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.8.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.8.svg" alt="Refs"></picture></a><a href="#trilog-workspaces"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.7.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.7.svg" alt="trilog"></picture></a><a href="#sqlite-workspaces"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.6.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.6.svg" alt="sqlite"></picture></a><a href="#jq-workspaces"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.5.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.5.svg" alt="jq"></picture></a><a href="#backings"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.4.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.4.svg" alt="Backings"></picture></a><a href="#deadlines"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.3.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.3.svg" alt="Deadlines"></picture></a><a href="#failures"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.2.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.2.svg" alt="Failures"></picture></a><a href="#workspace-CRUD"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.1.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.1.svg" alt="CRUD"></picture></a><a href="#creating-a-workspace"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-data-engines.data-engines.0.dark.svg"><img align=right src="img/hdr/docs-data-engines.data-engines.0.svg" alt="Workspaces"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 **Language Engines vs Data Engines.** Both involve wrapping and running a guest language, but whereas language-engines involve [namespaces](FFI.md#namespaces), data-engines get that plus [workspaces](#creating-a-workspace), and some differences with [import mode](#import-mode). 
@@ -242,6 +242,67 @@ endef
 seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WHERE a = x) SELECT json_group_array(x) AS seen FROM r)
 $(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
 ```
+
+<a id="trilog-workspaces"></a>
+
+## trilog
+
+trilog is a Prolog engine. It answers to `prolog` and `pl` as well. The workspace is one clause database. A program is a goal,
+and each solution prints as one JSON object on a line, mapping each named variable to its
+value. A variable whose name starts with `_` is left out.
+
+| Verb | Runs | Stores | Prints |
+| --- | --- | --- | --- |
+| `get goal` | the goal | nothing; clauses it asserts or retracts are rolled back | each solution |
+| `update goal` | the goal | every clause it asserts or retracts | each solution |
+| `load text` | | the clauses, replacing the ones a previous load made; nothing if a clause fails to parse | nothing |
+| `dump` | | nothing | every clause, quoted, one per line |
+
+Terms map to JSON this way:
+
+| Term | JSON |
+| --- | --- |
+| integer, float | number |
+| atom, double-quoted string | string |
+| proper list | array |
+| compound, such as `f(1, a)` | `{"functor":"f","args":[1,"a"]}` |
+| unbound variable | `null` |
+
+`load trilog`, or `load prolog`, adds three handles to every namespace the engine makes.
+Each takes a predicate and its leading arguments.
+
+| Handle | Does | Prints |
+| --- | --- | --- |
+| `findall pred, a1, ...` | collects every last argument that `pred(a1, ..., X)` allows | one JSON list |
+| `assertz clause` | adds the clause after the others | nothing |
+| `retract clause` | removes the first clause that matches | nothing |
+
+```Makefile
+load trilog
+
+@trilog.import
+define family
+  parent(tom, bob).
+  parent(bob, ann).
+  parent(bob, pat).
+  grandparent(G, C) :- parent(G, P), parent(P, C).
+endef
+
+# ["ann","pat"]
+kids  := $(family.findall grandparent, tom)
+$(family.assertz parent(pat, jim))
+# one line per solution, such as {"G":"tom","C":"ann"}
+pairs := $(family.get grandparent(G, C))
+# the same helpers under the engine's names take the namespace first
+kids  := $(prolog.findall family, grandparent, tom)
+```
+
+Limits of the engine:
+
+- Integers are 32 bits. There is no `inf`, no exponent syntax, and no `**`.
+- `catch/3` commits to the first solution of its goal.
+- A retracted clause's memory is not reclaimed for the life of the process.
+- `get` rolls back clauses, but not `dynamic` declarations.
 
 <a id="references"></a>
 

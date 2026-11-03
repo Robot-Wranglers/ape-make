@@ -38,6 +38,13 @@ s7.tarball := s7-$(s7.version).tar.gz
 s7.url     := https://cm-gitlab.stanford.edu/bil/s7/-/archive/$(s7.commit)/s7-$(s7.commit).tar.gz
 s7.sha256  := bdf49850444252e7ffada4b6497278697b335580d5611cb1f336a6084828b8fb
 
+# Trilog tags no releases, so its version is the commit it pins.
+trilog.commit  := c3f7dcbd506bbf8bf073ebf6976aae7e855ce8ea
+trilog.version := $(shell printf %.7s $(trilog.commit))
+trilog.tarball := trilog-$(trilog.version).tar.gz
+trilog.url     := https://github.com/mattvonrocketstein/trilog/archive/$(trilog.commit).tar.gz
+trilog.sha256  := 8bebc1530c7613770730f52406c97b25ce8e8f4386db6cc16c5d1c53a1bafdf3
+
 micropython.version := 1.29.0
 micropython.tarball := micropython-$(micropython.version).tar.xz
 micropython.url     := https://github.com/micropython/micropython/releases/download/v$(micropython.version)/$(micropython.tarball)
@@ -119,6 +126,8 @@ payload.plex = $(if $(or $(filter s7,$(engines)),$(payload.effection)),$(call pa
 # The engine's own folder is stock s7 with no amk in it: amb over delimited control after Filinski, and a JSON reader.
 payload.amb = $(if $(filter s7,$(engines)),$(call payload.topic,s7))
 # m5, the templating substrate, needs no engine, so every build ships it.
+payload.trilog = $(if $(filter trilog,$(engines)),$(addprefix payload/lib/amk/,trilog.amk prolog.amk))
+
 payload.m5 = payload/lib/amk/m5.mk
 # flux's safe core reads only make and m5, so every build ships it too.
 payload.flux = payload/lib/amk/flux.mk
@@ -169,7 +178,7 @@ effection.dir     := js/effection/
 libs.all     := gmsl dkjson lxsc utemplate effection
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
-engines.all   := gawk jq lua s7 micropython wasm3 quickjs sqlite
+engines.all   := gawk jq lua s7 trilog micropython wasm3 quickjs sqlite
 engines.optin :=
 with          ?=
 without       ?=
@@ -189,6 +198,7 @@ gawk.define := AMK_ENGINE_GAWK
 jq.define   := AMK_ENGINE_JQ
 lua.define  := AMK_ENGINE_LUA
 s7.define   := AMK_ENGINE_S7
+trilog.define := AMK_ENGINE_TRILOG
 micropython.define := AMK_ENGINE_MICROPY
 wasm3.define := AMK_ENGINE_WASM3
 quickjs.define := AMK_ENGINE_QUICKJS
@@ -197,6 +207,7 @@ gawk.feature := awk
 jq.feature   := jq
 lua.feature  := lua
 s7.feature   := s7
+trilog.feature := trilog
 micropython.feature := micropy
 wasm3.feature := wasm
 quickjs.feature := js
@@ -236,6 +247,7 @@ gawk.src := src/gawk-$(gawk.version)
 jq.src   := src/jq-$(jq.version)
 lua.src  := src/lua-$(lua.version)
 s7.src   := src/s7-$(s7.version)
+trilog.src := src/trilog-$(trilog.version)
 micropython.src := src/micropython-$(micropython.version)
 wasm3.src := src/wasm3-$(wasm3.version)
 quickjs.src := src/quickjs-$(quickjs.version)
@@ -260,6 +272,13 @@ lua.exclude    := lua.c luac.c
 s7.objdirs     := .
 # s7 is one translation unit and ships no main of its own; its c loader wants dlopen, which an ape has not.
 s7.cflags      := -DWITH_C_LOADER=0
+trilog.objdirs := .
+# Trilog builds as its library's sources for posix with libc, the dev variant that boots from boot/core.pl; the guest's entry point replaces its cli.
+trilog.patches := $(abspath $(wildcard guest/patches/trilog/*.patch))
+trilog.cflags  := -std=c11 -D_POSIX_C_SOURCE=200809L
+trilog.sources := $(addprefix src/kernel/,fmt.c heap.c unify.c term.c solve.c parse.c arena.c gc.c mem.c embedded_none.c image_none.c) \
+                  src/io/io.c src/io/streams.c src/trilog.c src/platform/posix.c src/platform/libc.c
+trilog.includes := include src/kernel src/io src/platform
 # MicroPython compiles through its own makefiles, driven by guest/micropy.mk, and its objects land in these directories of the build tree.
 micropython.objdirs := . py extmod shared/runtime shared/libc shared/timeutils ports/unix extmod/mbedtls lib/mbedtls/library lib/mbedtls_errors
 # Python-side modules zipped as source under lib/micropy/, on micropython's path, as payload path and tarball path: asyncio's Python half, and ssl, requests, and mip from micropython-lib.
@@ -283,6 +302,7 @@ gawk.objcheck := *.o
 jq.objcheck   := src/*.o
 lua.objcheck  := *.o
 s7.objcheck   := *.o
+trilog.objcheck := *.o
 micropython.objcheck := py/*.o
 wasm3.objcheck := *.o
 quickjs.objcheck := *.o
@@ -292,6 +312,7 @@ gawk.ldflags   :=
 jq.ldflags     :=
 lua.ldflags    :=
 s7.ldflags     :=
+trilog.ldflags :=
 micropython.ldflags :=
 wasm3.ldflags  :=
 quickjs.ldflags :=
@@ -300,6 +321,7 @@ gawk.guestflags :=
 jq.guestflags   :=
 lua.guestflags  :=
 s7.guestflags   :=
+trilog.guestflags :=
 micropython.guestflags :=
 wasm3.guestflags :=
 quickjs.guestflags :=
@@ -308,6 +330,7 @@ gawk.objrename :=
 jq.objrename   :=
 lua.objrename  :=
 s7.objrename   :=
+trilog.objrename :=
 micropython.objrename :=
 wasm3.objrename :=
 quickjs.objrename :=
@@ -316,6 +339,7 @@ gawk.objskip   :=
 jq.objskip     :=
 lua.objskip    :=
 s7.objskip     :=
+trilog.objskip :=
 micropython.objskip :=
 wasm3.objskip  :=
 quickjs.objskip :=
@@ -325,6 +349,7 @@ gawk.extra  =
 jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -I$(HERE)guest -c $(HERE)guest/jq_main.c -o src/jq_main.o
 lua.extra   =
 s7.extra    =
+trilog.extra =
 micropython.extra =
 wasm3.extra =
 quickjs.extra =
@@ -367,7 +392,7 @@ docs.%: | $(artifact.ape)
 help:
 	@# List the targets.
 	$(call log, help, usage: make amk for the deliverable -- make stat says what is built)
-	$(call log, help, engines $(engines.default) are linked in by default and $(engines.optin) on request -- with='$(firstword $(engines.optin))' adds one and without='$(firstword $(engines.all))' leaves one out)
+	$(call log, help, engines $(engines.default) are linked in by default$(if $(engines.optin), and $(engines.optin) on request -- with='$(firstword $(engines.optin))' adds one) -- without='$(firstword $(engines.all))' leaves one out)
 	grep -hE '^[a-z][a-z. ]*:([^=]|$$)' $(HERE)Makefile $(HERE)docs/docs.amk | cut -d: -f1 | tr ' ' '\n' | sort | tr '\n' ' '; echo
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -402,6 +427,7 @@ $(gawk.tarball): url := $(gawk.url) $(gawk.mirror)
 $(jq.tarball): url := $(jq.url)
 $(lua.tarball): url := $(lua.url)
 $(s7.tarball): url := $(s7.url)
+$(trilog.tarball): url := $(trilog.url)
 $(micropython.tarball): url := $(micropython.url)
 $(wasm3.tarball): url := $(wasm3.url)
 $(quickjs.tarball): url := $(quickjs.url)
@@ -482,6 +508,13 @@ $(lua.src): $(lua.tarball)
 $(s7.src): $(s7.tarball)
 	$(call log, patch, unpacking $(s7.tarball) into $@ unpatched)
 	mkdir -p $@ && tar xzf $(s7.tarball) -C $@ --strip-components=1 && touch $@
+# The commit archive carries the paper pdfs and the pico port beside the engine; the guest needs its sources and its core library.
+$(trilog.src): $(trilog.tarball) $(trilog.patches)
+	$(call log, patch, unpacking $(trilog.tarball) into $@)
+	rm -rf $@ && mkdir -p $@ && tar xzf $(trilog.tarball) -C $@ --strip-components=1 \
+	  $(addprefix trilog-$(trilog.commit)/,src include boot lib LICENSE)
+	$(call apply.series,$@,$(trilog.patches),trilog $(trilog.version))
+	touch $@
 # The release tarball carries every port and vendored library; amk's port needs the core, the modules, the shared helpers, six in-tree libraries with mbedtls for ssl, and what it borrows from unix.
 micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c ports/unix/modsocket.c ports/unix/mbedtls lib/mbedtls lib/mbedtls_errors lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs $(filter-out extmod/%,$(foreach p,$(micropython.pylib),$(lastword $(subst :, ,$(p))))) LICENSE
 $(micropython.src): $(micropython.tarball)
@@ -529,6 +562,13 @@ s7.compile = for c in $(HERE)$(s7.src)/s7.c $(HERE)guest/s7_main.c; do \
                $(1) $(call guest.cflags,s7) $(s7.cflags) -I$(HERE)$(s7.src) -I$(HERE)guest \
                  -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
              done
+
+# Trilog's library sources and our entry point; its version header names the pinned commit.
+trilog.compile = printf "\#define TRILOG_BUILD_VERSION \"$(trilog.version)\"\n" >version.h && \
+                 for c in $(addprefix $(HERE)$(trilog.src)/,$(trilog.sources)) $(HERE)guest/trilog_main.c; do \
+                   $(1) $(call guest.cflags,trilog) $(trilog.cflags) -I. $(addprefix -I$(HERE)$(trilog.src)/,$(trilog.includes)) -I$(HERE)guest \
+                     -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
+                 done
 
 # MicroPython's own makefiles generate its headers and compile its objects, driven by guest/micropy.mk from guest/ where its config lives; the env, the compiler and the build dir are the arguments, and the version is told rather than asked of the enclosing checkout.
 micropython.make = cd guest && env $(1) MAKEFLAGS=-s MICROPY_GIT_TAG=v$(micropython.version) make -f micropy.mk -j$(jobs) CC=$(2) \
@@ -582,6 +622,13 @@ build/s7-ape/.built: $(s7.src) guest/s7_main.c guest/amk_guest.h $(cosmocc.dir)/
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call s7.compile,cosmocc)' >build.log 2>&1 \
 	  || $(call die, guest, s7 did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+
+build/trilog-ape/.built: $(trilog.src) guest/trilog_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling trilog for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) sh -c '$(call trilog.compile,cosmocc)' >build.log 2>&1 \
+	  || $(call die, guest, trilog did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
 build/micropython-ape/.built: $(micropython.src) $(micropython.inputs) $(cosmocc.dir)/bin/cosmocc
@@ -666,11 +713,14 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 	install -m 0644 guest/amk.sh build/payload$(suffix)/bin/amk.sh
 	$(foreach l,$(libs),$(foreach f,$(addprefix $(call lib.dir,$(l)),$($(l).files)),mkdir -p $(dir $(call payload.dest,lib/$(f))) && install -m 0644 $($(l).src)/$(f:$(call lib.dir,$(l))%=%) $(call payload.dest,lib/$(f));))
 	$(if $(filter micropython,$(engines)),$(foreach p,$(micropython.pylib),mkdir -p $(dir $(call pylib.dest,$(p))) && install -m 0644 $(micropython.src)/$(lastword $(subst :, ,$(p))) $(call pylib.dest,$(p));))
+	$(if $(filter trilog,$(engines)),mkdir -p $(call payload.dest,lib/trilog/boot) $(call payload.dest,lib/trilog/lib) \
+	  && install -m 0644 $(trilog.src)/boot/core.pl $(trilog.src)/LICENSE $(call payload.dest,lib/trilog/boot/) \
+	  && install -m 0644 $(trilog.src)/lib/*.pl $(call payload.dest,lib/trilog/lib/))
 	$(foreach f,$(payload.files),mkdir -p $(dir $(call payload.dest,$(f))) && install -m 0644 $(f) $(call payload.dest,$(f));)
 	$(foreach f,$(payload.lib),mkdir -p $(dir $(call payload.dest,$(f))) && install -m 0644 $(f) $(call payload.dest,$(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
-	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython,$(engines))$(strip $(payload.lib)),lib) $(patsubst payload/%,%,$(payload.files))
+	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython trilog,$(engines))$(strip $(payload.lib)),lib) $(patsubst payload/%,%,$(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
 	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
 	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
@@ -736,7 +786,9 @@ smoke: $(artifact.ape) smoke.demos
 	$(call log, smoke, every check passed)
 # The wasm demos need the opt-in engine and docker, so a build without wasm3 leaves them out.
 demos.wasm := $(wildcard demos/wasm-*.amk)
-demos.skip := $(if $(filter wasm3,$(engines)),,$(demos.wasm))
+# The trilog demos need trilog, so a build without it leaves them out.
+demos.trilog := $(wildcard demos/trilog-*.amk)
+demos.skip := $(if $(filter wasm3,$(engines)),,$(demos.wasm)) $(if $(filter trilog,$(engines)),,$(demos.trilog))
 # Smoke opts demos in by name: the wasm ones, whose toolchain images are heavy downloads.
 demos.smoke := $(demos.wasm)
 demos := $(filter-out $(demos.skip),$(demos.smoke))

@@ -1,0 +1,47 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/trilog-kb.amk:
+#  trilog as a data engine: a dependency graph as a knowledge base
+#  that make queries with get, changes with update, and walks with findall.
+#
+
+load trilog
+
+# The at line makes workspace deps from the define: facts, then rules.
+@trilog.import
+define deps
+  needs(app, web).
+  needs(web, http).
+  needs(http, libc).
+  dep(X, Y) :- needs(X, Y).
+  dep(X, Z) :- needs(X, Y), dep(Y, Z).
+endef
+
+# The findall handle answers every last argument the others allow, as a list.
+got.app := $(deps.findall dep, app)
+
+# get puts the clauses back as they were, so this retract does not last.
+probe := $(deps.get retract(needs(web, http)))
+got.web := $(deps.findall dep, web)
+
+# The assertz handle adds a clause that lasts, as an update would.
+$(deps.assertz needs(app, log))
+$(deps.assertz needs(log, libc))
+got.app.now := $(deps.findall dep, app)
+
+# The state handle reaches the same clauses, with the rest of Prolog.
+got.sorted := $(deps.exec :- findall(D, dep(app, D), L), \
+  sort(L, S), json_write(S).)
+
+want.app     := ["web","http","libc"]
+want.web     := ["http","libc"]
+want.app.now := ["web","log","http","libc","libc"]
+want.sorted  := ["http","libc","log","web"]
+
+__main__:
+	echo 'app needs:            $(got.app)'
+	echo 'web, after the probe: $(got.web)'
+	echo 'app, after assertz:   $(got.app.now)'
+	echo 'sorted, deduplicated: $(got.sorted)'
+	$(foreach k,app web app.now sorted,\
+	  $(if $(subst $(want.$k),,$(got.$k)),$(error $k: want $(want.$k))))
