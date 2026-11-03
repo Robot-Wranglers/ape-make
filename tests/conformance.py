@@ -22,6 +22,16 @@ def list_engines():
   return json.loads(r.stdout)["engines"]
 
 
+def interfaces(engine):
+  """The kept-state interfaces the engine has, one or both."""
+  return engine.get("interfaces", [engine["interface"]] if engine["interface"] else [])
+
+
+def own_ops(engine):
+  """The operations of every interface the engine has."""
+  return [op for i in interfaces(engine) for op in OPS[i]]
+
+
 def spellings(engine):
   """Every name the engine answers to: its own, then its aliases."""
   return [engine["name"]] + engine["aliases"]
@@ -29,7 +39,7 @@ def spellings(engine):
 
 def parametrize(metafunc, interface=None):
   """Parametrize the test's engine argument over the engines with that interface, or over every engine; a test that also takes a spelling runs once per name each engine answers to."""
-  rows = [e for e in list_engines() if interface is None or e["interface"] == interface]
+  rows = [e for e in list_engines() if interface is None or interface in interfaces(e)]
   if "spelling" in metafunc.fixturenames:
     pairs = [(e, s) for e in rows for s in spellings(e)]
     metafunc.parametrize("engine,spelling", pairs, ids=[f"{e['name']}-{s}" for e, s in pairs])
@@ -66,6 +76,15 @@ WORKSPACE = {
     "broken": "CREATE TABLE u(k); INSERT INTO nowhere VALUES(1);",
     "multi": "SELECT 1 AS a UNION ALL SELECT 2",
   },
+  "trilog": {
+    "seed": "n(1).",
+    "read": "n(X)",
+    "before": '{"X":1}',
+    "write": "retract(n(1)), assertz(n(2))",
+    "after": '{"X":2}',
+    "broken": "n(1).\nbad(",
+    "multi": "member(X, [1, 2])",
+  },
 }
 
 # A state dialect: set then show prints 42; lib defines cf_echo, which appends a bang, and cf_v, which holds seven; read prints the make variable cf_var; hook prints hooked on goals. None for an engine whose program is a module and a call rather than text; test_wasm.py pins that one.
@@ -98,6 +117,12 @@ STATE = {
     "read": "print(amk.var.cf_var);",
     "hook": "amk.on.goals = function(e) { print('hooked'); };",
   },
+  "trilog": {
+    "set": ":- assertz(x(41)).",
+    "show": ":- x(X), Y is X + 1, write(Y).",
+    "lib": "cf_echo(S, R) :- atom_concat(S, '!', R).\namk_function(cf_echo).\namk_export(cf_v, seven).",
+    "read": ":- amk_var(cf_var, V), write(V).",
+  },
   "wasm": None,
 }
 
@@ -110,5 +135,6 @@ CLI = {
   "micropy": {"prog": 'print("hi")', "args": ['print("hi")']},
   "js": {"prog": 'print("hi")', "args": ['print("hi")']},
   "sqlite": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
+  "trilog": {"prog": ":- write(hi).", "args": [":- write(hi)."]},
   "wasm": None,
 }

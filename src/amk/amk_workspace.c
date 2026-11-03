@@ -305,13 +305,16 @@ amk_workspace_forward (struct amk_sink *out, const char *op, const char *ns, con
   return rc;
 }
 
-/* The workspace row a namespace name reaches: its owner, else the first workspace row in the build.  */
+/* The workspace row a namespace name reaches: its owner, else the first workspace-only row in the build, else the first row with both.  */
 const struct amk_engine *
 amk_workspace_engine (const char *ns)
 {
   const struct amk_engine *e = ns != NULL ? amk_ns_owner (ns) : NULL;
   if (e != NULL)
     return e;
+  for (e = amk_engines; e->name != NULL; ++e)
+    if (amk_engine_is_workspace (e) && e->state == NULL)
+      return e;
   for (e = amk_engines; e->name != NULL; ++e)
     if (amk_engine_is_workspace (e))
       return e;
@@ -336,7 +339,7 @@ amk_workspace_filter (struct amk_sink *out, const char *engine, const char *prog
   return e->workspace->filter (out, prog, input != NULL ? input : "");
 }
 
-/* Whether a builtin's name is a workspace row's import.  */
+/* Whether a builtin's name is a workspace row's import; a row with both interfaces takes this one, and its state import stays on the ns form, the load line and each namespace's handle.  */
 int
 amk_is_workspace_import (const char *name)
 {

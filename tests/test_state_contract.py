@@ -7,7 +7,7 @@ parse, and create makes a separate namespace or, for a single-state engine, is r
 
 import pytest
 
-from conformance import STATE, parametrize, run
+from conformance import STATE, interfaces, parametrize, run
 
 
 def pytest_generate_tests(metafunc):
@@ -34,7 +34,10 @@ def test_exec_keeps_what_it_leaves(amk, tmp_path, engine):
 
 def test_import_lifts_a_function_and_a_variable(amk, tmp_path, engine):
   e, d = engine["name"], STATE[engine["name"]]
-  r = run(amk, tmp_path, [f"@{e}.import"] + _define("cf.lib", d["lib"]) + [
+  # On a row with both interfaces the engine's import is the workspace one, so the lift goes through main.
+  lift = ([f"@{e}.import"] + _define("cf.lib", d["lib"]) if "workspace" not in interfaces(engine)
+          else _define("cf.lib", d["lib"]) + [f"x := $({e}.ns* main, import, cf.lib)"])
+  r = run(amk, tmp_path, lift + [
     "$(info echo=$(cf_echo hi) v=$(cf_v))",
     f"$(info fxns=$({e}.__fxns__) vars=$({e}.__vars__))",
   ])

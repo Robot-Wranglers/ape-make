@@ -31,9 +31,9 @@ Stacked Engines are unique in that they are **not** linked or embedded, thus the
 | [js](../README.md#js) | | yes | - | namespaces | `amk.deadline` |
 | [jq](../README.md#jq) | | yes | yes | workspaces | unsupported |
 | [sqlite](../README.md#sqlite) | `sqlite3` | yes, sqlite's own shell | yes | workspaces | `--deadline ms` on `get` and `update` |
+| [trilog](data-engines.md#trilog-workspaces) | `prolog`, `pl` | yes | - | namespaces and workspaces | unsupported |
 
-The rows live in `src/amk/amk_engine.c`. `amk --list-engines` reports the deadline column as `"deadline"`: `"handle"`, `"option"`, or `null`. At startup `amk_engines_check` refuses a row without a command line, with both kinds of state, or missing a required verb.
-
+The rows live in `src/amk/amk_engine.c`. `amk --list-engines` reports the deadline column as `"deadline"`: `"handle"`, `"option"`, or `null`.
 ```Makefile
 # each of these stops make, naming the engine and what it has
 $(awk.ns.create w)           # awk has no namespaces or workspaces
@@ -237,6 +237,7 @@ operation.
 | `$(eng.ns name, op, prog)` | runs the operation in `name` |
 | `$(name.op prog)` | the same, through the handle |
 | `$(eng.op prog)` | the operation in `main` |
+| `$(eng.ns.hook macro)` | runs `$(call macro,name)` for every namespace the engine has made or will make, never `main` |
 
 A handle exists for each operation of the engine's type, and no other: a name outside the
 interface, such as `w.exec` on a jq workspace, stays free for a library to define with
