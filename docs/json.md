@@ -44,9 +44,9 @@ amk, so nothing runs in a shell. It is part of [the io module](io.md).
 | Term | Meaning |
 | --- | --- |
 | JSON5 | JSON with comments, trailing commas, unquoted keys, single-quoted strings and hex numbers; see [json5.org](https://json5.org/) |
-| Plain JSON | the same value written as strict JSON on one line, as sqlite's `json()` writes it |
-| Schema Define | a define whose body is a [JSON Schema](https://json-schema.org/), draft 2020-12, in JSON or JSON5 |
-| Check | the body read as JSON5 and validated against a schema define, answering every error |
+| Plain JSON | The same value written as strict JSON on one line, as sqlite's `json()` writes it |
+| Schema Define | A define whose body is a [JSON Schema](https://json-schema.org/), draft 2020-12, in JSON or JSON5 |
+| Check | The body read as JSON5 and validated against a schema define, answering every error |
 
 <a id="syntax"></a>
 
@@ -54,8 +54,8 @@ amk, so nothing runs in a shell. It is part of [the io module](io.md).
 
 | Form | Does |
 | --- | --- |
-| `@json5` above `define name ... endef` | rewrites the body as plain JSON, so every later reference to `$(name)` reads strict JSON |
-| `@json.schema (schema)` above `define name ... endef` | checks the body against the define `schema` as the makefile is read; any error stops make |
+| `@json5` above `define name ... endef` | Rewrites the body as plain JSON, so every later reference to `$(name)` reads strict JSON |
+| `@json.schema (schema)` above `define name ... endef` | Checks the body against the define `schema` as the makefile is read; any error stops make |
 
 Both read the body as JSON5, so they stack in either order, and `@json.schema` alone checks
 a JSON5 body without rewriting it.
@@ -66,7 +66,7 @@ a JSON5 body without rewriting it.
 
 | Form | Answers |
 | --- | --- |
-| `$(json.validate name, schema)` | the errors of the define `name` against the define `schema`, joined by `; `; nothing when it is valid |
+| `$(json.validate name, schema)` | The errors of the define `name` against the define `schema`, joined by `; `; nothing when it is valid |
 
 Each error names its path, as in
 `Property item: Value not in enum; Property qty: Less than minimum 1`. The check is
@@ -86,7 +86,7 @@ Each error names its path, as in
 | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` | yes |
 | `$ref` within the schema, by pointer or anchor | yes; a ref that does not resolve is an error |
 | `unevaluatedProperties`, `unevaluatedItems`, `$dynamicRef`, `$dynamicAnchor`, `format` | no |
-| `default`, `description`, `title` | annotations, never checked |
+| `default`, `description`, `title` | Annotations, never checked |
 
 <a id="errors"></a>
 
@@ -108,7 +108,7 @@ See also [io errors](io.md#errors).
 
 | Demo | Shows |
 | --- | --- |
-| [`json-schema.amk`](../demos/json-schema.amk) | a JSON5 schema, an order checked and rewritten as it is read, and a bad order's three errors from `json.validate` |
+| [`json-schema.amk`](../demos/json-schema.amk) | A JSON5 schema, an order checked and rewritten as it is read, and a bad order's three errors from `json.validate` |
 
 <a id="references"></a>
 

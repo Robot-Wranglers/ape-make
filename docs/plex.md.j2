@@ -1,6 +1,5 @@
-{% set name = "plex" %}
 {% set root = ".." %}
-<!-- header # plex "`mod :: amk.{{ name }}`" |Concepts #concepts | Syntax #syntax | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
+<!-- header # plex "`mod :: amk.plex`" |Concepts #concepts | Syntax #syntax | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
 <!-- /header -->
 
 <a id="overview"></a>
@@ -27,11 +26,11 @@ Where the plex sits among the concurrency flavors, and the layers under and over
 
 | Term | Meaning |
 | --- | --- |
-| Task | one coroutine on the plex: a generator run as an operation in js, a thunk in s7 |
-| Yield | the point where a task hands the thread to the next ready task |
-| Ready List | the s7 plex's queue of continuations waiting for the thread; a stack under `lifo` |
-| Scope | in js, the owner of the tasks spawned in it; cancellation runs down from it and its resources are released when it ends |
-| Cooperative | a task that does not yield holds the thread, and every other task waits |
+| Task | One coroutine on the plex: a generator run as an operation in js, a thunk in s7 |
+| Yield | The point where a task hands the thread to the next ready task |
+| Ready List | The s7 plex's queue of continuations waiting for the thread; a stack under `lifo` |
+| Scope | In js, the owner of the tasks spawned in it; cancellation runs down from it and its resources are released when it ends |
+| Cooperative | A task that does not yield holds the thread, and every other task waits |
 
 <a id="syntax"></a>
 
@@ -50,7 +49,7 @@ The plex adds no decorator, callform or at line; a guest calls it as a library.
 
 | `amk.plex` is | Unit | Verbs |
 | --- | --- | --- |
-| Effection[^effection], bundled and republished whole | a generator, run as an operation | `run`, `spawn`, `scoped`, `sleep`, `until`, `race`, `all`, `resource`, `ensure`, `createChannel`, and the rest of Effection's exports |
+| Effection[^effection], bundled and republished whole | A generator, run as an operation | `run`, `spawn`, `scoped`, `sleep`, `until`, `race`, `all`, `resource`, `ensure`, `createChannel`, and the rest of Effection's exports |
 
 <a id="api-s7"></a>
 
@@ -58,7 +57,7 @@ The plex adds no decorator, callform or at line; a guest calls it as a library.
 
 | `amk.plex` is | Unit | Verbs |
 | --- | --- | --- |
-| `make-plex`, a ready list of continuations in stock s7, a queue, or a stack under `(make-plex 'lifo)` | a thunk, a continuation at its yield | a procedure of a verb: `fork`, `fork-all`, `yield`, `done`, `run`, `finish`, `pending`, `order` |
+| `make-plex`, a ready list of continuations in stock s7, a queue, or a stack under `(make-plex 'lifo)` | A thunk, a continuation at its yield | A procedure of a verb: `fork`, `fork-all`, `yield`, `done`, `run`, `finish`, `pending`, `order` |
 
 Effection is structured concurrency and effects: a scope owns its tasks, cancellation runs
 down the tree, a resource is released when its scope ends, and the loop underneath is
@@ -76,11 +75,11 @@ A group under a charter is one use of the plex. These need no charter:
 
 | Use | js | s7 |
 | --- | --- | --- |
-| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
-| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
+| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | None, no processes |
+| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | None, no clock |
 | Several asks in flight, joined | `all` over `until(amk.acall(..))` | `fork` each, `run` |
 | Cleanup bound to a scope, a socket or a workspace owner | `resource`, `ensure` | none |
-| A stream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
+| A stream over a workspace | `createChannel` fed by a handler, `each` | A loop that yields |
 | A hand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code]({{ root }}/payload/lib/actor/init.scm) |
 
 A js guest writes these from the primitives in the
@@ -146,8 +145,8 @@ has them.
 | Demo | Shows |
 | --- | --- |
 | [`plex-choice.amk`]({{ root }}/demos/plex-choice.amk), embedded under [choice](#choice) | `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search |
-| [`supervise-1.amk`]({{ root }}/demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
-| [`race-1.amk`]({{ root }}/demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
+| [`supervise-1.amk`]({{ root }}/demos/supervise-1.amk) | The plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
+| [`race-1.amk`]({{ root }}/demos/race-1.amk) | Fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 
 <a id="references"></a>
 

@@ -13,7 +13,7 @@
                 <mxCell id="micropy" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;micropython&lt;/b&gt;" vertex="1">
                     <mxGeometry height="44" width="120" x="130" y="120" as="geometry"/>
                 </mxCell>
-                <mxCell id="s7" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;s7&lt;/b&gt;" vertex="1">
+                <mxCell id="s7" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;s7&lt;/b&gt; (a lisp)" vertex="1">
                     <mxGeometry height="44" width="120" x="243" y="170" as="geometry"/>
                 </mxCell>
                 <mxCell id="js" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;quickjs&lt;/b&gt;" vertex="1">
@@ -73,7 +73,7 @@
                 <mxCell id="e_wasm_wat" edge="1" parent="1" source="wasm" style="html=1;endArrow=classic;strokeColor=#808080;strokeWidth=2;rounded=1;" target="wat">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="dJXaEyqJjoVAgwllTmzO-3" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;jqlang&lt;/b&gt;" vertex="1">
+                <mxCell id="dJXaEyqJjoVAgwllTmzO-3" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#E3E3E3;strokeColor=#8C8C8C;fontColor=#1a1a1a;fontSize=14;" value="&lt;b&gt;trilog&lt;/b&gt; (a prolog)" vertex="1">
                     <mxGeometry height="44" width="120" x="130" y="40" as="geometry"/>
                 </mxCell>
                 <mxCell id="dJXaEyqJjoVAgwllTmzO-5" edge="1" parent="1" source="lang" style="html=1;endArrow=classic;strokeColor=#808080;strokeWidth=2;rounded=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="dJXaEyqJjoVAgwllTmzO-3">

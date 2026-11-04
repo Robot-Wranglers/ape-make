@@ -38,15 +38,15 @@ Where jobs sit among the other concurrency flavors is in
 
 | Term | Meaning |
 | --- | --- |
-| Job | a fork of the parsed image running a goal list as its own process group; it keeps the parent's parse and every guest state as they stood at the spawn, and a fatal signal at the parent ends it |
-| Record | a finished job's `pid`, `code`, `signal`, `status` and `mail`, as [the host handle](FFI.md#host-handle) describes |
+| Job | A fork of the parsed image running a goal list as its own process group; it keeps the parent's parse and every guest state as they stood at the spawn, and a fatal signal at the parent ends it |
+| Record | A finished job's `pid`, `code`, `signal`, `status` and `mail`, as [the host handle](FFI.md#host-handle) describes |
 | `status` | `success`, `question` for make's exit 1, `failed` for any other code, `signal`, or `stopped` |
-| Mail | what a job's recipes sent through `amk.send` or the descriptor `AMK_MAIL` names, read whole in the record |
+| Mail | What a job's recipes sent through `amk.send` or the descriptor `AMK_MAIL` names, read whole in the record |
 | Module | `m` below: the verbs the jobman library adds to each guest, which take no pool token |
 | Jobman | `p` below: the handle on a job pool, whose spawn takes a token before the fork and whose wait gives it back on reap, so a job that dies frees its slot |
-| Member | a job a jobman spawned and has not reaped; `p.pending()` lists them, and `p.wait()` with no pid waits only on them, so a job outside the pool keeps its record for its own wait |
-| `__jobs__` | the default job pool, opened when the topic loads, and `m.__jobs__` its jobman; its size is `AMK_MAX_JOBS` in the environment, else `jobman.max_jobs`, which is 4, and its `fail_fast` is `jobman.__jobs__.fail_fast`, each settable before the load |
-| `fail_fast` | a pool's setting that stops `map` launching after the first result that is not `success` |
+| Member | A job a jobman spawned and has not reaped; `p.pending()` lists them, and `p.wait()` with no pid waits only on them, so a job outside the pool keeps its record for its own wait |
+| `__jobs__` | The default job pool, opened when the topic loads, and `m.__jobs__` its jobman; its size is `AMK_MAX_JOBS` in the environment, else `jobman.max_jobs`, which is 4, and its `fail_fast` is `jobman.__jobs__.fail_fast`, each settable before the load |
+| `fail_fast` | A pool's setting that stops `map` launching after the first result that is not `success` |
 
 <a id="syntax"></a>
 
@@ -76,8 +76,8 @@ endef
 
 | Form | Declares |
 | --- | --- |
-| `@jobman` above `define name { "size": .., "labels": [..], "strategy": .., "fail_fast": .. } endef` | a pool of jobs of the define's name, from json over the defaults |
-| `$(jobman name, size[, fail_fast])` | the same, opening the pool `name` and setting `jobman.name.fail_fast`, `true` only when given |
+| `@jobman` above `define name { "size": .., "labels": [..], "strategy": .., "fail_fast": .. } endef` | A pool of jobs of the define's name, from json over the defaults |
+| `$(jobman name, size[, fail_fast])` | The same, opening the pool `name` and setting `jobman.name.fail_fast`, `true` only when given |
 
 <a id="api"></a>
 <a id="job-catalog"></a>
@@ -101,11 +101,11 @@ refusal; `spawn` called bare spawns goals.
 
 | Call | Pool | Answers |
 | --- | --- | --- |
-| `$(amk.spawn one two)` | none | the pid, as text |
-| `$(amk.spawn one, foreground=1, stdout=log)` | none | the pid, as text |
-| `$(amk.spawn.argv one 'msg=a b')` | none | the pid, as text |
-| `$(amk.wait $(pid))`, `$(amk.wait )` for any job | none | the record, as json text |
-| `$(amk.wait $(pid),0)` | none | the record, or empty when it has not finished |
+| `$(amk.spawn one two)` | none | The pid, as text |
+| `$(amk.spawn one, foreground=1, stdout=log)` | none | The pid, as text |
+| `$(amk.spawn.argv one 'msg=a b')` | none | The pid, as text |
+| `$(amk.wait $(pid))`, `$(amk.wait )` for any job | none | The record, as json text |
+| `$(amk.wait $(pid),0)` | none | The record, or empty when it has not finished |
 | `$(amk.kill $(pid))`, `$(amk.kill $(pid),9)` | none | `1`, or empty for a pid that is not a live job |
 | `$(amk.stop $(pid))`, `$(amk.resume $(pid))`, `$(amk.foreground $(pid))` | none | `1` or empty |
 
@@ -119,20 +119,20 @@ see [`dsys/job`](job.md#api).
 
 | Call | Pool | Answers |
 | --- | --- | --- |
-| `m = amk.jobman` | | the module |
-| `m.spawn.goal('one')`, `m.spawn.goals({'one', 'two'})`, `m.spawn.call('fn', 'arg')`, `m.spawn({'one'}, {foreground = true, stdout = 'log'})` for goals | none | the pid, a number |
-| `m.wait(pid)`, `m.wait()` for any job | none | the record, a table |
-| `m.wait(pid, false)` | none | the record, or `nil` when it has not finished |
+| `m = amk.jobman` | | The module |
+| `m.spawn.goal('one')`, `m.spawn.goals({'one', 'two'})`, `m.spawn.call('fn', 'arg')`, `m.spawn({'one'}, {foreground = true, stdout = 'log'})` for goals | none | The pid, a number |
+| `m.wait(pid)`, `m.wait()` for any job | none | The record, a table |
+| `m.wait(pid, false)` | none | The record, or `nil` when it has not finished |
 | `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `true`, or `false` for a pid that is not a live job |
-| `p = m.__jobs__`, `p = m.on('mine')`, `p = m.mine` | | a jobman |
-| `p.spawn.goal('one')`, `p.spawn.goals({'one', 'two'})`, `p.spawn.call('fn', 'arg')`, `p.spawn({'one'})` for goals | a token | the pid, a number |
-| `p.wait(pid)`, `p.wait(pid, false)` | gives the token back | as `m.wait` |
-| `p.wait()`, `p.wait(nil, false)` | gives the token back | the first member's record, or `nil` with no member or none ready |
-| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, a table; a job's record without consuming it, or `nil` while it runs |
-| `p.map({ {'a'}, {'b'} })`, `p.map(lists, {fail_fast = true})` | a token per list | a table of records, in input order |
-| `p.race({ {'a'}, {'b'} })` | a token per list | the first record; the others are killed and reaped |
-| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
-| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+| `p = m.__jobs__`, `p = m.on('mine')`, `p = m.mine` | | A jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals({'one', 'two'})`, `p.spawn.call('fn', 'arg')`, `p.spawn({'one'})` for goals | A token | The pid, a number |
+| `p.wait(pid)`, `p.wait(pid, false)` | Gives the token back | As `m.wait` |
+| `p.wait()`, `p.wait(nil, false)` | Gives the token back | The first member's record, or `nil` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | The members' pids, a table; a job's record without consuming it, or `nil` while it runs |
+| `p.map({ {'a'}, {'b'} })`, `p.map(lists, {fail_fast = true})` | A token per list | A table of records, in input order |
+| `p.race({ {'a'}, {'b'} })` | A token per list | The first record; the others are killed and reaped |
+| `p.close()` | Gives every token back | Every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | As `m.kill` |
 
 <a id="api-micropy"></a>
 <a id="job-catalog-micropy"></a>
@@ -141,20 +141,20 @@ see [`dsys/job`](job.md#api).
 
 | Call | Pool | Answers |
 | --- | --- | --- |
-| `m = amk.jobman` | | the module |
-| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], foreground=True, stdout='log')` for goals | none | the pid, an int |
-| `m.wait(pid)`, `m.wait()` for any job | none | the record, a dict |
-| `m.wait(pid, False)` | none | the record, or `None` when it has not finished |
+| `m = amk.jobman` | | The module |
+| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], foreground=True, stdout='log')` for goals | none | The pid, an int |
+| `m.wait(pid)`, `m.wait()` for any job | none | The record, a dict |
+| `m.wait(pid, False)` | none | The record, or `None` when it has not finished |
 | `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `True`, or `False` for a pid that is not a live job |
-| `p = m.__jobs__`, `p = m.on('mine')` | | a jobman |
-| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | a token | the pid, an int |
-| `p.wait(pid)`, `p.wait(pid, False)` | gives the token back | as `m.wait` |
-| `p.wait()`, `p.wait(None, False)` | gives the token back | the first member's record, or `None` with no member or none ready |
-| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, a list; a job's record without consuming it, or `None` while it runs |
-| `p.map([['a'], ['b']])`, `p.map(lists, True)` to stop at a failure | a token per list | a list of records, in input order |
-| `p.race([['a'], ['b']])` | a token per list | the first record; the others are killed and reaped |
-| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
-| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+| `p = m.__jobs__`, `p = m.on('mine')` | | A jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | A token | The pid, an int |
+| `p.wait(pid)`, `p.wait(pid, False)` | Gives the token back | As `m.wait` |
+| `p.wait()`, `p.wait(None, False)` | Gives the token back | The first member's record, or `None` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | The members' pids, a list; a job's record without consuming it, or `None` while it runs |
+| `p.map([['a'], ['b']])`, `p.map(lists, True)` to stop at a failure | A token per list | A list of records, in input order |
+| `p.race([['a'], ['b']])` | A token per list | The first record; the others are killed and reaped |
+| `p.close()` | Gives every token back | Every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | As `m.kill` |
 
 <a id="api-js"></a>
 <a id="job-catalog-js"></a>
@@ -163,22 +163,22 @@ see [`dsys/job`](job.md#api).
 
 | Call | Pool | Answers |
 | --- | --- | --- |
-| `const m = amk.jobman` | | the module |
-| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], {foreground: true, stdout: 'log'})` for goals | none | the pid, a number |
-| `m.wait(pid)`, `m.wait()` for any job | none | the record, an object |
-| `m.wait(pid, false)` | none | the record, or `undefined` when it has not finished |
+| `const m = amk.jobman` | | The module |
+| `m.spawn.goal('one')`, `m.spawn.goals(['one', 'two'])`, `m.spawn.call('fn', 'arg')`, `m.spawn(['one'], {foreground: true, stdout: 'log'})` for goals | none | The pid, a number |
+| `m.wait(pid)`, `m.wait()` for any job | none | The record, an object |
+| `m.wait(pid, false)` | none | The record, or `undefined` when it has not finished |
 | `m.kill(pid)`, `m.kill(pid, 9)`, `m.stop(pid)`, `m.resume(pid)`, `m.foreground(pid)` | none | `true`, or `false` for a pid that is not a live job |
-| `amk.exited(pid)` | none | a promise for the record, so a plex task awaits a job the way it awaits anything else |
-| `const p = m.__jobs__`, `const p = m.on('mine')` | | a jobman |
-| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | a token | the pid, a number |
-| `p.wait(pid)`, `p.wait(pid, false)` | gives the token back | as `m.wait` |
-| `p.wait()`, `p.wait(undefined, false)` | gives the token back | the first member's record, or `undefined` with no member or none ready |
-| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | the members' pids, an array; a job's record without consuming it, or `undefined` while it runs |
-| `await p.exited(pid)` | gives the token back | the record, an object |
-| `await p.map([['a'], ['b']])`, `await p.map(lists, {fail_fast: true})` | a token per list | an array of records, in input order |
-| `p.race([['a'], ['b']])` | a token per list | the first record; the others are killed and reaped |
-| `p.close()` | gives every token back | every member killed and reaped, their records in pid order |
-| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | as `m.kill` |
+| `amk.exited(pid)` | none | A promise for the record, so a plex task awaits a job the way it awaits anything else |
+| `const p = m.__jobs__`, `const p = m.on('mine')` | | A jobman |
+| `p.spawn.goal('one')`, `p.spawn.goals(['one', 'two'])`, `p.spawn.call('fn', 'arg')`, `p.spawn(['one'])` for goals | A token | The pid, a number |
+| `p.wait(pid)`, `p.wait(pid, false)` | Gives the token back | As `m.wait` |
+| `p.wait()`, `p.wait(undefined, false)` | Gives the token back | The first member's record, or `undefined` with no member or none ready |
+| `p.pending()`, `m.peek(pid)`, `p.peek(pid)` | none | The members' pids, an array; a job's record without consuming it, or `undefined` while it runs |
+| `await p.exited(pid)` | Gives the token back | The record, an object |
+| `await p.map([['a'], ['b']])`, `await p.map(lists, {fail_fast: true})` | A token per list | An array of records, in input order |
+| `p.race([['a'], ['b']])` | A token per list | The first record; the others are killed and reaped |
+| `p.close()` | Gives every token back | Every member killed and reaped, their records in pid order |
+| `p.kill(pid)`, `p.stop(pid)`, `p.resume(pid)`, `p.foreground(pid)` | none | As `m.kill` |
 
 <a id="api-s7"></a>
 <a id="job-catalog-s7"></a>
@@ -187,19 +187,19 @@ see [`dsys/job`](job.md#api).
 
 | Call | Pool | Answers |
 | --- | --- | --- |
-| `(amk-jobman-spawn-kind 'goal "one")`, `(amk-jobman-spawn-kind 'call "fn" "arg")`, `(amk-jobman-spawn '("one" "two") :foreground #t :stdout "log")` for goals | none | the pid, an integer |
-| `(amk-jobman-wait pid)`, `(amk-jobman-wait)` for any job | none | the record, a hash table keyed by symbol |
-| `(amk-jobman-wait pid #f)` | none | the record, or `#f` when it has not finished |
+| `(amk-jobman-spawn-kind 'goal "one")`, `(amk-jobman-spawn-kind 'call "fn" "arg")`, `(amk-jobman-spawn '("one" "two") :foreground #t :stdout "log")` for goals | none | The pid, an integer |
+| `(amk-jobman-wait pid)`, `(amk-jobman-wait)` for any job | none | The record, a hash table keyed by symbol |
+| `(amk-jobman-wait pid #f)` | none | The record, or `#f` when it has not finished |
 | `(amk-jobman-kill pid)`, `(amk-jobman-kill pid 9)`, `-stop`, `-resume`, `-foreground` | none | `#t`, or `#f` for a pid that is not a live job |
-| `(define p amk-jobman-__jobs__)`, `(define p (amk-jobman-on "mine"))` | | a jobman, a procedure of a verb |
-| `(p 'spawn.goal "one")`, `(p 'spawn.goals '("one" "two"))`, `(p 'spawn.call "fn" "arg")`, `(p 'spawn '("one"))` for goals | a token | the pid, an integer |
-| `(p 'wait pid)`, `(p 'wait pid #f)` | gives the token back | as `amk-jobman-wait` |
-| `(p 'wait)`, `(p 'wait #f #f)` | gives the token back | the first member's record, or `#f` with no member or none ready |
-| `(p 'pending)`, `(amk-jobman-peek pid)`, `(p 'peek pid)` | none | the members' pids, a list; a job's record without consuming it, or `#f` while it runs |
-| `(p 'map '(("a") ("b")))`, `(p 'map lists #t)` to stop at a failure | a token per list | a vector of records, in input order |
-| `(p 'race '(("a") ("b")))` | a token per list | the first record; the others are killed and reaped |
-| `(p 'close)` | gives every token back | every member killed and reaped, their records in pid order |
-| `(p 'kill pid)`, `(p 'stop pid)`, `(p 'resume pid)`, `(p 'foreground pid)` | none | as `amk-jobman-kill` |
+| `(define p amk-jobman-__jobs__)`, `(define p (amk-jobman-on "mine"))` | | A jobman, a procedure of a verb |
+| `(p 'spawn.goal "one")`, `(p 'spawn.goals '("one" "two"))`, `(p 'spawn.call "fn" "arg")`, `(p 'spawn '("one"))` for goals | A token | The pid, an integer |
+| `(p 'wait pid)`, `(p 'wait pid #f)` | Gives the token back | As `amk-jobman-wait` |
+| `(p 'wait)`, `(p 'wait #f #f)` | Gives the token back | The first member's record, or `#f` with no member or none ready |
+| `(p 'pending)`, `(amk-jobman-peek pid)`, `(p 'peek pid)` | none | The members' pids, a list; a job's record without consuming it, or `#f` while it runs |
+| `(p 'map '(("a") ("b")))`, `(p 'map lists #t)` to stop at a failure | A token per list | A vector of records, in input order |
+| `(p 'race '(("a") ("b")))` | A token per list | The first record; the others are killed and reaped |
+| `(p 'close)` | Gives every token back | Every member killed and reaped, their records in pid order |
+| `(p 'kill pid)`, `(p 'stop pid)`, `(p 'resume pid)`, `(p 'foreground pid)` | none | As `amk-jobman-kill` |
 
 An s7 actor group's goals use the module's verbs, so a group that gives up kills the goals
 it still had running. A guest may also call the job functions bare, `amk.kill(pid)` or
@@ -219,7 +219,7 @@ it still had running. A guest may also call the job functions bare, `amk.kill(pi
 | Job control with no pid | `$(amk.kill ...): no pid` |
 | An s7 handle verb it lacks | `amk-jobman: no verb spawnn` |
 | An s7 spawn keyword other than `:foreground` and `:stdout` | `amk-jobman: no option :x; options are :foreground and :stdout` |
-| A pool refusal: already open, a verb's name, too many pools | see [the pool module](pool.md#errors) |
+| A pool refusal: already open, a verb's name, too many pools | See [the pool module](pool.md#errors) |
 
 A failure from a job function is fatal at a plain expansion, and a guest catches it
 through `amk.call`.
@@ -230,10 +230,10 @@ through `amk.call`.
 
 | Demo | Shows |
 | --- | --- |
-| [`pool-basic.amk`](../demos/pool-basic.amk) | three jobs spawned through `amk.jobman.__jobs__` from lua, serialized by a pool of one |
-| [`pool-locking.amk`](../demos/pool-locking.amk) | jobs through the same handle, contending on a mutex and a horcrux |
-| [`supervise-1.amk`](../demos/supervise-1.amk) | a supervisor written by hand in js: goals spawned, awaited, stopped and resumed through the `__jobs__` jobman |
-| [`actors-2.amk`](../demos/actors-2.amk) | goals under the s7 actor backend, reaped through the module's verbs while the plex runs |
+| [`pool-basic.amk`](../demos/pool-basic.amk) | Three jobs spawned through `amk.jobman.__jobs__` from lua, serialized by a pool of one |
+| [`pool-locking.amk`](../demos/pool-locking.amk) | Jobs through the same handle, contending on a mutex and a horcrux |
+| [`supervise-1.amk`](../demos/supervise-1.amk) | A supervisor written by hand in js: goals spawned, awaited, stopped and resumed through the `__jobs__` jobman |
+| [`actors-2.amk`](../demos/actors-2.amk) | Goals under the s7 actor backend, reaped through the module's verbs while the plex runs |
 
 <a id="references"></a>
 
