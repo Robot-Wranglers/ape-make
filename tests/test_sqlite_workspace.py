@@ -197,3 +197,16 @@ def test_load_replaces_a_table_of_the_same_name(amk, tmp_path):
     "$(info rows=$(W.get SELECT k FROM t))",
   ])
   assert 'rows={"k":"new"}' in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.engines("sqlite")
+def test_the_library_adds_a_select_handle(amk, tmp_path):
+  r = _parse(amk, tmp_path, [
+    "load sqlite",
+    "$(sqlite.ns W, create)",
+    "$(W.update CREATE TABLE t(k); INSERT INTO t VALUES('a'),('b'))",
+    "$(info rows=$(W.select count(*) AS n FROM t))",
+    "$(info bound=$(sqlite.select W, k FROM t ORDER BY k))",
+  ])
+  assert 'rows={"n":2}' in r.stdout, r.stdout + r.stderr
+  assert 'bound={"k":"a"}' in r.stdout, r.stdout + r.stderr

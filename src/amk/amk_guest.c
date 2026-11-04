@@ -1,4 +1,4 @@
-/* The guest handle's make side: variable reads and writes, eval, the queue a forked guest's writes ride up, the collector, $(amk.goal), $(amk.stdin), $(amk.bash), the make functions guests define, and the deadline every guest shares.  */
+/* The guest handle's make side: variable reads and writes, eval, the queue a forked guest's writes ride up, the collector, $(amk.goal), $(amk.stdin), the make functions guests define, and the deadline every guest shares.  */
 
 #include "makeint.h"
 #include "filedef.h"
@@ -484,13 +484,18 @@ amk_stdin_drop (struct child *child)
       }
 }
 
-/* An engine flag followed by a lone dash: the program is standard input, read whole.  */
+/* An engine flag followed by a lone dash or by the name of a file: the program is standard input or that file, read whole; any other word is the program itself.  */
 void
 amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
 {
   char *buf;
   size_t len = 0, cap = 4096;
-  if (e->cli->argv || argc < 2 || strcmp (argv[1], "-") != 0)
+  struct stat st;
+  int fd = STDIN_FILENO;
+  if (e->cli->argv || argc < 2)
+    return;
+  if (strcmp (argv[1], "-") != 0
+      && (stat (argv[1], &st) != 0 || !S_ISREG (st.st_mode) || (fd = open (argv[1], O_RDONLY)) < 0))
     return;
   buf = xmalloc (cap + 1);
   while (1)
@@ -498,66 +503,17 @@ amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
       ssize_t r;
       if (len == cap)
         buf = xrealloc (buf, (cap *= 2) + 1);
-      r = read (STDIN_FILENO, buf + len, cap - len);
+      r = read (fd, buf + len, cap - len);
       if (r < 0 && errno == EINTR)
         continue;
       if (r <= 0)
         break;
       len += r;
     }
+  if (fd != STDIN_FILENO)
+    close (fd);
   buf[len] = '\0';
   argv[1] = buf;
-}
-
-/* $(amk.bash cmd): the command run by bash under -euo pipefail in one fork, never the makefile's SHELL, stdin closed, and its output kept with its lines intact, less one trailing newline; a nonzero status is fatal, 127 when bash is not found.  */
-char *
-amk_func_bash (char *o, char **argv, const char *funcname)
-{
-  char *av[] = { (char *) "bash", (char *) "-euo", (char *) "pipefail", (char *) "-c", argv[0], NULL };
-  int out[2], q = -1, st = 0, status;
-  size_t len = 0;
-  char *buf, why[256];
-  pid_t pid;
-
-  if (pipe (out) < 0)
-    OSS (fatal, NILF, _("$(%s ...): pipe: %s"), funcname, strerror (errno));
-  fflush (stdout);
-  fflush (stderr);
-  pid = fork ();
-  if (pid < 0)
-    OSS (fatal, NILF, _("$(%s ...): fork: %s"), funcname, strerror (errno));
-  if (pid == 0)
-    {
-      int nul = open ("/dev/null", O_RDONLY);
-      if (nul >= 0)
-        dup2 (nul, 0);
-      dup2 (out[1], 1);
-      close (out[0]);
-      close (out[1]);
-      signal (SIGPIPE, SIG_DFL);
-      execvp ("bash", av);
-      fprintf (stderr, "%s: bash: %s\n", funcname, strerror (errno));
-      _exit (127);
-    }
-
-  close (out[1]);
-  buf = amk_collect (&out[0], &len, &q, NULL, NULL, 0);
-  while (waitpid (pid, &st, 0) < 0 && errno == EINTR)
-    ;
-  status = WIFEXITED (st) ? WEXITSTATUS (st) : 128 + WTERMSIG (st);
-  if (status != 0)
-    {
-      snprintf (why, sizeof why, _("$(%s ...): bash exited with status %d"), funcname, status);
-      free (buf);
-      amk_fail (why);
-      return o;
-    }
-  if (len > 0 && buf[len - 1] == '\n')
-    --len;
-  if (len > 0)
-    o = variable_buffer_output (o, buf, len);
-  free (buf);
-  return o;
 }
 
 /* The functions guests defined, each with the state that answers it, so make's call lands in the namespace that made it.  */

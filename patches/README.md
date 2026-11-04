@@ -24,7 +24,7 @@ hook, or an existing hook moves. Each patch opens with a note naming every hook 
 | `amk_spawn.c` | spawned goal lists: slots, mail, the fork, process groups and the terminal, the deferred call, wait, and the sweep at exit |
 | `amk_pool.c` | pools: named semaphores generalizing the jobserver into colored tokens for control structures and bounded concurrency, each a ledger of a size over the jobserver's verbs; the `amk.pool` builtins, and the held count returned at exit |
 | `amk_serve.c` | resident dispatch: the request wire format, environment import, option negotiation, the stale watch, the serve loop, the client, and the resident run |
-| `amk_payload.c` | the payload: boot, `--ape-unpack`, `--ape-list`, the tools on `PATH`, and `--bundle` |
+| `amk_payload.c` | the payload: boot, `--ape-unpack`, `--ape-list`, the tools on `PATH`, and the payload's verbs, every flag that begins with `--bundle` |
 | `amk_goal.c` | goal references in imported bodies, their resolution after the parse, and the values spliced into a body |
 | `amk_mode.c` | the mode table, the `amk.mode` builtin and its setter, and the setting lookup modes share |
 | `amk_dataflow.c` | the `dataflow` mode: value records, failed values moved aside, kept files, early cutoff, and body freshness |

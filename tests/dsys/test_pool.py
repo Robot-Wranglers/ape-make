@@ -140,6 +140,15 @@ def test_acquire_and_release_move_held(amk, tmp_path):
   assert out == ["11121"]
 
 
+@pytest.mark.engines("jq")
+def test_a_guest_call_in_a_fork_gives_back_none_of_what_its_caller_holds(amk, tmp_path):
+  out = shown(amk, tmp_path, "\n".join([
+    "$(amk.pool one, 1)",
+    "$(info [$(amk.pool.acquire one, 0)][$(jq.argv -n -r, 1)][$(amk.pool.acquire one, 0)][$(amk.pool.held one)])",
+  ]))
+  assert out == ["1", "1", "", "1"]
+
+
 def test_an_empty_ledger_answers_nothing_without_blocking(amk, tmp_path):
   out = shown(amk, tmp_path, "\n".join([
     "$(amk.pool one, 1)",

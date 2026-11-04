@@ -3,7 +3,7 @@
 An engine and each of its aliases run a program through the builtin, as an imported
 target, as the binary's name, and as a flag, and reach the same kept state. Every builtin
 outside an engine's interface stops make naming the engine; so does an init chunk for an
-engine without the state interface. Every engine the build lists has a dialect.
+engine without the state interface. Every engine the build lists has test programs.
 """
 
 import pytest
@@ -16,12 +16,12 @@ def pytest_generate_tests(metafunc):
   parametrize(metafunc)
 
 
-def test_every_engine_has_a_dialect(engine):
-  assert engine["name"] in CLI, f"no command-line dialect for {engine['name']}"
+def test_every_engine_has_test_programs(engine):
+  assert engine["name"] in CLI, f"no command-line test programs for {engine['name']}"
   if "state" in interfaces(engine):
-    assert engine["name"] in STATE, f"no state dialect for {engine['name']}"
+    assert engine["name"] in STATE, f"no state test programs for {engine['name']}"
   if "workspace" in interfaces(engine):
-    assert engine["name"] in WORKSPACE, f"no workspace dialect for {engine['name']}"
+    assert engine["name"] in WORKSPACE, f"no workspace test programs for {engine['name']}"
 
 
 def test_the_builtin_runs_a_program(amk, tmp_path, engine, spelling):
@@ -46,6 +46,17 @@ def test_the_command_line_answers_to_every_name(amk, tmp_path, engine, spelling)
     assert "hi" in r.stdout, f"{binary} {args}: " + r.stdout + r.stderr
 
 
+def test_the_flag_runs_a_file_when_its_word_names_one(amk, tmp_path, engine, spelling):
+  d = CLI.get(engine["name"])
+  if d is None or not engine["capabilities"]["stdin_program"]:
+    pytest.skip(f"{engine['name']} has its own command line")
+  source = tmp_path / "program.txt"
+  source.write_text(d["prog"] + "\n")
+  r = sh(amk, [f"--{spelling}", str(source)], cwd=tmp_path, timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "hi" in r.stdout, r.stdout + r.stderr
+
+
 def test_an_alias_reaches_the_same_kept_state(amk, tmp_path, engine, spelling):
   e = engine["name"]
   if spelling == e or engine["interface"] is None:
@@ -53,7 +64,7 @@ def test_an_alias_reaches_the_same_kept_state(amk, tmp_path, engine, spelling):
   if engine["interface"] == "state":
     d = STATE[e]
     if d is None:
-      pytest.skip(f"{e} takes a module and a call, not program text")
+      pytest.skip(f"{e} has no state test programs; its own test file covers it")
     lines = [f"x := $({e}.exec {d['set']})", f"$(info show=$({spelling}.exec {d['show']}))"]
     want = "show=42"
   else:

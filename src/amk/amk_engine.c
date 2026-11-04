@@ -16,10 +16,10 @@
 
 /* Each engine's interfaces, then its row: the builtin name, the multi-call names, and the interfaces it has.  */
 #ifdef AMK_ENGINE_GAWK
-static const struct amk_cli_ops awk_cli = { .main = gawk_main, .dashdash = 1, .argv = 1 };
+static const struct amk_cli_ops awk_cli = { .main = gawk_main, .lead = "--", .argv = 1, .tool = 1 };
 #endif
 #ifdef AMK_ENGINE_JQ
-static const struct amk_cli_ops jq_cli = { .main = jq_main, .argv = 1 };
+static const struct amk_cli_ops jq_cli = { .main = jq_main, .argv = 1, .tool = 1 };
 static const struct amk_workspace_ops jq_workspace = {
   .kept = { .create = jq_create },
   .get = jq_get, .update = jq_update, .load = jq_load, .dump = jq_dump, .filter = jq_filter,
@@ -65,12 +65,70 @@ static const struct amk_state_ops js_state = {
   .kept = { .create = js_create }, .exec = js_exec, .import = js_import, .hook = js_hook,
 };
 #endif
+#ifdef AMK_ENGINE_TCC
+static const struct amk_cli_ops tcc_cli = { .main = tcc_run_main };
+static const struct amk_state_ops tcc_state = {
+  .kept = { .create = tcc_create }, .exec = tcc_exec, .import = tcc_import, .hook = tcc_hook,
+};
+#endif
 #ifdef AMK_ENGINE_SQLITE
-static const struct amk_cli_ops sqlite_cli = { .main = sqlite_main, .dashdash = 1, .argv = 1 };
+static const struct amk_cli_ops sqlite_cli = { .main = sqlite_main, .lead = "--", .argv = 1, .tool = 1 };
 static const struct amk_workspace_ops sqlite_workspace = {
   .kept = { .create = sqlite_create },
   .get = sqlite_get, .update = sqlite_update, .load = sqlite_load, .dump = sqlite_dump, .open = sqlite_open,
 };
+#endif
+#ifdef AMK_ENGINE_GRAPHQLITE
+/* The sqlite shell again, under a name that is no upstream tool's, so it takes no place on PATH.  */
+static const struct amk_cli_ops cypher_cli = { .main = sqlite_main, .lead = "--", .argv = 1 };
+static const struct amk_workspace_ops cypher_workspace = {
+  .kept = { .create = cypher_create },
+  .get = cypher_get, .update = cypher_update, .load = cypher_load, .dump = cypher_dump, .open = cypher_open,
+};
+#endif
+
+#ifdef AMK_ENGINE_BASH
+#ifdef __COSMOPOLITAN__
+#include <cosmo.h>
+#endif
+
+/* bash is the payload's tool, not a linked guest: its command line is that tool's, reached by exec in the caller's fork; a bash on PATH that is this binary under a link is passed over, so the name never calls itself.  */
+static int
+bash_main (int argc UNUSED, char **argv)
+{
+  const char *path, *p, *end;
+  struct stat self, st;
+  char file[PATH_MAX];
+  int own = 0;
+
+  /* The engine flag is settled before the tools reach PATH, so this run puts them there itself.  */
+  amk_payload_path ();
+  path = getenv ("PATH");
+#ifdef __COSMOPOLITAN__
+  own = stat (GetProgramExecutableName (), &self) == 0;
+#endif
+  argv[0] = (char *) "bash";
+  for (p = path != NULL ? path : ""; *p; p = *end ? end + 1 : end)
+    {
+      end = strchr (p, ':');
+      if (end == NULL)
+        end = p + strlen (p);
+      if (end == p || (size_t) (end - p) + 6 > sizeof file)
+        continue;
+      sprintf (file, "%.*s/bash", (int) (end - p), p);
+      if (stat (file, &st) < 0 || !S_ISREG (st.st_mode) || access (file, X_OK) < 0)
+        continue;
+      if (own && st.st_dev == self.st_dev && st.st_ino == self.st_ino)
+        continue;
+      execv (file, argv);
+      fprintf (stderr, "bash: %s: %s\n", file, strerror (errno));
+      return 126;
+    }
+  fprintf (stderr, "bash: no bash on PATH\n");
+  return 127;
+}
+
+static const struct amk_cli_ops bash_cli = { .main = bash_main, .lead = "-euo pipefail -c", .argv = 1, .whole = 1, .file = 1 };
 #endif
 
 #ifndef AMK_STR
@@ -116,6 +174,18 @@ const struct amk_engine amk_engines[] =
 #ifdef AMK_ENGINE_SQLITE
     { .name = "sqlite", .aliases = "sqlite3", .language = "SQL", .implementation = "SQLite",
       .version = AMK_STR (AMK_ENGINE_SQLITE), .cli = &sqlite_cli, .workspace = &sqlite_workspace, .deadline = "option" },
+#endif
+#ifdef AMK_ENGINE_GRAPHQLITE
+    { .name = "cypher", .language = "Cypher", .implementation = "GraphQLite",
+      .version = AMK_STR (AMK_ENGINE_GRAPHQLITE), .cli = &cypher_cli, .workspace = &cypher_workspace, .deadline = "option" },
+#endif
+#ifdef AMK_ENGINE_TCC
+    { .name = "tcc", .aliases = "c", .language = "C", .implementation = "TinyCC",
+      .version = AMK_STR (AMK_ENGINE_TCC), .cli = &tcc_cli, .state = &tcc_state },
+#endif
+#ifdef AMK_ENGINE_BASH
+    { .name = "bash", .aliases = "sh", .language = "Bash", .implementation = "GNU bash",
+      .version = AMK_STR (AMK_ENGINE_BASH), .cli = &bash_cli },
 #endif
     { .name = NULL }
   };
@@ -476,6 +546,7 @@ amk_engine_init (void)
   amk_pool_init ();
   amk_spawn_init ();
   amk_goal_init ();
+  amk_payload_init ();
   for (e = amk_engines; e->name; ++e)
     {
       char *chunk = amk_init_chunk (e);
@@ -512,6 +583,21 @@ int
 amk_engine_called (const struct amk_engine *e, const char *word)
 {
   return amk_engine_spelled (e, word, strlen (word));
+}
+
+/* Whether the line is a tool engine's own command line, by the name the binary runs under or by the engine's flag first; amk takes no option of its own from such a line.  */
+int
+amk_engine_tool_line (int argc, char **argv)
+{
+  const char *base = strrchr (argv[0], '/');
+  const struct amk_engine *e;
+  base = base ? base + 1 : argv[0];
+  for (e = amk_engines; e->name; ++e)
+    if (e->cli != NULL && e->cli->tool
+        && (amk_engine_called (e, base)
+            || (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && amk_engine_called (e, argv[1] + 2))))
+      return 1;
+  return 0;
 }
 
 /* The row that claims a file extension: the first in the table spelled that way, so registration order is preference order.  */
@@ -607,6 +693,7 @@ func_guest (char *o, const char *funcname, int (*guest_main) (int, char **),
       close (q[0]);
       amk_queue_fd = q[1];
       optind = 0;
+      amk_pool_forget_held ();
       amk_exit (guest_main (ac, av));
     }
 
@@ -699,6 +786,7 @@ func_engine (char *o, char **argv, const char *funcname)
   const struct amk_engine *e = amk_engine_by_name (funcname);
   char *av[64];
   char *opts = NULL;
+  char *lead = NULL;
   char *args = NULL;
   int ac = 1, status = 0;
   if (e->workspace != NULL && e->workspace->filter != NULL && strchr (funcname, '.') == NULL)
@@ -709,8 +797,11 @@ func_engine (char *o, char **argv, const char *funcname)
       opts = xstrdup (*argv++);
       ac += amk_split_argv (opts, av + ac, 30);
     }
-  if (e->cli->dashdash)
-    av[ac++] = (char *) "--";
+  if (e->cli->lead != NULL)
+    {
+      lead = xstrdup (e->cli->lead);
+      ac += amk_split_argv (lead, av + ac, 8);
+    }
   if (e->cli->cmdline)
     {
       args = xstrdup (argv[0]);
@@ -722,6 +813,7 @@ func_engine (char *o, char **argv, const char *funcname)
   o = func_guest (o, funcname, e->cli->main, ac, av, argv[1], &status);
   shell_completed (status, 0);
   free (opts);
+  free (lead);
   free (args);
   if (status != 0)
     amk_engine_failed (e, funcname, status);
@@ -747,8 +839,8 @@ amk_engine_program (const struct amk_engine *e, const char *flags, const char *p
   av[0] = (char *) e->name;
   if (flags != NULL)
     ac += amk_split_argv (xstrdup (flags), av + ac, 30);
-  if (e->cli->dashdash)
-    av[ac++] = (char *) "--";
+  if (e->cli->lead != NULL)
+    ac += amk_split_argv (xstrdup (e->cli->lead), av + ac, 8);
   if (e->cli->cmdline)
     {
       args = xstrdup (program);

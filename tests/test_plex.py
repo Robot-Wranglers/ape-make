@@ -1,4 +1,4 @@
-"""Pins `lib/plex/init.scm`, the cooperative plex for stock s7, loaded by path.
+"""Pins `lib/plex/init.scm`, the cooperative plex for s7, loaded by path or on first use of `amk-plex-run`.
 
 Pinned are fork queueing tasks in order, yield handing the turn to the next ready task,
 run answering done once every task has ended, finish ending the run early with its value,
@@ -24,6 +24,17 @@ def run(amk, tmp_path, form):
 def logged(body):
   """A form whose value is the run's answer and the log its tasks wrote, oldest first."""
   return f"(let* ((r (make-plex)) (log ()) (note (lambda (x) (set! log (cons x log))))) (let ((a {body})) (list a (reverse log))))"
+
+
+@pytest.mark.engines("s7")
+def test_amk_plex_run_loads_the_plex_on_first_use_and_hands_it_over(amk, tmp_path):
+  mk = tmp_path / "f.mk"
+  done = "(amk-plex-run (lambda (p) (p 'fork (lambda () (p 'yield)))))"
+  order = "(amk-plex-run (lambda (p) (p 'finish (p 'order))) 'lifo)"
+  mk.write_text(f"x := $(s7.exec (display (list {done} {order})))\nall:\n\t@echo '$(x)'\n")
+  r = sh(amk, ["-s", "-f", str(mk)], timeout=120)
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == "(done lifo)", r.stdout
 
 
 @pytest.mark.engines("s7")

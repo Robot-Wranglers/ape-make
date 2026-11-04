@@ -1,0 +1,42 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/graph-org.amk:
+#  an org chart declared as a document, nodes by id and edges by
+#  source and target, then asked about in Cypher.
+#
+
+load graph
+
+# The at line compiles the document to Cypher; a list of ids is an edge type.
+@graph
+define org
+  {
+    "ann": {"label": "Person", "age": 30, "REPORTS_TO": ["bo"]},
+    "bo":  {"label": "Person", "age": 41, "REPORTS_TO": ["cy"]},
+    "cy":  {"label": "Person", "age": 52},
+    "di":  {"label": "Person", "age": 28, "REPORTS_TO": ["bo"]}
+  }
+endef
+
+# After the at line the workspace is cypher's: match is a get, one row per line.
+got.chain := $(org.match (p:Person)-[:REPORTS_TO]->(m:Person) \
+  RETURN p.id AS who, m.id AS boss ORDER BY who)
+got.above := $(org.match (:Person {id: "ann"})-[:REPORTS_TO*1..3]->(x:Person) \
+  WHERE x.age > 40 RETURN x.id AS id ORDER BY x.age)
+
+# A second document merges in by id; a variable keeps its commas whole.
+more := {"nodes": {"bo": {"age": 42}, "ed": {"label": "Person", "age": 45}}, \
+  "edges": [{"source": "ed", "target": "di", "type": "REPORTS_TO"}]}
+merged := $(org.update $(graph.compile $(more)))
+got.above.ed := $(org.match (:Person {id: "ed"}) \
+  -[:REPORTS_TO*1..4]->(x:Person) \
+  RETURN x.id AS id ORDER BY x.age)
+
+# The document back, as the graph now stands.
+got.dump := $(graph.dump org)
+
+__main__:
+	echo 'who reports to whom:  $(strip $(got.chain))'
+	echo 'above ann, over 40:   $(strip $(got.above))'
+	echo 'above ed, once hired: $(strip $(got.above.ed))'
+	echo 'the document now:     $(got.dump)'

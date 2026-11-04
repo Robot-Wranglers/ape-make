@@ -1,0 +1,22 @@
+#
+# payload/lib/amk/cypher.amk:
+#  make's side of the cypher engine; every namespace gains match, create
+#  and merge handles, the get or update verb with its first clause written
+#  for it, and a select handle as a sqlite workspace has.
+#
+$(amk.require cypher)
+load sqlite
+
+# A read is a get and a write an update, the clause ahead of the arguments.
+cypher.match  = $(cypher.ns $(strip $1), get, MATCH $(cypher.rest))
+cypher.create = $(cypher.ns $(strip $1), update, CREATE $(cypher.rest))
+cypher.merge  = $(cypher.ns $(strip $1), update, MERGE $(cypher.rest))
+cypher.select = $(cypher.ns $(strip $1), get, SELECT $(cypher.rest))
+cypher.rest = $(strip $2)$(foreach i,3 4 5 6 7 8 9, \
+  $(if $(filter undefined,$(origin $i)),,$(comma)$($i)))
+$(foreach h,match create merge select,$(amk.fxn! cypher.$h))
+
+# Each namespace's handles are the helpers with that namespace bound first.
+cypher.ns.handles = $(foreach h,match create merge select, \
+  $(amk.fxn! $1.$h, cypher.$h, $1))
+$(cypher.ns.hook cypher.ns.handles)

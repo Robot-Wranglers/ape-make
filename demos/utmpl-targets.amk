@@ -42,7 +42,7 @@ render:
 	echo "$(words $(utmpl.render release.md, release.data)) words at parse time"
 
 # The listing is one json object; the template reads its engines key directly.
-listing := $(amk.bash $(MAKE) --list-engines)
+listing := $(bash $(MAKE) --list-engines)
 
 @utmpl.target
 define engines.md

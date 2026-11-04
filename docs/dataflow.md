@@ -72,8 +72,8 @@ to a special target, so a makefile without the preprocessor writes that line ins
 
 | Decorator | Special target | Meaning |
 | --- | --- | --- |
-| `@amk.file` | `.AMK_FILE: x` | the value is the file `x` writes |
-| `@amk.nocache` | `.AMK_NOCACHE: x` | the value is its output, computed once per run and never reused across runs |
+| `@amk.file` | `.AMK_FILE: x` | The value is the file `x` writes |
+| `@amk.nocache` | `.AMK_NOCACHE: x` | The value is its output, computed once per run and never reused across runs |
 
 A `.PHONY` target is no-cache by itself. A recipe target that writes `$@` and prints nothing
 fails when something reads it, with `x wrote its file but printed nothing; mark it
@@ -124,10 +124,10 @@ target some body reads, and each value `name` has files beside it in the value d
 
 | File | Holds |
 | --- | --- |
-| `name` | the value, the program's or the recipe's standard output |
-| `name.json` | the record: engine, or `recipe`, exit status, the body's checksum, and the checksum of each input |
-| `name.err` | the engine's standard error, from the last run |
-| `name.failed` | the partial output of a failed run, moved aside |
+| `name` | The value, the program's or the recipe's standard output |
+| `name.json` | The record: engine, or `recipe`, exit status, the body's checksum, and the checksum of each input |
+| `name.err` | The engine's standard error, from the last run |
+| `name.failed` | The partial output of a failed run, moved aside |
 
 The mode's behaviour, piece by piece:
 
@@ -188,7 +188,7 @@ endef
 ```
 
 The command runs under `bash -euo pipefail`, so a failing pipeline fails the target. A
-parse-time `$(amk.bash ...)` stays available, but only a command under the at line takes part
+parse-time `$(bash ...)` stays available, but only a command under the at line takes part
 in caching and dataflow.
 
 <a id="references"></a>

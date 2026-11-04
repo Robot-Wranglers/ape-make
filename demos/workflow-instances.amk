@@ -1,0 +1,48 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/workflow-instances.amk:
+#  multiple instances with design-time knowledge, control-flow pattern 13:
+#  square runs once per batch, each run an instance of the batch workflow in
+#  a job of its own, and gather waits for every instance. Inside an instance
+#  a body on the plex runs one coroutine per item.
+#
+
+load dsys/workflow
+
+__main__: ingest.__main__
+
+b1:
+	@echo 1 2 3
+b2:
+	@echo 4 5 6
+
+@workflow.dag
+define ingest
+  { "tasks": {
+      "square": { "run": "batch.__main__", "over": { "targets": ["b1", "b2"] } },
+      "gather": { "run": "gather", "needs": ["square"] } } }
+endef
+
+@workflow.dag
+define batch
+  { "tasks": { "each": { "run": "each" } } }
+endef
+
+@s7.target
+define each
+  (define batch (amk-var "batch.__main__.item"))
+  (format #t "batch (~A) runs in pid ~A~%" batch (amk-sys "pid"))
+  (amk-plex-run
+    (lambda (plex)
+      (for-each
+        (lambda (item)
+          (plex 'fork
+            (lambda ()
+              (format #t "  ~A starts~%" item)
+              (plex 'yield)
+              (format #t "  ~A squared is ~A~%" item (* item item)))))
+        (call-with-input-string (string-append "(" batch ")") read))))
+endef
+
+gather:
+	@echo "gathered after the join: $(ingest.state square.join)"

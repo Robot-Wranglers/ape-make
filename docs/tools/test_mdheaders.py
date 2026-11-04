@@ -216,3 +216,67 @@ def test_a_comment_in_fenced_code_is_not_a_heading(repo, capsys):
   (repo / "README.md").write_text(f"```make\n# Engine API\n```\n\n{OPEN}\n{CLOSE}\n")
   assert run("README.md") == 0
   assert "warning" not in capsys.readouterr().err
+
+
+SECTIONS = """<a id="title"></a>
+
+# Title
+
+<!-- header guide "Guide" | First Steps #first -->
+<!-- /header -->
+
+<a id="first"></a>
+
+### First
+
+<a id="second"></a>
+
+### Second
+
+#### Too deep
+
+<a id="deep"></a>
+
+#### Deeper
+
+### Unanchored
+
+```md
+<a id="fenced"></a>
+
+### Fenced
+```
+
+<a id="last"></a>
+
+### Last
+
+<a id="next"></a>
+
+## Next section
+
+<a id="after"></a>
+
+### After
+"""
+
+
+def test_a_run_links_every_anchored_subsection_in_page_order(repo):
+  (repo / "README.md").write_text(SECTIONS)
+  run("README.md")
+  text = (repo / "README.md").read_text()
+  assert '<!-- header guide "Guide" | First Steps #first | Second #second | Last #last -->' in text
+  assert text.count('alt="Last"') == 1 and 'alt="Deeper"' not in text and 'alt="After"' not in text
+
+
+def test_a_missing_subsection_goes_after_its_linked_neighbour_and_keeps_chosen_labels(repo):
+  (repo / "README.md").write_text(SECTIONS.replace("| First Steps #first", "| End #last | Two #second"))
+  run("README.md")
+  assert '<!-- header guide "Guide" | First #first | End #last | Two #second -->' in (repo / "README.md").read_text()
+
+
+def test_check_reports_a_missing_subsection(repo, capsys):
+  (repo / "README.md").write_text(SECTIONS)
+  assert run("--check", "README.md") == 1
+  assert "out of date: README.md" in capsys.readouterr().err
+  assert (repo / "README.md").read_text() == SECTIONS

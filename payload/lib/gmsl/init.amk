@@ -1,0 +1,7 @@
+#
+# payload/lib/gmsl/init.amk:
+#  the GNU Make Standard Library, vendored unpatched beside this file:
+#  sets, associative arrays, stacks, and integer and string ops in pure
+#  make. load gmsl reads it once.
+#
+include $(dir $(lastword $(MAKEFILE_LIST)))gmsl

@@ -1,5 +1,5 @@
-<!-- header # amb "`mod :: lisp :: amb`" |Concepts #concepts | Syntax #syntax | API #api | Search #example-search | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="amb"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.up.dark.svg"><img src="img/hdr/docs-amb.amb.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.mod.dark.svg"><img src="img/hdr/docs-amb.amb.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.title.dark.svg"><img src="img/hdr/docs-amb.amb.title.svg" alt=" :: lisp :: amb"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.6.dark.svg"><img align=right src="img/hdr/docs-amb.amb.6.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.5.dark.svg"><img align=right src="img/hdr/docs-amb.amb.5.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.4.dark.svg"><img align=right src="img/hdr/docs-amb.amb.4.svg" alt="Errors"></picture></a><a href="#example-search"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.3.dark.svg"><img align=right src="img/hdr/docs-amb.amb.3.svg" alt="Search"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.2.dark.svg"><img align=right src="img/hdr/docs-amb.amb.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.1.dark.svg"><img align=right src="img/hdr/docs-amb.amb.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.0.dark.svg"><img align=right src="img/hdr/docs-amb.amb.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<!-- header # amb "`mod :: lisp :: amb`" | Concepts #concepts | Syntax #syntax | API #api | Example (Search) #writing-a-search | Search #example-search | Errors #errors | Demos #demos | Refs #references -->
+<h1><a id="amb"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.up.dark.svg"><img src="img/hdr/docs-amb.amb.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.mod.dark.svg"><img src="img/hdr/docs-amb.amb.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.title.dark.svg"><img src="img/hdr/docs-amb.amb.title.svg" alt=" :: lisp :: amb"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.7.dark.svg"><img align=right src="img/hdr/docs-amb.amb.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.6.dark.svg"><img align=right src="img/hdr/docs-amb.amb.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.5.dark.svg"><img align=right src="img/hdr/docs-amb.amb.5.svg" alt="Errors"></picture></a><a href="#example-search"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.4.dark.svg"><img align=right src="img/hdr/docs-amb.amb.4.svg" alt="Search"></picture></a><a href="#writing-a-search"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.3.dark.svg"><img align=right src="img/hdr/docs-amb.amb.3.svg" alt="Example (Search)"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.2.dark.svg"><img align=right src="img/hdr/docs-amb.amb.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.1.dark.svg"><img align=right src="img/hdr/docs-amb.amb.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-amb.amb.0.dark.svg"><img align=right src="img/hdr/docs-amb.amb.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -34,10 +34,10 @@ choices onto is [the plex module](plex.md#choice).
 
 | Term | Meaning |
 | --- | --- |
-| Metacontinuation | the one mutable cell `reset` and `shift` are built from, holding where the nearest `reset` returns |
-| The Rest of the Body | what `shift` captures: the computation up to the nearest `reset`, as a procedure |
-| Option | one value an `amb` tries; the rest of the body runs once per option |
-| Branch | the body between its first `amb` and its end |
+| Metacontinuation | The one mutable cell `reset` and `shift` are built from, holding where the nearest `reset` returns |
+| The Rest of the Body | What `shift` captures: the computation up to the nearest `reset`, as a procedure |
+| Option | One value an `amb` tries; the rest of the body runs once per option |
+| Branch | The body between its first `amb` and its end |
 
 <a id="syntax"></a>
 
@@ -58,7 +58,7 @@ amb is s7 only, so its one table set is s7's.
 
 | Form | Answers |
 | --- | --- |
-| `(reset thunk)` | the thunk's value, or what a `shift` inside it hands back |
+| `(reset thunk)` | The thunk's value, or what a `shift` inside it hands back |
 | `(shift f)` | `f` applied to the rest of the body up to the nearest `reset`, as a procedure; `f`'s value becomes the `reset`'s |
 
 The captured rest may be called any number of times, or not at all:
@@ -91,10 +91,10 @@ endef
 
 | Form | Does |
 | --- | --- |
-| `(amb options)` | runs the rest of the body once per option, in order, and answers that option each time |
-| `(amb options exhausted)` | the same, then calls `exhausted` once every option is spent |
-| `(fail)` | abandons the current option; the rest of the body does not run |
-| `(amb-collect thunk)` | every value the thunk reaches, one per branch that neither fails nor runs out, in search order |
+| `(amb options)` | Runs the rest of the body once per option, in order, and answers that option each time |
+| `(amb options exhausted)` | The same, then calls `exhausted` once every option is spent |
+| `(fail)` | Abandons the current option; the rest of the body does not run |
+| `(amb-collect thunk)` | Every value the thunk reaches, one per branch that neither fails nor runs out, in search order |
 
 ```scheme
 (amb-collect
@@ -163,9 +163,9 @@ Each runs from the repository with `amk -f`, or any one target by name.
 
 | Demo | Targets | Shows |
 | --- | --- | --- |
-| [`stdlib-amb-control.amk`](../demos/stdlib-amb-control.amk), embedded under [delimited control](#delimited-control) | `control` | the three `reset` and `shift` forms above |
-| [`stdlib-amb-graph.amk`](../demos/stdlib-amb-graph.amk), embedded under [the search](#example-search) | `graph` | every simple path from `a` to `e` in a graph with a cycle |
-| [`stdlib-amb-yinyang.amk`](../demos/stdlib-amb-yinyang.amk), embedded below | `yinyang` | the yin-yang puzzle, `@*@**@***` and on, stopped by a counter after 20 characters |
+| [`stdlib-amb-control.amk`](../demos/stdlib-amb-control.amk), embedded under [delimited control](#delimited-control) | `control` | The three `reset` and `shift` forms above |
+| [`stdlib-amb-graph.amk`](../demos/stdlib-amb-graph.amk), embedded under [the search](#example-search) | `graph` | Every simple path from `a` to `e` in a graph with a cycle |
+| [`stdlib-amb-yinyang.amk`](../demos/stdlib-amb-yinyang.amk), embedded below | `yinyang` | The yin-yang puzzle, `@*@**@***` and on, stopped by a counter after 20 characters |
 
 The same graph walk run as tasks on a plex is [`plex-choice.amk`](../demos/plex-choice.amk),
 embedded under [plex choice](plex.md#choice).
@@ -209,6 +209,7 @@ endef
 - [The runtime](runtime.md#control-multiplexer), the control layers `amb` sits on.
 - [Nondeterministic programming](https://en.wikipedia.org/wiki/Nondeterministic_programming) and [delimited continuations](https://en.wikipedia.org/wiki/Delimited_continuation), on Wikipedia.
 - Olivier Danvy and Andrzej Filinski, "Abstracting Control", LISP and Functional Programming, 1990: the paper that introduced `shift` and `reset`.
+- Racket's [`amb` package](https://docs.racket-lang.org/amb/index.html): `amb`, `for/amb` and `in-amb`, the same operator as a library, with depth-first and fair search as parameters.
 - Racket reference, [10.4.1 Additional Control Operators](https://docs.racket-lang.org/reference/cont.html#%28part._.Additional_.Control_.Operators%29): `shift` and `reset` as a library on Racket's prompts, with the same meaning as here; the parent section covers composable continuations and prompts.
 - Oleg Kiselyov, [Continuations and Delimited Control](https://okmij.org/ftp/continuations/): tutorials and papers, beginning with [an introduction to programming with shift and reset](https://okmij.org/ftp/continuations/#tutorial), and a section on [search with delimited control](https://okmij.org/ftp/continuations/#reify-search) that is the shape of `amb-collect`.
 

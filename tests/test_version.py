@@ -14,4 +14,4 @@ def test_every_engine_names_its_version(amk, engines, tmp_path):
   got = dict(line.split("=", 1) for line in r.stdout.split())
   assert sorted(got) == sorted(engines), got
   for name, version in got.items():
-    assert re.fullmatch(r"\d[\d.-]*\d", version), f"{name}: {version!r}"
+    assert re.fullmatch(r"\d[\d.-]*\d[a-z]*", version), f"{name}: {version!r}"

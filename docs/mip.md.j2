@@ -1,13 +1,12 @@
-{% set name = "mip" %}
 {% set root = ".." %}
-<!-- header # mip "`mod :: amk.{{ name }}`" |Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
+<!-- header # mip "`mod :: amk.mip`" |Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
 <!-- /header -->
 
 <a id="overview"></a>
 The `mip.amk` module installs pinned packages for the [micropy guest](../README.md#micropy). A define under `@mip.install` names the packages as JSON; the define's name becomes the target that fetches whatever is missing, and every package lands on the guest's import path.
 
 ```Makefile
-load {{ name }}
+load mip
 
 @mip.install
 define deps
@@ -31,11 +30,11 @@ It builds on:
 
 | Term | Meaning |
 | --- | --- |
-| Manifest | the define under `@mip.install`: packages by name, each with a spec and a version |
-| Spec | what mip installs: a micropython-lib name, `github:org/repo/path`, `gitlab:org/repo/path`, or an http or https URL |
+| Manifest | The define under `@mip.install`: packages by name, each with a spec and a version |
+| Spec | What mip installs: a micropython-lib name, `github:org/repo/path`, `gitlab:org/repo/path`, or an http or https URL |
 | Cache | `mip.cache`, `~/.cache/amk/mip` by default; a package lives at `<cache>/<name>/<version>` |
-| Stamp | the `.ok` file in a package's directory, holding its digest; a package with a stamp is installed |
-| Pin | a package's `sha256`, the digest its install must match, over every file's path and bytes |
+| Stamp | The `.ok` file in a package's directory, holding its digest; a package with a stamp is installed |
+| Pin | A package's `sha256`, the digest its install must match, over every file's path and bytes |
 
 A version is fetched once and shared by every manifest that names it.
 
@@ -45,7 +44,7 @@ A version is fetched once and shared by every manifest that names it.
 
 | Form | Declares |
 | --- | --- |
-| `@mip.install` above a define | a manifest of the define's name: its packages on `MICROPYPATH`, and a phony target of the same name that installs the missing ones |
+| `@mip.install` above a define | A manifest of the define's name: its packages on `MICROPYPATH`, and a phony target of the same name that installs the missing ones |
 
 The body may be JSON5, as [io](io.md) describes for every JSON define.
 
@@ -55,10 +54,10 @@ The body may be JSON5, as [io](io.md) describes for every JSON define.
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `<manifest>` | installs every package without a stamp | a target |
-| `mip.cache` | where packages are installed, `$(HOME)/.cache/amk/mip` unless set | a variable |
-| `$(mip.path manifest)` | each package's directory, as added to `MICROPYPATH` | paths |
-| `$(mip.missing manifest)` | the packages with no stamp yet | names |
+| `<manifest>` | Installs every package without a stamp | A target |
+| `mip.cache` | Where packages are installed, `$(HOME)/.cache/amk/mip` unless set | A variable |
+| `$(mip.path manifest)` | Each package's directory, as added to `MICROPYPATH` | paths |
+| `$(mip.missing manifest)` | The packages with no stamp yet | names |
 
 Run the manifest's target before a guest imports from it, for example as a prerequisite:
 
@@ -75,7 +74,7 @@ serve: deps
 | --- | --- |
 | A manifest that breaks the schema | `deps: does not meet schema/mip.json: ...`, and nothing is fetched |
 | An install whose digest does not match its pin | `mip: microdot digests to <sha>; pin it as its sha256 in deps`, and the build stops with nothing published |
-| A package with no pin | the same line on stderr as a warning; the install completes and its digest is kept in the stamp |
+| A package with no pin | The same line on stderr as a warning; the install completes and its digest is kept in the stamp |
 
 <a id="demos"></a>
 
@@ -93,7 +92,7 @@ serve: deps
 - [Bundled libraries](../README.md#libraries), where mip sits among the payload's libraries.
 - [io](io.md), the JSON5 reading every JSON define shares.
 
-[^mip]: micropython-lib, "mip", [github.com/micropython/micropython-lib](https://github.com/micropython/micropython-lib).
+[^mip]: micropython-lib, "mip", [gh://micropython/micropython-lib](https://github.com/micropython/micropython-lib).
 
 <a id="schema"></a>
 

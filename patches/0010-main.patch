@@ -3,7 +3,7 @@ banner and usage. The socket headers the resident code needs. The globals make's
 files and amk's modules share, among them make's own bsd_signal. The star and question
 mark join the function-name characters. Usage lists amk's flags. Ahead of option decoding,
 main settles the profile flag, the multi-call names and engine flags, --ape-list,
---ape-unpack, --bundle, the payload's tools and boot, and the resident roles. The feature
+--ape-unpack, the payload's verbs that begin with --bundle, the payload's tools and boot, and the resident roles. The feature
 list, the engines and their versions, and the bindings ledgers become variables. The call
 channel opens and the engines' init chunks run before the makefiles are read. The goal
 references settle before the dependencies are snapped. A re-exec keeps the serve words. The
@@ -114,7 +114,7 @@ the profile, and answers a served request.
 
    stopchar_map[(int)' '] = MAP_BLANK;
    stopchar_map[(int)'\t'] = MAP_BLANK;
-@@ -887,6 +947,43 @@
+@@ -887,6 +947,48 @@
  #endif
  }
 
@@ -128,8 +128,13 @@ the profile, and answers a served request.
 +    N_("  --ape-list                  Print every payload member, one per line, as --ape-unpack names them.\n"),
 +    N_("  --ape-unpack NAME [DEST]    Copy payload member NAME out and print its path; also -x NAME.\n"),
 +    N_("  --force                     With --ape-unpack, overwrite a destination that exists.\n"),
-+    N_("  --bundle FILES... --out DEST\n"),
-+    N_("                              Write a copy of this program whose default entry is that makefile program.\n"),
++    N_("  --bundle-ls                 Print every payload member by its path under /zip, one per line.\n"),
++    N_("  --bundle-cp SRC... DEST     Copy into the payload or out of it; the side under /zip is the payload.\n"),
++    N_("  --bundle-rm NAMES...        Remove those payload members; a directory takes all under it.\n"),
++    N_("  --bundle FILES...           Copy in, with the first file as the makefile entry a bare run takes.\n"),
++    N_("  --bundle-main FILE FILES... Copy in, with FILE as the entry of the engine that claims its extension.\n"),
++    N_("  --bundle-strip              Remove every payload member but the program's own and the tools under bin/.\n"),
++    N_("  --out DEST, --in-place      Where a flag that changes the payload writes: a new copy, or this program itself.\n"),
 +    N_("  --preprocessor [FILE]       Print the makefile, or stdin, with its decorators rewritten, and do nothing else.\n"),
 +    N_("  --profile[=FILE]          Time every function, call macro and recursive variable by name; the table goes to FILE, or to stderr.\n"),
 +    NULL
@@ -177,11 +182,12 @@ the profile, and answers a served request.
    die (bad ? MAKE_FAILURE : MAKE_SUCCESS);
  }
 
-@@ -1194,6 +1286,138 @@
+@@ -1194,6 +1286,128 @@
    /* Useful for attaching debuggers, etc.  */
    SPIN ("main-entry");
 
-+  /* The profile flag anywhere on the line is the environment switch spelled as an option: it sets AMK_PROFILE and leaves argv, so no engine, request or option decoding sees it.  */
++  /* The profile flag anywhere on the line is the environment switch spelled as an option: it sets AMK_PROFILE and leaves argv, so no engine, request or option decoding sees it; a tool engine's own command line keeps every word.  */
++  if (!amk_engine_tool_line (argc, argv))
 +  {
 +    int i, j = 1;
 +    for (i = 1; i < argc; ++i)
@@ -255,23 +261,12 @@ the profile, and answers a served request.
 +        }
 +    }
 +
-+  /* Bundle is settled ahead of the boot too, so a bundle can be bundled again.  */
-+  if (argc >= 2 && strcmp (argv[1], "--bundle") == 0)
++  /* The payload's verbs are settled ahead of the boot too, so a bundle can be bundled again.  */
++  if (argc >= 2)
 +    {
-+      const char *out = NULL;
-+      char **files = xmalloc (argc * sizeof *files);
-+      int i, n = 0, r;
-+      for (i = 2; i < argc; ++i)
-+        if (strcmp (argv[i], "--out") == 0 && i + 1 < argc)
-+          out = argv[++i];
-+        else if (strncmp (argv[i], "--out=", 6) == 0)
-+          out = argv[i] + 6;
-+        else
-+          files[n++] = argv[i];
-+      r = amk_bundle (n, files, out);
-+      if (r == MAKE_SUCCESS)
-+        puts (out);
-+      exit (r);
++      int r = amk_payload_verb (argc, argv);
++      if (r >= 0)
++        exit (r);
 +    }
 +
 +  /* The preprocessor alone: one makefile's at lines rewritten onto stdout, nothing read or run.  */

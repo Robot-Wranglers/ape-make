@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sim.json",
+  "title": "@sim",
+  "description": "a world under @sim: a graph document, Prolog rules and a tuple space's seed and strategy, each optional; a key left out makes its workspace empty",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "graph": {
+      "description": "the graph document @graph takes: nodes by id and edges by source and target, or a bare map of nodes",
+      "type": "object"
+    },
+    "rules": {
+      "description": "Prolog clauses for the rules workspace: one text, or a list of texts",
+      "anyOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    },
+    "events": {
+      "description": "the tuple space as @tspace takes it: a seed of tuples, a strategy, and at most one backing",
+      "type": "object"
+    }
+  }
+}

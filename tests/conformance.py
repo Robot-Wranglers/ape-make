@@ -1,8 +1,8 @@
-"""The conformance suite's engines and dialects.
+"""The conformance tests' engines and their test programs.
 
-The engines come from the binary's own `--list-engines`, so a new engine joins every contract
-it claims. A dialect is the few programs a contract needs, in one engine's language; the
-contracts never name an engine.
+The engines come from the binary's own `--list-engines`, so a new engine joins every
+conformance test for the interfaces it has. Each table below holds, per engine, the test
+programs those tests run, written in that engine's language; the tests never name an engine.
 """
 
 import json
@@ -55,7 +55,7 @@ def run(amk, tmp_path, lines, recipe=(), env=None):
   return sh(amk, ["-s", "-f", str(mk), "all"], cwd=tmp_path, env=env, timeout=120)
 
 
-# A workspace dialect: seed is a text load takes; read prints before over the seed and after over write's result; broken is a text load must refuse; multi prints two lines.
+# Test programs for the workspace interface: seed is a text load takes; read prints before over the seed and after over write's result; broken is a text load must refuse; multi prints two lines.
 WORKSPACE = {
   "jq": {
     "seed": '{"n": 1}',
@@ -76,6 +76,15 @@ WORKSPACE = {
     "broken": "CREATE TABLE u(k); INSERT INTO nowhere VALUES(1);",
     "multi": "SELECT 1 AS a UNION ALL SELECT 2",
   },
+  "cypher": {
+    "seed": "SELECT cypher('CREATE (:T {n: 1})');",
+    "read": "MATCH (t:T) RETURN t.n AS n",
+    "before": '{"n":1}',
+    "write": "MATCH (t:T) SET t.n = 2",
+    "after": '{"n":2}',
+    "broken": "SELECT cypher('CREATE (:U {k: 1})'); INSERT INTO nowhere VALUES(1);",
+    "multi": "UNWIND [1, 2] AS a RETURN a",
+  },
   "trilog": {
     "seed": "n(1).",
     "read": "n(X)",
@@ -87,7 +96,7 @@ WORKSPACE = {
   },
 }
 
-# A state dialect: set then show prints 42; lib defines cf_echo, which appends a bang, and cf_v, which holds seven; read prints the make variable cf_var; hook prints hooked on goals. None for an engine whose program is a module and a call rather than text; test_wasm.py pins that one.
+# Test programs for the state interface: set then show prints 42; lib defines cf_echo, which appends a bang, and cf_v, which holds seven; read prints the make variable cf_var; hook prints hooked on goals. None for an engine these programs do not fit, covered by its own test file: wasm's program is a module and a call, and tcc's exec keeps nothing between calls while its import runs setup functions.
 STATE = {
   "lua": {
     "set": "x = 41",
@@ -124,9 +133,10 @@ STATE = {
     "read": ":- amk_var(cf_var, V), write(V).",
   },
   "wasm": None,
+  "tcc": None,
 }
 
-# A command-line dialect: a program that prints hi, with the input the builtin passes, the flags a target takes, and the arguments the engine's own command line takes to print hi; None for an engine whose program is not text.
+# Test programs for the command-line interface: a program that prints hi, with the input the builtin passes, the flags a target takes, and the arguments the engine's own command line takes to print hi; None for an engine whose program is not text.
 CLI = {
   "awk": {"prog": 'BEGIN { print "hi" }', "args": ['BEGIN { print "hi" }']},
   "jq": {"prog": '"hi"', "input": "null", "flags": "--null-input", "args": ["--null-input", '"hi"']},
@@ -135,6 +145,9 @@ CLI = {
   "micropy": {"prog": 'print("hi")', "args": ['print("hi")']},
   "js": {"prog": 'print("hi")', "args": ['print("hi")']},
   "sqlite": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
+  "cypher": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
   "trilog": {"prog": ":- write(hi).", "args": [":- write(hi)."]},
+  "tcc": {"prog": 'int main (void) { puts ("hi"); return 0; }', "args": ['int main (void) { puts ("hi"); return 0; }']},
   "wasm": None,
+  "bash": {"prog": "echo hi", "args": ["-c", "echo hi"]},
 }

@@ -225,7 +225,7 @@ def _sleeper(name):
 @ENGINES
 def test_a_charters_pool_bounds_how_many_members_run_at_once(amk, tmp_path):
   lines = PRELUDE + ["$(amk.pool two, 2)"] + _group("ops", '{ "pool": "two", "children": {} }') \
-    + _sleeper("a") + _sleeper("b") + _sleeper("c") + _sleeper("d")
+    + _sleeper("ant") + _sleeper("bee") + _sleeper("cat") + _sleeper("dog")
   r = _run(amk, tmp_path, lines)
   assert r.returncode == 0, r.stdout + r.stderr
   events = _events(r.stdout)
@@ -556,12 +556,12 @@ def test_an_ask_waits_for_the_reply_to_its_own_reply_pool(amk, tmp_path):
 @ENGINES
 def test_a_charter_ask_gives_every_member_a_reply_unless_it_opts_out(amk, tmp_path):
   lines = PRELUDE + _group("ops", '{ "mailbox": "pool", "ask": true, "children": { "a": {}, "b": { "ask": false } } }') + [
-    *_member("@ops.actor (lua)", "c", '  return "up"'),
+    *_member("@ops.actor (lua)", "watcher", '  return "up"'),
     "$(info [$(filter ops.%,$(amk.pool ))])",
   ]
   r = _run(amk, tmp_path, lines)
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "[ops.a.inbox ops.a.reply ops.b.inbox ops.c.inbox ops.c.reply]" in r.stdout, r.stdout
+  assert "[ops.a.inbox ops.a.reply ops.b.inbox ops.watcher.inbox ops.watcher.reply]" in r.stdout, r.stdout
 
 
 @ENGINES

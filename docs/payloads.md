@@ -6,17 +6,49 @@
 
 ## Overview
 
-<a id="an-ape-is-a-zip"></a>
+An amk binary is also a zip file. The files in that zip are its payload: the tools,
+libraries and prelude amk ships, plus anything you add. amk, and every tool it carries,
+sees the payload as a read-only directory at `/zip`.
 
-### An ape is a zip
+That makes amk a way to ship a program as one file, whether or not the program has
+anything to do with make.
 
-<a id="what-amk-reads-from-its-payload"></a>
+<a id="ship-a-script"></a>
 
-### What amk reads from its payload
+### Ship a script
 
-<a id="order-at-startup"></a>
+```bash
+amk --bundle-main tool.sh plugins/ --out tool
+./tool one two
+```
 
-### Order at startup
+`tool` is a single file. It runs `tool.sh` as written, under its own bash, with `jq`,
+`sqlite3`, `awk`, `sed`, `cat` and `ls` first on `PATH`, on a host that has none of them.
+
+<a id="capabilities"></a>
+
+### What a payload gives you
+
+| You want | You use | See |
+| --- | --- | --- |
+| A program that runs when the binary does | An entry, `__main__` with an engine's extension | [Boot](#boot) |
+| Tools that are always there | The bundled tools and the tool engines | [Tools](#tools) |
+| To read your files without unpacking | Paths under `/zip` | [Reading in place](#reading-the-payload-from-a-tool) |
+| Real files on the host | A copy out | [Unpack](#unpack) |
+| To add, replace or remove files | The flags that begin with `--bundle` | [Bundles](#bundles) |
+| State that travels inside the binary | A write in place | [Writing in place](#in-place) |
+
+<a id="limits"></a>
+
+### Limits
+
+- **Only amk's own tools see `/zip`.** A host program such as `/usr/bin/grep` does not.
+  `cat` and `ls` are bundled for this reason, so `cat /zip/data | grep x` works.
+- **Nothing executes from `/zip`.** Run a script member as `bash /zip/plugins/x.sh`. The
+  tools under `bin/` are unpacked to a cache for the same reason.
+- **`/zip` is read-only.** A change writes a new binary, or replaces this one for the
+  next run. A running program keeps the view it started with.
+- **A host with no loader needs a shell to start the binary**, see [running](#running-an-ape).
 
 <a id="boot"></a>
 
@@ -24,115 +56,191 @@
 
 <a id="entry-script"></a>
 
-### The entry script
+A payload member named `__main__` with an engine's extension is the entry. It takes over
+the run, and [`--bundle-main`](#bundles) writes one from a file.
+
+| Entry | Runs as |
+| --- | --- |
+| `__main__.sh`, `__main__.bash` | The payload's bash on the member's path, the caller's arguments after it |
+| `__main__.lua`, `.s7`, `.js`, `.micropy`, and each such engine's aliases | The member's text as that engine's program; arguments are not passed |
+| `__main__.mk` | The makefile a bare run reads, when no other entry takes the run; what [`--bundle`](#bundles) writes |
+
+A payload holds one entry besides `__main__.mk`. jq, sqlite and awk take no entry.
 
 <a id="arguments-and-the-binarys-path"></a>
 
-### Arguments and the binary's path
+A shell entry sees:
+
+| In the script | Holds |
+| --- | --- |
+| `$0` and `${BASH_SOURCE[0]}` | `/zip/__main__.sh` |
+| `$1`, `$2`, ... | The caller's arguments, unchanged |
+| `${COSMOPOLITAN_INIT_ZIPOS}` | The absolute path of the binary, to run it again |
 
 <a id="when-boot-is-skipped"></a>
 
-### When boot is skipped
+The entry is skipped when `AMK_BOOTED` is set, which is how a script that runs the binary
+again as make keeps the child from booting, and when the member is empty.
 
-<a id="a-host-without-bash"></a>
-
-### A host without bash
+Worked examples: [`tests/test_boot.py`](../tests/test_boot.py).
 
 <a id="unpack"></a>
 
 ## Unpack
 
-<a id="naming-a-member"></a>
+A copy out puts payload members on the host as real files, for a host tool, a container
+mount, or anything that must be executed.
 
-### Naming a member
+```bash
+./tool --bundle-cp /zip/lib/greet.mk .
+./tool --bundle-cp /zip/plugins ./plugins
+```
 
-<a id="destinations"></a>
+`--ape-unpack NAME [DEST]`, also spelled `-x NAME`, is the older form for one member. It
+prints the path and skips a copy that is already current, so a plain makefile can include
+straight from a bundle:
 
-### Destinations
+```make
+include $(shell ./tool --ape-unpack=lib/greet.mk)
+```
 
-<a id="freshness-and-force"></a>
-
-### Freshness and force
-
-<a id="unpack-from-a-makefile"></a>
-
-### Unpack from a makefile
+`--force` overwrites a destination that exists. `--ape-list` is the older listing, with
+names relative to the payload's root; [`--bundle-ls`](#bundles) prints them under `/zip`.
 
 <a id="tools"></a>
 
 ## Tools
 
-<a id="cache-and-its-key"></a>
+Every member under `bin/` is unpacked once to a cache and put first on `PATH`, so a
+recipe or a script finds it by name on any host.
 
-### The cache and its key
+| Kind | Names | What it is |
+| --- | --- | --- |
+| Bundled tools | `bash`, `sed`, `cat`, `ls`, `jb` | Released binaries, unchanged; [versions](../README.md#tools) |
+| Tool engines | `jq`, `sqlite3`, `sqlite`, `awk`, `gawk` | Links to amk itself, which has these linked in |
 
-<a id="order-on-the-path"></a>
+<a id="tool-engines"></a>
 
-### Order on the path
+A tool engine's command line is the tool's own: `--version` and `--help` are the tool's,
+and amk takes no option of its own from it. `amk --jq ARGS` is the same line without the
+link. bash is an engine too, see [the README](../README.md#engines), but it runs as the
+bundled file.
 
-<a id="recursive-make"></a>
+Each name shadows a host tool of the same name. `AMK_NO_PATH` set to any value leaves
+`PATH` alone and unpacks nothing. The cache is keyed to the binary, see
+[payload internals](dev.md#payload-internals).
 
-### Recursive make
+<a id="reading-the-payload-from-a-tool"></a>
 
-<a id="turning-it-off"></a>
+### Reading in place
 
-### Turning it off
+A bundled tool tests, reads and sources a member where it is:
 
-With `AMK_NO_PATH` set to any value, amk leaves `PATH` as it found it and unpacks nothing
-into the cache. A recipe then finds only the host's tools, and with no bash on the host
-the prelude falls back to `/bin/sh`.
-
-```bash
-AMK_NO_PATH=1 amk -f Makefile
+```make
+all:
+	[ -f /zip/__init__.mk ]
+	source /zip/bin/amk.sh
+	cat /zip/__init__.mk | grep SHELL
 ```
 
-<a id="tools-are-apes"></a>
-
-### Tools are apes
+amk does this by exporting `COSMOPOLITAN_INIT_ZIPOS` with its own path. A child program
+that carries a payload of its own then sees amk's; unset the variable for that child.
 
 <a id="bundles"></a>
 
 ## Bundles
 
-<a id="entry-and-its-members"></a>
+<a id="verbs"></a>
 
-### The entry and its members
+The flags that begin with `--bundle` treat the payload as a small filesystem. Three do
+the work and three are shorthand.
 
-<a id="how-a-bundle-runs"></a>
+| Flag | Does |
+| --- | --- |
+| `--bundle-ls` | Lists every member by its path under `/zip` |
+| `--bundle-cp SRC... DEST` | Copies in or out; the side written under `/zip` is the payload |
+| `--bundle-rm NAMES...` | Removes members; a directory takes everything under it |
+| `--bundle FILES...` | Copies in, the first file as `__main__.mk` |
+| `--bundle-main FILE FILES...` | Copies in, the first file as the [entry](#boot) for its extension |
+| `--bundle-strip` | Removes everything but the tools under `bin/` and the program's own members |
 
-### How a bundle runs
+```bash
+amk --bundle main.mk lib/ --out my.tool
+./my.tool --bundle-ls
+./my.tool --bundle-cp settings.json /zip/etc/ --out configured.tool
+./my.tool --bundle-rm /zip/lib --out smaller.tool
+```
 
-<a id="naming-rules"></a>
+A flag that changes the payload says where the result goes, and prints that path:
+`--out DEST` for a new copy, or `--in-place` for the binary itself. One of the two is
+required. Every change keeps the file tight: a member that is replaced or removed gives
+its bytes back.
 
-### Naming rules
+<a id="copy"></a>
 
-<a id="directories"></a>
+### Copy
 
-### Directories
+One source lands at the destination; several land under it by their own names.
 
-<a id="shadowing-by-the-working-directory"></a>
+| Copy | Lands at |
+| --- | --- |
+| `--bundle-cp note.txt /zip/doc/readme` | `/zip/doc/readme` |
+| `--bundle-cp note.txt /zip/doc/` | `/zip/doc/note.txt` |
+| `--bundle-cp state/ /zip/state/` | The directory's files under `/zip/state/` |
+| `--bundle-cp note.txt state /zip/kept/` | `/zip/kept/note.txt` and `/zip/kept/state/...` |
 
-### Shadowing by the working directory
+<a id="remove"></a><a id="strip"></a>
 
-<a id="bundling-a-bundle"></a>
+### Remove and strip
 
-### Bundling a bundle
+`--bundle-rm` takes a name as `--bundle-ls` prints it, or relative to the root. A name
+that matches nothing fails and nothing is written.
 
-<a id="editing-the-zip-in-place"></a>
+The program's own members cannot be removed or written: any dot name, and everything
+under `usr/`. Beyond that, amk does not check what still works. The prelude includes from
+`lib/`, so a copy without `lib/` that keeps `__init__.mk` stops on every run.
 
-### Editing the zip in place
+`--bundle-strip` is the safe preset: plain make with the engines and the tools, and no
+prelude, libraries or decorator rewrite. A makefile that sets `SHELL := bash` still gets
+the payload's bash.
+
+<a id="in-place"></a>
+
+### Writing in place
+
+`--in-place` lets a tool carry its own state from one run to the next:
+
+```bash
+"${COSMOPOLITAN_INIT_ZIPOS}" --bundle-cp state/ /zip/state/ --in-place
+```
+
+- **Safe to interrupt.** The result is written beside the binary, flushed, and renamed
+  into place, so a crash leaves the old binary or the whole new one.
+- **Safe to repeat at once.** Writers of one binary take turns, each reading what the one
+  before it wrote. The turn is a lock on the binary itself; no lock file is left.
+- **Respects permissions.** A binary or directory the user cannot write is refused, the
+  binary's mode is kept, and a binary that belongs to another user is written with a
+  warning that the result changes hands.
+
+The lock needs a local filesystem; a network share or a directory shared with a container
+may not honor it. For data that changes while the program runs, such as a database, keep
+the live file outside the binary and copy a snapshot in.
+
+Worked examples: [`tests/test_bundle.py`](../tests/test_bundle.py).
 
 <a id="payload-members-with-a-meaning"></a>
 
 ## Payload members with a meaning
 
-<a id="boot-script"></a>
-
-### The boot script
-
-<a id="entry-makefile"></a>
-
-### The entry makefile
+| Member | Meaning |
+| --- | --- |
+| `__main__.<ext>` | The [entry](#boot) |
+| `__main__.mk` | The makefile a bare run reads, as `-f /zip/__main__.mk -I /zip` |
+| `__init__.mk` | The [prelude](#prelude), read before any makefile |
+| `__init__.<engine>` | An init chunk run in that engine's main state before the parse; `AMK_<ENGINE>_INIT` overrides it |
+| `bin/` | The [tools](#tools) |
+| `lib/<name>/` | A [module](#modules) |
+| Dot names, `usr/` | The program's own, placed by the linker; protected |
 
 <a id="prelude"></a>
 
@@ -151,17 +259,9 @@ the prelude leaves `MAKEFILE_LIST` again, so the first word of that list still n
 entry makefile and a bundle or a distribution that spells it that way sees no change.
 `AMK_NO_PRELUDE` skips it.
 
-<a id="engine-init-chunks"></a>
+<a id="library-directory"></a><a id="modules"></a>
 
-### Engine init chunks
-
-<a id="library-directory"></a>
-
-### The library directory
-
-<a id="modules"></a>
-
-#### Modules
+### Modules
 
 An amk module is a directory `/zip/lib/<name>/` with one init file per guest. `amk.<name>`
 loads that guest's file by its exact path, once; no search path is consulted, so a stdlib or
@@ -174,7 +274,7 @@ with no extension reaches this directory's `init.amk` through `amk.include`.
 | lua | `/zip/lib/<name>/init.lua` | `nil` |
 | micropy | `/zip/lib/<name>/__init__.py`, as the module `amk.<name>` | `AttributeError` |
 | js | `/zip/lib/<name>/init.js` | `undefined` |
-| s7 | `/zip/lib/<name>/init.scm`, for `amk-<name>-...` | unbound variable |
+| s7 | `/zip/lib/<name>/init.scm`, for `amk-<name>-...` | Unbound variable |
 
 A name the handle lacks is looked up in this order in every guest: a module directory of
 that name, then what `amk.call` resolves it to, the name itself or the name under `amk.`,
@@ -189,65 +289,59 @@ Vendored code sits on each guest's own search path and loads with a plain `requi
 | lua | `/zip/lib/lua/` | `dkjson` |
 | micropy | `/zip/lib/micropy/` | `utemplate`, and `asyncio`, `ssl`, `requests`, `mip` from micropython's own tree |
 
-<a id="tools-directory"></a>
-
-### The tools directory
-
-<a id="interaction-with-other-features"></a>
-
-## Interaction with other features
-
-<a id="bundles-and-the-zygote"></a>
-
-### Bundles and the zygote
-
-<a id="bundles-and-standard-guests"></a>
-
-### Bundles and standard guests
-
-<a id="recursion-inside-the-binary"></a>
-
-### Recursion inside the binary
-
 <a id="running-an-ape"></a>
 
 ## Running an ape
 
-<a id="loader"></a>
+The binary starts from a shell on every system. A parent that executes it directly, such
+as Python's `subprocess` without a shell, fails with an exec format error on a host with
+no loader registered. Go through `sh -c`, or name [the loader](dev.md#ape-loader).
 
-### The loader
+amk reads some first arguments before the entry, so they never reach it: `-x`,
+`--ape-list`, `--ape-unpack`, every flag that begins with `--bundle`, `--preprocessor`,
+`--list-engines`, and every engine flag such as `--jq`. `--profile` is taken anywhere on
+the line, except on a tool engine's own.
 
-<a id="exec-bit"></a>
+<a id="a-host-without-bash"></a>
 
-### The exec bit
+A shell entry needs the payload's bash, since a host shell cannot read `/zip`. amk warns
+on stderr, in red on a terminal unless `NO_COLOR` is set, whenever that bash is not the
+one in use:
 
-<a id="subprocess-without-a-shell"></a>
-
-### Subprocess without a shell
+| Condition | What happens |
+| --- | --- |
+| Neither `HOME` nor `XDG_CACHE_HOME` is set | The tools are not unpacked; the host's are used |
+| A tool cannot be written to the cache | `PATH` is left alone; the host's tools are used |
+| `AMK_NO_PATH` is set and the payload has a shell entry | The host's bash is tried and cannot open the script |
+| No `bash` is on `PATH` | amk exits 127 |
 
 <a id="demos"></a>
 
 ## Demos
 
+| Example | Shows |
+| --- | --- |
+| [`tests/fixtures/bundle/`](../tests/fixtures/bundle) | A makefile bundle with its own `lib/`, the one `make smoke` builds |
+| [`demos/bash-1.amk`](../demos/bash-1.amk) | The bash engine: `$(bash ...)` and `@bash.target` |
+| [`tests/test_boot.py`](../tests/test_boot.py) | Script entries, `--bundle-main`, and each startup warning |
+| [`tests/test_bundle.py`](../tests/test_bundle.py) | Every `--bundle` flag, writes in place, and permissions |
+| [`tests/test_tool_names.py`](../tests/test_tool_names.py) | The tool engines by name, and a script that calls them unmodified |
+
 <a id="reference"></a>
 
 ## Reference
 
-<a id="cli"></a>
+Flags are listed in [the README](../README.md#environment-and-cli) and by `amk --help`.
 
-### Command line
-
-<a id="environment-variables"></a>
-
-### Environment variables
-
-<a id="reserved-member-names"></a>
-
-### Reserved member names
-
-<a id="related-patches-and-tests"></a>
-
-### Related patches and tests
+| Variable | Meaning |
+| --- | --- |
+| `COSMOPOLITAN_INIT_ZIPOS` | Set by amk to its own path and exported; names the binary to a script |
+| `AMK_BOOTED` | Any value skips the entry |
+| `AMK_NO_PATH` | Any value leaves `PATH` alone and unpacks no tool |
+| `AMK_NO_PRELUDE` | Any value skips `__init__.mk` |
+| `AMK_<ENGINE>_INIT` | An engine's init chunk, as text or as `@FILE` |
+| `XDG_CACHE_HOME`, `HOME` | Where the tools are unpacked: `$XDG_CACHE_HOME`, else `$HOME/.cache` |
+| `NO_COLOR` | Keeps warnings plain on a terminal |
 
 <a id="references"></a>
 

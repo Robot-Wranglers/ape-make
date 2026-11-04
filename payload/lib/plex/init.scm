@@ -1,4 +1,4 @@
-;; plex/init.scm: a cooperative plex for stock s7, multiplexing tasks onto one thread: a ready list of continuations, fork queueing a task, yield handing control to the next, and a task's end running what is left. The list is a queue, or a stack under the order lifo, where a forked group goes to the front in its own order. Many plexes may exist; each is a procedure of a verb. No amk in it.
+;; plex/init.scm: a cooperative plex for stock s7, multiplexing tasks onto one thread: a ready list of continuations, fork queueing a task, yield handing control to the next, and a task's end running what is left. The list is a queue, or a stack under the order lifo, where a forked group goes to the front in its own order. Many plexes may exist; each is a procedure of a verb. amk-plex-run is the topic's name, so a body reaches the plex with no load.
 
 ;; One plex: run seeds it with a thunk and answers once every task has ended, or what finish was handed.
 (define (make-plex . order)
@@ -36,3 +36,8 @@
         ((pending) (length ready))
         ((order) (if lifo 'lifo 'fifo))
         (else (error 'wrong-type-arg "plex: no verb ~S" verb))))))
+
+;; A fresh plex running f, which is handed the plex; answers as run does.
+(define (amk-plex-run f . order)
+  (let ((plex (apply make-plex order)))
+    (plex 'run (lambda () (f plex)))))

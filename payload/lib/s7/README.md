@@ -9,7 +9,6 @@ the payload fallback, this folder naming the engine, and imports it into s7's ma
 | --- | --- |
 | `amb.scm` | McCarthy's `amb` over delimited control after Filinski, in [the amb module](../../../docs/amb.md) |
 | `json.scm` | `json-read`, a JSON reader, [below](#json) |
-
 ## Usage
 
 A topic loads on the first unbound `amk-<name>-...` symbol, from its `init.scm`. A file

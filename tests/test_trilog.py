@@ -283,6 +283,24 @@ def test_spawn_and_job_all_gather_in_order(amk, tmp_path):
   assert r.stdout.strip() == "[success,failed]", r.stdout + r.stderr
 
 
+def test_the_event_calculus_import_puts_the_axioms_ahead_of_the_define(amk, tmp_path):
+  r = run(amk, tmp_path, "\n".join([
+    "load trilog",
+    "@trilog.import.event_calculus",
+    "define lamp",
+    "initially(off).",
+    "initiates(flip, on, T) :- holdsAt(off, T).",
+    "terminates(flip, off, T) :- holdsAt(off, T).",
+    "happens(flip, 1).",
+    "endef",
+    "probe:",
+    "\t@echo '$(strip $(lamp.get holdsAt(F, 1)))|$(strip $(lamp.get holdsAt(F, 2)))'",
+    "",
+  ]), "probe")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert r.stdout.strip() == '{"F":"off"}|{"F":"on"}', r.stdout + r.stderr
+
+
 def test_job_any_takes_the_first_and_job_stop_ends_the_rest(amk, tmp_path):
   r = run(amk, tmp_path, jobs + "\n".join([
     "@trilog.target",

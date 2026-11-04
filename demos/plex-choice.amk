@@ -8,23 +8,20 @@ __main__: branches search
 # Each option a task on a fifo plex: every branch starts before any ends.
 @s7.target
 define branches
-  (load "/zip/lib/plex/init.scm" (rootlet))
   (load "amb.scm" (rootlet))
-  (define p (make-plex))
-  (p 'run
-    (lambda ()
+  (amk-plex-run
+    (lambda (plex)
       (reset
         (lambda ()
-          (let ((name (amb-fork p '("one" "two" "three"))))
+          (let ((name (amb-fork plex '("one" "two" "three"))))
             (format #t "~A starts~%" name)
-            (p 'yield)
+            (plex 'yield)
             (format #t "~A ends~%" name))))))
 endef
 
 # The graph walk on a lifo plex finds amb's paths in amb's order.
 @s7.target
 define search
-  (load "/zip/lib/plex/init.scm" (rootlet))
   (load "amb.scm" (rootlet))
   (define edges '((a b c) (b c d) (c d) (d b e) (e)))
   (define (walk choose node goal seen)
@@ -36,6 +33,8 @@ define search
   (format #t "amb:~%")
   (reset (lambda () (walk amb 'a 'e ())))
   (format #t "amb-fork, lifo:~%")
-  (let* ((p (make-plex 'lifo)) (choose (lambda (o) (amb-fork p o))))
-    (p 'run (lambda () (reset (lambda () (walk choose 'a 'e ()))))))
+  (amk-plex-run
+    (lambda (plex)
+      (reset (lambda () (walk (lambda (o) (amb-fork plex o)) 'a 'e ()))))
+    'lifo)
 endef

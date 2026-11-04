@@ -5,11 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "sqlite3.h"
-#include "amk_guest.h"
-
-#define SQLITE_STATUS_USAGE 2
-#define SQLITE_STATUS_RUN 5
+#include "sqlite_guest.h"
 
 /* Raised by amk_sqlite_park inside a statement, read after the statement ends. */
 static int sq_parked;
@@ -25,7 +21,7 @@ sq_emit (struct amk_sink *out, const char *s, size_t n)
   out->write (out, s, n);
 }
 
-static void
+void
 sq_puts (struct amk_sink *out, const char *s)
 {
   sq_emit (out, s, strlen (s));
@@ -108,10 +104,9 @@ sq_emit_row (struct amk_sink *out, sqlite3_stmt *st)
   sq_emit (out, "}\n", 2);
 }
 
-#define SQ_MAXARGS 32
 
 /* The leading options: each --arg binds a name to a text and each --argjson to the value its JSON names, for the statements after them, and --deadline bounds the call in milliseconds; the rest of the line is the statements. */
-static const char *
+const char *
 sq_args (const char *op, const char *rest, char **names, char **values, int *json, int *nargs, long *deadline)
 {
   char word[4096], key[256];
@@ -165,7 +160,7 @@ sq_bind_json (sqlite3 *db, sqlite3_stmt *st, int idx, const char *text)
   return rc;
 }
 
-static double
+double
 sq_now_ms (void)
 {
   struct timespec t;
@@ -174,14 +169,14 @@ sq_now_ms (void)
 }
 
 /* Every thousand virtual machine steps, a nonzero answer once the deadline has passed, which ends the statement as interrupted. */
-static int
+int
 sq_deadline_check (void *at)
 {
   return sq_now_ms () >= *(double *) at;
 }
 
 /* Every statement in the text in order, each one's rows to the sink, the bound names filled where a statement names them; the first error ends the run with its message on stderr. */
-static int
+int
 sq_exec (sqlite3 *db, struct amk_sink *out, const char *op, const char *text)
 {
   char *names[SQ_MAXARGS], *values[SQ_MAXARGS];
@@ -272,16 +267,18 @@ sq_exec (sqlite3 *db, struct amk_sink *out, const char *op, const char *text)
 }
 
 /* The dump: every schema statement from sqlite_master, then one insert per row of every table with the values quoted by sqlite itself, each statement on a line of its own. */
-static int
-sq_dump (sqlite3 *db, struct amk_sink *out)
+int
+sq_dump (sqlite3 *db, struct amk_sink *out, int (*own) (const char *))
 {
   sqlite3_stmt *tables = NULL, *rows = NULL;
   int rc;
-  rc = sqlite3_prepare_v2 (db, "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY rowid", -1, &tables, NULL);
+  rc = sqlite3_prepare_v2 (db, "SELECT name, sql, tbl_name FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid", -1, &tables, NULL);
   if (rc != SQLITE_OK)
     return SQLITE_STATUS_RUN;
   while (sqlite3_step (tables) == SQLITE_ROW)
     {
+      if (own != NULL && own ((const char *) sqlite3_column_text (tables, 2)))
+        continue;
       sq_puts (out, (const char *) sqlite3_column_text (tables, 1));
       sq_puts (out, ";\n");
     }
@@ -480,28 +477,26 @@ sqlite_open (void *state, const char *path, int shared)
   return db;
 }
 
-static int sq_statements (sqlite3 *db, struct amk_sink *out, const char *op, const char *prog);
-
 /* The statements in one transaction when the store is a file, so another owner never sees half a program; begin names the lock, and an in-memory store or an open transaction runs them as they are. */
-static int
-sq_transaction (sqlite3 *db, struct amk_sink *out, const char *op, const char *prog, const char *begin)
+int
+sq_transaction (sqlite3 *db, struct amk_sink *out, const char *op, const char *prog, const char *begin, sq_runner *run)
 {
   const char *file = sqlite3_db_filename (db, "main");
   int rc;
   if (file == NULL || *file == '\0' || !sqlite3_get_autocommit (db))
-    return sq_statements (db, out, op, prog);
+    return run (db, out, op, prog);
   if (sqlite3_exec (db, begin, NULL, NULL, NULL) != SQLITE_OK)
     {
       fprintf (stderr, "sqlite.%s: %s\n", op, sqlite3_errmsg (db));
       return SQLITE_STATUS_RUN;
     }
-  rc = sq_statements (db, out, op, prog);
+  rc = run (db, out, op, prog);
   sqlite3_exec (db, rc == 0 ? "COMMIT" : "ROLLBACK", NULL, NULL, NULL);
   return rc;
 }
 
 /* Every view, trigger and table dropped, indexes with their tables, inside the caller's transaction. */
-static int
+int
 sq_drop_all (sqlite3 *db)
 {
   static const char *const kinds[] = { "view", "trigger", "table" };
@@ -534,7 +529,7 @@ sq_drop_all (sqlite3 *db)
   return rc;
 }
 
-static int
+int
 sq_statements (sqlite3 *db, struct amk_sink *out, const char *op, const char *prog)
 {
   if (prog == NULL || *prog == '\0')
@@ -549,23 +544,30 @@ sq_statements (sqlite3 *db, struct amk_sink *out, const char *op, const char *pr
 __attribute__ ((visibility ("default"))) int
 sqlite_get (void *state, struct amk_sink *out, const char *prog)
 {
-  return sq_transaction (state, out, "get", prog, "BEGIN");
+  return sq_transaction (state, out, "get", prog, "BEGIN", sq_statements);
 }
 
-/* The update member: the statements, writes included, their rows to the sink; a row changed is reported, so a wait on the namespace wakes, and the calls the update routed run after it commits. */
-__attribute__ ((visibility ("default"))) int
-sqlite_update (void *state, struct amk_sink *out, const char *prog)
+/* An update by the given runner: a row changed is reported, so a wait on the namespace wakes, and the calls the update routed run after it commits. */
+int
+sq_update (sqlite3 *db, struct amk_sink *out, const char *prog, sq_runner *run)
 {
-  sqlite3_int64 before = sqlite3_total_changes64 (state);
+  sqlite3_int64 before = sqlite3_total_changes64 (db);
   int queued = sq_nroutes;
-  int rc = sq_transaction (state, out, "update", prog, "BEGIN IMMEDIATE");
-  if (sqlite3_total_changes64 (state) != before)
+  int rc = sq_transaction (db, out, "update", prog, "BEGIN IMMEDIATE", run);
+  if (sqlite3_total_changes64 (db) != before)
     amk_ns_changed ();
   if (rc != 0)
     sq_routes_drop (queued);
-  else if (!sq_draining && sq_nroutes > 0 && sqlite3_get_autocommit (state))
-    rc = sq_routes_drain (state);
+  else if (!sq_draining && sq_nroutes > 0 && sqlite3_get_autocommit (db))
+    rc = sq_routes_drain (db);
   return rc;
+}
+
+/* The update member: the statements, writes included, their rows to the sink. */
+__attribute__ ((visibility ("default"))) int
+sqlite_update (void *state, struct amk_sink *out, const char *prog)
+{
+  return sq_update (state, out, prog, sq_statements);
 }
 
 /* The load member: the database replaced by the text's statements in one transaction, or left as it was. */
@@ -589,7 +591,7 @@ sqlite_load (void *state, const char *text)
 __attribute__ ((visibility ("default"))) int
 sqlite_dump (void *state, struct amk_sink *out)
 {
-  return sq_dump (state, out);
+  return sq_dump (state, out, NULL);
 }
 
 /* The state as one blob and back, for a layer that carries engine state whole. */

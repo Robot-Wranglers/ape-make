@@ -37,7 +37,9 @@ draws none of its own.
 The id is lowercase letters, digits, and dashes, and becomes the anchor, written into the
 heading so links survive a change of title. Every other heading needs a permalink of its
 own, an <a id> on a line before it; --check fails on one without. Each link is a
-label and a target separated by its last space, and a header may have none. Everything
+label and a target separated by its last space, and a header may have none. A run adds a
+link for each subsection, one heading level down and with an <a id>, that the header does
+not link yet, labeled with the heading's text and placed in page order; --check reports it. Everything
 between the two lines belongs to the tool and is rewritten on every run; the rest of the
 page is left byte for byte. Markers inside fenced code are ignored.
 
@@ -83,6 +85,8 @@ class Header:
   close: int = -1
   drawn: bool = False
   up: str | None = None
+  head: str = ""
+  added: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -219,7 +223,8 @@ def parse(path, root):
         raise SpecError(f"{where}: header opened while {current.id!r} from line {current.open + 1} is still open")
       hid, title, links, level, drawn = parse_spec(om["spec"], where)
       up = next((target for label, target in links if label == "^"), None)
-      current = Header(hid, title, [link for link in links if link[0] != "^"], level, open=n, drawn=drawn, up=up)
+      current = Header(hid, title, [link for link in links if link[0] != "^"], level, open=n, drawn=drawn, up=up,
+                       head=om["spec"].split("|", 1)[0].strip())
   if current is not None:
     raise SpecError(f"{name}:{current.open + 1}: header {current.id!r} is never closed")
   seen = {}
@@ -227,7 +232,57 @@ def parse(path, root):
     if h.id in seen:
       raise SpecError(f"{name}:{h.open + 1}: header {h.id!r} is already declared at line {seen[h.id]}")
     seen[h.id] = h.open + 1
+  fill(page, lines)
   return page
+
+
+def sections(page, lines):
+  """Every section in page order, as (line, level, anchor, label): each generated header, and each markdown heading
+  with an <a id> on its last non-blank line before it, outside fenced code."""
+  starts = {h.open: h for h in page.headers}
+  owned = set(page.code)
+  for h in page.headers:
+    owned.update(range(h.open + 1, h.close + 1))
+  prev = ""
+  for n, line in enumerate(lines):
+    if n in starts:
+      h = starts[n]
+      yield n, h.level, h.id, h.title
+    elif n not in owned and (m := HEADING.match(line)):
+      anchor = re.search(r'<a\s+(?:id|name)="([^"]+)"', prev)
+      yield n, len(line.lstrip()) - len(line.lstrip().lstrip("#")), anchor[1] if anchor else None, m["text"]
+    if line.strip() and n not in owned:
+      prev = line
+
+
+def fill(page, lines):
+  """Link each header to every subsection under it, one level down, that it does not link yet. A new link goes after
+  the link to the nearest subsection before it, labeled with the heading's text; a label already chosen stays."""
+  found = list(sections(page, lines))
+  for h in page.headers:
+    i = next(i for i, s in enumerate(found) if s[0] == h.open)
+    kids = []
+    for n, level, anchor, label in found[i + 1:]:
+      if level <= h.level:
+        break
+      if level == h.level + 1 and anchor:
+        kids.append((anchor, label))
+    linked = {target[1:] for _, target in h.links if target.startswith("#")}
+    for k, (anchor, label) in enumerate(kids):
+      if anchor in linked:
+        continue
+      before = [a for a, _ in kids[:k] if a in linked]
+      at = 0
+      if before:
+        at = 1 + max(j for j, (_, t) in enumerate(h.links) if t == f"#{before[-1]}")
+      h.links.insert(at, (label, f"#{anchor}"))
+      linked.add(anchor)
+      h.added.append(anchor)
+
+
+def spec_line(h):
+  links = ([("^", h.up)] if h.up else []) + h.links
+  return f"<!-- header {h.head}" + "".join(f" | {label} {target}" for label, target in links) + " -->"
 
 
 def warnings(page):
@@ -328,6 +383,9 @@ def images(page, h, index=None):
 def rewrite(page, img, index=None):
   lines = lines_of(page.text)
   for h in reversed(page.headers):
+    if h.added:
+      indent = lines[h.open][:len(lines[h.open]) - len(lines[h.open].lstrip())]
+      lines[h.open] = indent + spec_line(h) + page.newline
     lines[h.open + 1:h.close] = [line + page.newline for line in render(page, h, img, index)]
   return "".join(lines)
 

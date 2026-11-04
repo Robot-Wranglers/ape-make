@@ -1,6 +1,5 @@
-{% set name = "io" %}
 {% set root = ".." %}
-<!-- header # io "`mod :: amk.{{ name }}`" |JSON #json | Builtins #builtins | Errors #errors | Demos #demos | Refs #references -->
+<!-- header # io "`mod :: amk.io`" |JSON #json | Builtins #builtins | Errors #errors | Demos #demos | Refs #references -->
 <!-- /header -->
 
 <a id="overview"></a>
@@ -11,18 +10,18 @@ engines amk already carries.
 
 | Line | Brings | Needs |
 | --- | --- | --- |
-| `load {{ name }}/json` | [`@json5`](json.md#syntax), [`@json.schema`](json.md#syntax) and [`json.validate`](json.md#api) | jq, sqlite |
+| `load io/json` | [`@json5`](json.md#syntax), [`@json.schema`](json.md#syntax) and [`json.validate`](json.md#api) | jq, sqlite |
 
 <a id="json"></a>
 
 ## JSON
 
-`load {{ name }}/json` turns a define into checked JSON data. A define may be written as
+`load io/json` turns a define into checked JSON data. A define may be written as
 JSON5, with comments, trailing commas and unquoted keys, and checked against a schema
 that is itself a define:
 
 ```Makefile
-load {{ name }}/json
+load io/json
 
 define order.schema
   { type: "object", required: ["qty"], properties: { qty: { type: "integer", minimum: 1 } } }
@@ -48,12 +47,12 @@ endef
 
 ## Builtins
 
-JSON5 is read by a builtin every amk with sqlite has, with or without `load {{ name }}/json`:
+JSON5 is read by a builtin every amk with sqlite has, with or without `load io/json`:
 
 | Form | Answers |
 | --- | --- |
-| `$(amk.json5 text)` | the text, JSON5, as plain JSON on one line; fatal when it does not parse |
-| `$(amk.val.json5 name)` | the value of the define `name`, read the same way; the value unchanged in an amk without sqlite |
+| `$(amk.json5 text)` | The text, JSON5, as plain JSON on one line; fatal when it does not parse |
+| `$(amk.val.json5 name)` | The value of the define `name`, read the same way; the value unchanged in an amk without sqlite |
 
 The decorators that read a define as JSON, [`@actor.group`](actor.md), [`@petri`](petri.md),
 `@kahn`, `@workflow.dag`, [`@pool`](dsys.md#pool-decorator), [`@jobman`](jobman.md#syntax),
@@ -77,8 +76,8 @@ See also [json errors](json.md#errors).
 
 | Demo | Shows |
 | --- | --- |
-| [`json-schema.amk`]({{ root }}/demos/json-schema.amk) | a JSON5 schema, an order checked against it as it is read, and a bad order's errors on demand |
-| [`supervise-3.amk`]({{ root }}/demos/supervise-3.amk) | an actor charter written as JSON5, with a comment on each key |
+| [`json-schema.amk`]({{ root }}/demos/json-schema.amk) | A JSON5 schema, an order checked against it as it is read, and a bad order's errors on demand |
+| [`supervise-3.amk`]({{ root }}/demos/supervise-3.amk) | An actor charter written as JSON5, with a comment on each key |
 
 <a id="references"></a>
 

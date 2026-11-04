@@ -7,19 +7,38 @@ workflow._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 $(amk.require jq)
 load dsys/petri
 
-workflow._main := include "workflow"; compile
+workflow._main := include "workflow"; compile($$net)
 workflow.__schema__ := dsys/schema/workflow.json
 workflow.dag.__schema__ := $(workflow.__schema__)
 
 # The source, a workspace beside the net, compiled to the net's JSON.
-workflow.compile = $(jq.argv -c -L $(workflow._lib),$(workflow._main), \
-  $(jq.ns $(1).workflow, get, -c .))
+workflow.compile = $(jq.argv -c -L $(workflow._lib) --arg net $(1), \
+  $(workflow._main),$(jq.ns $(1).workflow, get, -c .))
 $(amk.fxn! workflow.compile)
 
-# @workflow.dag, its import, a .workflow file: the source kept, the net loaded.
-workflow.from = $(jq.import $(1).workflow, $(2)) \
+# Every task a target, run as its cone: a net of the task and all it needs.
+workflow._cone = $(jq.argv -c -L $(workflow._lib) --arg k $(2), \
+  include "workflow"; cone($$k),$(jq.ns $(1).workflow, get, -c .))
+workflow._tasks = $(foreach t, \
+  $(jq.ns $(1).workflow, get, -r .tasks|keys[]), \
+  $(call workflow._load,$(1).$(t).cone,$(call workflow._cone,$(1),$(t))) \
+  $(eval .PHONY: $(1).$(t))$(eval $(1).$(t): $(1).$(t).cone.__main__))
+
+# A source loaded as a net, its instances over targets valued.
+workflow._load = $(jq.import $(1).workflow, $(2)) \
   $(eval $(1).source := $(1).workflow) \
   $(call petri.load,$(1),$(workflow.compile $(1)),workflow) \
+  $(call workflow._values,$(1))
+
+# An instance over targets gets the value of the target its token names.
+workflow._over := .tasks|to_entries[]|select(.value.over.targets).key
+workflow._values = $(foreach t, \
+  $(jq.ns $(1).workflow, get, -r $(workflow._over)), \
+  $(eval $(1).$(t).value = $$(amk.goal $$($(1).$(t).token))))
+
+# @workflow.dag, its import, a .workflow file: the source kept, the net loaded.
+workflow.from = $(call workflow._load,$(1),$(2)) \
+  $(call workflow._tasks,$(1)) \
   $(amk.fxn! $(1).net, petri._q, $(1), -c .)
 workflow.at = $(call workflow.from,$(1),$(amk.val.json5 $(2)))
 workflow.dag_star = $(call workflow.at,$(call petri.named,$(1),workflow),$(1))

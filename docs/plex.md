@@ -1,5 +1,5 @@
-<!-- header # plex "`mod :: amk.plex`" |Concepts #concepts | Syntax #syntax | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="plex"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.up.dark.svg"><img src="img/hdr/docs-plex.plex.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.mod.dark.svg"><img src="img/hdr/docs-plex.plex.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.title.dark.svg"><img src="img/hdr/docs-plex.plex.title.svg" alt=" :: amk.plex"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.7.dark.svg"><img align=right src="img/hdr/docs-plex.plex.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.6.dark.svg"><img align=right src="img/hdr/docs-plex.plex.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.5.dark.svg"><img align=right src="img/hdr/docs-plex.plex.5.svg" alt="Errors"></picture></a><a href="#choice"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.4.dark.svg"><img align=right src="img/hdr/docs-plex.plex.4.svg" alt="Choice"></picture></a><a href="#plex-uses"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.3.dark.svg"><img align=right src="img/hdr/docs-plex.plex.3.svg" alt="Uses"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.2.dark.svg"><img align=right src="img/hdr/docs-plex.plex.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.1.dark.svg"><img align=right src="img/hdr/docs-plex.plex.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.0.dark.svg"><img align=right src="img/hdr/docs-plex.plex.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<!-- header # plex "`mod :: amk.plex`" | Concepts #concepts | Syntax #syntax | API #plex-runtime | API #api | Uses #plex-uses | Choice #choice | Errors #errors | Demos #demos | Refs #references -->
+<h1><a id="plex"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.up.dark.svg"><img src="img/hdr/docs-plex.plex.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.mod.dark.svg"><img src="img/hdr/docs-plex.plex.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.title.dark.svg"><img src="img/hdr/docs-plex.plex.title.svg" alt=" :: amk.plex"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.8.dark.svg"><img align=right src="img/hdr/docs-plex.plex.8.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.7.dark.svg"><img align=right src="img/hdr/docs-plex.plex.7.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.6.dark.svg"><img align=right src="img/hdr/docs-plex.plex.6.svg" alt="Errors"></picture></a><a href="#choice"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.5.dark.svg"><img align=right src="img/hdr/docs-plex.plex.5.svg" alt="Choice"></picture></a><a href="#plex-uses"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.4.dark.svg"><img align=right src="img/hdr/docs-plex.plex.4.svg" alt="Uses"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.3.dark.svg"><img align=right src="img/hdr/docs-plex.plex.3.svg" alt="API"></picture></a><a href="#plex-runtime"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.2.dark.svg"><img align=right src="img/hdr/docs-plex.plex.2.svg" alt="API"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.1.dark.svg"><img align=right src="img/hdr/docs-plex.plex.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-plex.plex.0.dark.svg"><img align=right src="img/hdr/docs-plex.plex.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -10,11 +10,15 @@ the library, one binding per engine that has first-class control. lua
 and micropy have none, since a coroutine that cannot yield to a scheduler is not a plex
 task.
 
-There is no `load` line: the plex has no make side. A js guest reaches it as `amk.plex`, a
-module the handle loads on first use, and an s7 guest loads its file by path:
+There is no `load` line: the plex has no make side. Each guest's handle loads it on first
+use, as `amk.plex` in js and as `amk-plex-run` in s7, which makes a plex, hands it to its
+procedure, and answers when every task has ended:
 
 ```scheme
-(load "/zip/lib/plex/init.scm" (rootlet))
+(amk-plex-run
+  (lambda (plex)
+    (plex 'fork (lambda () (display "a") (plex 'yield) (display "c")))
+    (display "b")))
 ```
 
 Where the plex sits among the concurrency flavors, and the layers under and over it, is in
@@ -26,11 +30,11 @@ Where the plex sits among the concurrency flavors, and the layers under and over
 
 | Term | Meaning |
 | --- | --- |
-| Task | one coroutine on the plex: a generator run as an operation in js, a thunk in s7 |
-| Yield | the point where a task hands the thread to the next ready task |
-| Ready List | the s7 plex's queue of continuations waiting for the thread; a stack under `lifo` |
-| Scope | in js, the owner of the tasks spawned in it; cancellation runs down from it and its resources are released when it ends |
-| Cooperative | a task that does not yield holds the thread, and every other task waits |
+| Task | One coroutine on the plex: a generator run as an operation in js, a thunk in s7 |
+| Yield | The point where a task hands the thread to the next ready task |
+| Ready List | The s7 plex's queue of continuations waiting for the thread; a stack under `lifo` |
+| Scope | In js, the owner of the tasks spawned in it; cancellation runs down from it and its resources are released when it ends |
+| Cooperative | A task that does not yield holds the thread, and every other task waits |
 
 <a id="syntax"></a>
 
@@ -49,7 +53,7 @@ The plex adds no decorator, callform or at line; a guest calls it as a library.
 
 | `amk.plex` is | Unit | Verbs |
 | --- | --- | --- |
-| Effection[^effection], bundled and republished whole | a generator, run as an operation | `run`, `spawn`, `scoped`, `sleep`, `until`, `race`, `all`, `resource`, `ensure`, `createChannel`, and the rest of Effection's exports |
+| Effection[^effection], bundled and republished whole | A generator, run as an operation | `run`, `spawn`, `scoped`, `sleep`, `until`, `race`, `all`, `resource`, `ensure`, `createChannel`, and the rest of Effection's exports |
 
 <a id="api-s7"></a>
 
@@ -57,7 +61,7 @@ The plex adds no decorator, callform or at line; a guest calls it as a library.
 
 | `amk.plex` is | Unit | Verbs |
 | --- | --- | --- |
-| `make-plex`, a ready list of continuations in stock s7, a queue, or a stack under `(make-plex 'lifo)` | a thunk, a continuation at its yield | a procedure of a verb: `fork`, `fork-all`, `yield`, `done`, `run`, `finish`, `pending`, `order` |
+| `(amk-plex-run f)`, a ready list of continuations, a queue, or a stack under `(amk-plex-run f 'lifo)`; `make-plex` is the plex alone | A thunk, a continuation at its yield | A procedure of a verb, handed to `f`: `fork`, `fork-all`, `yield`, `done`, `run`, `finish`, `pending`, `order` |
 
 Effection is structured concurrency and effects: a scope owns its tasks, cancellation runs
 down the tree, a resource is released when its scope ends, and the loop underneath is
@@ -75,11 +79,11 @@ A group under a charter is one use of the plex. These need no charter:
 
 | Use | js | s7 |
 | --- | --- | --- |
-| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | none, no processes |
-| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | none, no clock |
+| A process with a scoped lifetime, killed when its scope ends | `spawn` a task that `until`s `amk.exited(pid)`, `ensure` the kill | None, no processes |
+| A deadline or a race around an ask | `race([until(amk.acall(..)), sleep(ms)])` | None, no clock |
 | Several asks in flight, joined | `all` over `until(amk.acall(..))` | `fork` each, `run` |
 | Cleanup bound to a scope, a socket or a workspace owner | `resource`, `ensure` | none |
-| A stream over a workspace | `createChannel` fed by a handler, `each` | a loop that yields |
+| A stream over a workspace | `createChannel` fed by a handler, `each` | A loop that yields |
 | A hand-rolled supervisor | `demos/supervise-1.amk`, one-for-one over the tuple space | [the actor backend's own code](../payload/lib/actor/init.scm) |
 
 A js guest writes these from the primitives in the
@@ -110,23 +114,20 @@ __main__: branches search
 # Each option a task on a fifo plex: every branch starts before any ends.
 @s7.target
 define branches
-  (load "/zip/lib/plex/init.scm" (rootlet))
   (load "amb.scm" (rootlet))
-  (define p (make-plex))
-  (p 'run
-    (lambda ()
+  (amk-plex-run
+    (lambda (plex)
       (reset
         (lambda ()
-          (let ((name (amb-fork p '("one" "two" "three"))))
+          (let ((name (amb-fork plex '("one" "two" "three"))))
             (format #t "~A starts~%" name)
-            (p 'yield)
+            (plex 'yield)
             (format #t "~A ends~%" name))))))
 endef
 
 # The graph walk on a lifo plex finds amb's paths in amb's order.
 @s7.target
 define search
-  (load "/zip/lib/plex/init.scm" (rootlet))
   (load "amb.scm" (rootlet))
   (define edges '((a b c) (b c d) (c d) (d b e) (e)))
   (define (walk choose node goal seen)
@@ -138,8 +139,10 @@ define search
   (format #t "amb:~%")
   (reset (lambda () (walk amb 'a 'e ())))
   (format #t "amb-fork, lifo:~%")
-  (let* ((p (make-plex 'lifo)) (choose (lambda (o) (amb-fork p o))))
-    (p 'run (lambda () (reset (lambda () (walk choose 'a 'e ()))))))
+  (amk-plex-run
+    (lambda (plex)
+      (reset (lambda () (walk (lambda (o) (amb-fork plex o)) 'a 'e ()))))
+    'lifo)
 endef
 ```
 
@@ -180,8 +183,8 @@ has them.
 | Demo | Shows |
 | --- | --- |
 | [`plex-choice.amk`](../demos/plex-choice.amk), embedded under [choice](#choice) | `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search |
-| [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
-| [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
+| [`supervise-1.amk`](../demos/supervise-1.amk) | The plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
+| [`race-1.amk`](../demos/race-1.amk) | Fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 
 <a id="references"></a>
 

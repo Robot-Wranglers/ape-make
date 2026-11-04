@@ -140,7 +140,6 @@ void amk_fork_settle (void);
 void amk_engine_program (const struct amk_engine *e, const char *flags, const char *program);
 char *amk_func_stdin (char *o, char **argv, const char *funcname);
 char *amk_func_sys (char *o, char **argv, const char *funcname);
-char *amk_func_bash (char *o, char **argv, const char *funcname);
 char *amk_func_args (char *o, char **argv, const char *funcname);
 unsigned int amk_call_argc (void);
 void amk_args_macro (void);
@@ -213,6 +212,11 @@ void amk_ns_version_bump (const char *ns);
 void amk_held_end (void);
 int amk_fd_is_pipe (const char *spec);
 int amk_write_all (int fd, const void *buf, size_t len);
+/* Color on stderr, and a warning line under amk's name that uses it.  */
+int amk_color (void);
+const char *amk_red (void);
+const char *amk_color_off (void);
+void amk_warn (const char *fmt, ...);
 /* The same write with the broken-pipe signal ignored around it, for a reader that may have gone.  */
 int amk_write_quiet (int fd, const void *buf, size_t len);
 /* What spawn and serve share: a served child's connection, a job's mail pipe, the goal list a job runs, the pid names it rearms, and the sweep at exit.  */
@@ -298,23 +302,30 @@ char *func_refuse (char *o, char **argv, const char *funcname);
 /* The payload's entry points, which main calls before and while it reads its options.  */
 void amk_payload_boot (int argc, char **argv);
 void amk_payload_path (void);
+void amk_payload_init (void);
 void amk_payload_main (int *argcp, char ***argvp);
 int amk_ape_unpack (const char *name, const char *dest, int force);
 int amk_ape_list (void);
-int amk_bundle (int n, char **files, const char *out);
+int amk_payload_verb (int argc, char **argv);
 /* make's table of every file it knows, which the goal references resolve against.  */
 extern struct hash_table files;
 /* The engine builtin and the bindings query, registered by make's function table.  */
 char *func_engine (char *o, char **argv, const char *funcname);
 char *func_bindings (char *o, char **argv, const char *funcname);
 
-/* Every engine: main is its command line, the $(name ...) builtin, and an imported target's job; dashdash puts -- ahead of the program, cmdline splits the program into words, argv gives the $(name.argv ...) form. */
+/* Every engine: main is its command line, the $(name ...) builtin, and an imported target's job; lead is the words that go ahead of the program, cmdline splits the program into words, argv gives the $(name.argv ...) form. */
 struct amk_cli_ops
   {
     int (*main) (int, char **);
-    unsigned int dashdash:1;
+    const char *lead;
     unsigned int cmdline:1;
     unsigned int argv:1;
+    /* The builtin's argument is the program whole, commas and all, with no input after it.  */
+    unsigned int whole:1;
+    /* A file named first on the command line is the program, and the words after it are its arguments.  */
+    unsigned int file:1;
+    /* The engine's names join the payload's tools on PATH; only for a main that is the tool's whole command line.  */
+    unsigned int tool:1;
   };
 
 /* Every kept state: create gives a fresh opaque state, or null when the engine cannot make another; single marks an engine whose only state is main. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
@@ -364,6 +375,7 @@ struct amk_engine
 extern const struct amk_engine amk_engines[];
 const struct amk_engine *amk_engine_by_name (const char *name);
 int amk_engine_called (const struct amk_engine *e, const char *word);
+int amk_engine_tool_line (int argc, char **argv);
 void amk_engines_check (void);
 void amk_engines_json (FILE *out);
 void amk_engine_versions (void);
@@ -430,6 +442,12 @@ extern int sqlite_update (void *state, struct amk_sink *out, const char *prog);
 extern int sqlite_load (void *state, const char *text);
 extern int sqlite_dump (void *state, struct amk_sink *out);
 extern char *sqlite_json5 (const char *text, const char **err);
+extern void *cypher_create (void);
+extern void *cypher_open (void *state, const char *path, int shared);
+extern int cypher_get (void *state, struct amk_sink *out, const char *prog);
+extern int cypher_update (void *state, struct amk_sink *out, const char *prog);
+extern int cypher_load (void *state, const char *text);
+extern int cypher_dump (void *state, struct amk_sink *out);
 extern int lua_run_main (int argc, char **argv);
 extern void *lua_create (void);
 extern int lua_exec (void *state, struct amk_sink *out, const char *prog);
@@ -462,5 +480,10 @@ extern void *js_create (void);
 extern int js_exec (void *state, struct amk_sink *out, const char *prog);
 extern int js_import (void *state, struct amk_sink *out, const char *prog);
 extern void js_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+extern int tcc_run_main (int argc, char **argv);
+extern void *tcc_create (void);
+extern int tcc_exec (void *state, struct amk_sink *out, const char *prog);
+extern int tcc_import (void *state, struct amk_sink *out, const char *prog);
+extern void tcc_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 
 #endif

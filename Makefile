@@ -51,6 +51,14 @@ micropython.tarball := micropython-$(micropython.version).tar.xz
 micropython.url     := https://github.com/micropython/micropython/releases/download/v$(micropython.version)/$(micropython.tarball)
 micropython.sha256  := d925a7c664e79a2bdf3dfcb285ba5e2237041cc35a0bd4ee573b6c5711efeca0
 
+# TinyCC's last release predates its arm64 backend, so its version is the mob commit it pins, served as a repo.or.cz snapshot.
+tcc.commit  := 2d3eea205cb6c0f796d01d7d0858eb6c6c1d993f
+tcc.short   := $(shell printf %.7s $(tcc.commit))
+tcc.version := 0.9.28rc
+tcc.tarball := tinycc-$(tcc.short).tar.gz
+tcc.url     := https://repo.or.cz/tinycc.git/snapshot/$(tcc.commit).tar.gz
+tcc.sha256  := bd74436132edb89d7e45cd29b34f3e14b251a64016ba8f10bd43cf560976afe5
+
 wasm3.version := 0.9.0
 wasm3.tarball := wasm3-$(wasm3.version).tar.gz
 wasm3.url     := https://github.com/wasm3/wasm3/archive/refs/tags/v$(wasm3.version).tar.gz
@@ -60,6 +68,11 @@ quickjs.version := 2026-06-04
 quickjs.tarball := quickjs-$(quickjs.version).tar.xz
 quickjs.url     := https://bellard.org/quickjs/$(quickjs.tarball)
 quickjs.sha256  := b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a
+
+graphqlite.version := 0.12.0
+graphqlite.tarball := graphqlite-$(graphqlite.version).tar.gz
+graphqlite.url     := https://github.com/colliery-io/graphqlite/archive/refs/tags/v$(graphqlite.version).tar.gz
+graphqlite.sha256  := 694da13c31f3404a6dff81fda6623613ed0e96bb1cb2473e430cfc71362cd819
 
 # sqlite is the amalgamation, one C file; its guest is a workspace row whose state is an in-memory database.
 sqlite.version := 3.53.4
@@ -76,15 +89,24 @@ cosmocc.sha256  := 85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3
 
 # Tools are released cosmos binaries, zipped into the payload unchanged; patch 0012 puts them first on PATH.
 cosmos.version := 4.0.2
-tools.all      := sed bash jb
-tools.optout   := jb
+tools.all      := sed bash jb cat ls
+tools.optout   := jb cat ls
 sed.file       := sed-$(cosmos.version).ape
 sed.url        := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/sed
 sed.sha256     := 343f00b93739d4ff145c44e28a07889591425cb766bcf7d9e4534708d6fc6cd8
+# The two a script reaches for first on a payload file: built with cosmo, so they see /zip where the host's do not.
+cat.file       := cat-$(cosmos.version).ape
+cat.url        := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/cat
+cat.sha256     := d91c6d0fdd049953a866f3a6f9ae371ca3da5003b1882c3d9fb95f606bbf71d3
+ls.file        := ls-$(cosmos.version).ape
+ls.url         := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/ls
+ls.sha256      := 91aed87ef3763e23fc625aeb91042849bb608df20f0b9290dc262e06b1762a42
 # The shell every makefile under amk names as bash, and the one core forks by default.
 bash.file      := bash-$(cosmos.version).ape
 bash.url       := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/bash
 bash.sha256    := 5de7cab218c12583413c541363848bc278e8f48dba07d96b9f5790ef40b72e3e
+# What that release reports, for the engine row bash takes without being linked in.
+bash.version   := 5.2.0
 # json.bash is one bash script that picks object or array output from the name it runs as, so it lands under each of its names.
 jb.version     := 0.3.0
 jb.file        := json.bash-$(jb.version)
@@ -99,6 +121,7 @@ gmsl.tarball := gmsl-$(gmsl.version).tar.gz
 gmsl.url     := https://github.com/jgrahamc/gmsl/archive/refs/tags/v$(gmsl.version).tar.gz
 gmsl.sha256  := 8f1d7a6a4bb76f4e934b2a1376a9ab0da0d84971e19edf0005689d67feb98a60
 gmsl.files   := gmsl __gmsl
+gmsl.dir     := gmsl/
 
 # amk's own payload members: the prelude patch 0034 reads before every makefile.
 payload.files := payload/__init__.mk $(addprefix payload/lang/amk/awklib/,globals.awk functions.awk joinbody.awk callforms.awk) $(addprefix payload/lang/amk/comp/,definedecorators.awk targetdecorators.awk)
@@ -106,8 +129,8 @@ payload.files := payload/__init__.mk $(addprefix payload/lang/amk/awklib/,global
 payload.mip = $(if $(filter-out $(engines),micropython jq),,payload/lib/amk/mip.amk payload/lib/amk/schema/mip.json)
 # The utmpl library needs the micropython engine and the utemplate library.
 payload.utmpl = $(if $(and $(filter micropython,$(engines)),$(filter utemplate,$(libs))),payload/lib/amk/utmpl.amk)
-# The bash library runs its commands from the lua engine, so it ships only in a build that has it.
-payload.bash = $(if $(filter lua,$(engines)),payload/lib/amk/bash.amk)
+# The bash library names the bash engine, so it ships with the tool.
+payload.bash = $(if $(filter bash,$(tools)),payload/lib/amk/bash.amk)
 # A topic of amk's own ships its whole folder, one subfolder deep, once the topic can run; a binding whose engine is absent is never loaded.
 payload.topic = $(filter-out $(patsubst %/,%,$(wildcard payload/lib/$(1)/*/)),$(wildcard payload/lib/$(1)/* payload/lib/$(1)/*/*))
 # The tuple space needs the sqlite engine.
@@ -127,8 +150,15 @@ payload.plex = $(if $(or $(filter s7,$(engines)),$(payload.effection)),$(call pa
 # The engine's own folder is stock s7 with no amk in it: amb over delimited control after Filinski, and a JSON reader.
 payload.amb = $(if $(filter s7,$(engines)),$(call payload.topic,s7))
 # m5, the templating substrate, needs no engine, so every build ships it.
-payload.trilog = $(if $(filter trilog,$(engines)),$(addprefix payload/lib/amk/,trilog.amk prolog.amk))
+payload.trilog = $(if $(filter trilog,$(engines)),$(addprefix payload/lib/amk/,trilog.amk prolog.amk) $(call payload.topic,trilog))
+# The sqlite and cypher libraries add handles to their workspaces, so each ships with its engine.
+payload.sqlite = $(if $(filter sqlite,$(engines)),payload/lib/amk/sqlite.amk)
+payload.cypher = $(if $(filter graphqlite,$(engines)),payload/lib/amk/cypher.amk)
+# The graph library compiles a json document to Cypher, so it needs the cypher and jq engines.
+payload.graph = $(if $(filter-out $(engines),graphqlite jq),,$(call payload.topic,graph))
 
+# The gmsl topic is the loader beside the vendored library, so it ships only with that library.
+payload.gmsl = $(if $(filter gmsl,$(libs)),payload/lib/gmsl/init.amk)
 payload.m5 = payload/lib/amk/m5.mk
 # flux's safe core reads only make and m5, so every build ships it too.
 payload.flux = payload/lib/amk/flux.mk
@@ -179,7 +209,7 @@ effection.dir     := js/effection/
 libs.all     := gmsl dkjson lxsc utemplate effection
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
-engines.all   := gawk jq lua s7 trilog micropython wasm3 quickjs sqlite
+engines.all   := gawk jq lua s7 trilog micropython wasm3 quickjs sqlite graphqlite tcc
 engines.optin :=
 with          ?=
 without       ?=
@@ -193,6 +223,11 @@ engines         := $(filter-out $(without),$(filter $(engines.default) $(with),$
 ifeq ($(engines),)
   $(error without leaves no engine -- amk is make with guests linked in, and without is not the way to build stock make)
 endif
+ifeq ($(filter graphqlite,$(engines))$(filter sqlite,$(engines)),graphqlite)
+  $(error graphqlite is a graph layer over sqlite -- leave both out, or neither)
+endif
+# The link inputs: every engine but graphqlite, which is inside sqlite's.
+engines.linked := $(filter-out graphqlite,$(engines))
 
 # An engine left out is absent from the builtins and from the feature list, not a stub that fails late.
 gawk.define := AMK_ENGINE_GAWK
@@ -204,6 +239,8 @@ micropython.define := AMK_ENGINE_MICROPY
 wasm3.define := AMK_ENGINE_WASM3
 quickjs.define := AMK_ENGINE_QUICKJS
 sqlite.define := AMK_ENGINE_SQLITE
+graphqlite.define := AMK_ENGINE_GRAPHQLITE
+tcc.define := AMK_ENGINE_TCC
 gawk.feature := awk
 jq.feature   := jq
 lua.feature  := lua
@@ -213,9 +250,13 @@ micropython.feature := micropy
 wasm3.feature := wasm
 quickjs.feature := js
 sqlite.feature := sqlite
-engines.defs     = $(foreach e,$(engines),-D$($(e).define)=$($(e).version))
+graphqlite.feature := cypher
+tcc.feature := tcc
+# bash is a tool with a row: no link input, the last engine listed.
+tools.engines    = $(filter bash,$(tools))
+engines.defs     = $(foreach e,$(engines),-D$($(e).define)=$($(e).version)) $(if $(tools.engines),-DAMK_ENGINE_BASH=$(bash.version))
 version.defs     = -DAMK_VERSION=$(amk.version) $(if $(flavor),-DAMK_FLAVOR=$(flavor))
-engines.features = $(foreach e,$(engines),$($(e).feature))
+engines.features = $(strip $(foreach e,$(engines),$($(e).feature)) $(tools.engines))
 # The names the given binary answers to, every engine's own and its aliases, as its engine listing reports them.
 engines.names    = $(1) --list-engines | awk -F'"' '/"(name|aliases)":/ { for (i = 4; i < NF; i += 2) print $$i }'
 
@@ -253,6 +294,8 @@ micropython.src := src/micropython-$(micropython.version)
 wasm3.src := src/wasm3-$(wasm3.version)
 quickjs.src := src/quickjs-$(quickjs.version)
 sqlite.src := src/sqlite-amalgamation-$(sqlite.release)
+graphqlite.src := src/graphqlite-$(graphqlite.version)
+tcc.src := src/tinycc-$(tcc.short)
 gmsl.src  := src/gmsl-$(gmsl.version)
 dkjson.src := src/dkjson-$(dkjson.version)
 lxsc.src := src/lxsc-$(lxsc.version)
@@ -293,7 +336,11 @@ wasm3.cflags   := -fno-strict-aliasing -fomit-frame-pointer -fno-stack-check -fn
                   -Dd_m3PreferStaticAlloc -Dd_m3HasTypedRefs=1 -Dd_m3HasWASI
 # quickjs ships a Makefile that only builds its cli, so its rule compiles the engine and its std library by hand, less the programs with a main.
 quickjs.objdirs := .
-sqlite.objdirs := .
+sqlite.objdirs := . $(if $(filter graphqlite,$(engines)),../graphqlite-ape)
+# TinyCC builds as libtcc's one translation unit against the guest's own config.h, its predefined macros generated as strings by its c2str tool on the host.
+tcc.objdirs := .
+tcc.patches := $(abspath $(wildcard guest/patches/tinycc/*.patch))
+tcc.cflags  := -D_COSMO_SOURCE -DONE_SOURCE=1
 quickjs.cflags  := -D_GNU_SOURCE -DCONFIG_VERSION=\"$(quickjs.version)\" -fwrapv
 quickjs.exclude := qjs.c qjsc.c run-test262.c unicode_gen.c
 # cosmocc refuses an argument with a space, and jq passes its package string on the command line.
@@ -308,6 +355,7 @@ micropython.objcheck := py/*.o
 wasm3.objcheck := *.o
 quickjs.objcheck := *.o
 sqlite.objcheck := *.o
+tcc.objcheck := *.o
 # Per-guest hooks on the partial link and the guest compile: extra ld flags, compile flags in place of the shared ones, objcopy renames, and objects to leave out as alternatives appended to the conftest filter.
 gawk.ldflags   :=
 jq.ldflags     :=
@@ -318,6 +366,7 @@ micropython.ldflags :=
 wasm3.ldflags  :=
 quickjs.ldflags :=
 sqlite.ldflags :=
+tcc.ldflags :=
 gawk.guestflags :=
 jq.guestflags   :=
 lua.guestflags  :=
@@ -327,6 +376,7 @@ micropython.guestflags :=
 wasm3.guestflags :=
 quickjs.guestflags :=
 sqlite.guestflags :=
+tcc.guestflags :=
 gawk.objrename :=
 jq.objrename   :=
 lua.objrename  :=
@@ -336,6 +386,7 @@ micropython.objrename :=
 wasm3.objrename :=
 quickjs.objrename :=
 sqlite.objrename :=
+tcc.objrename :=
 gawk.objskip   :=
 jq.objskip     :=
 lua.objskip    :=
@@ -345,6 +396,7 @@ micropython.objskip :=
 wasm3.objskip  :=
 quickjs.objskip :=
 sqlite.objskip :=
+tcc.objskip :=
 # A file of amk's own compiled beside a configured guest's objects, so the partial link takes it; the compiler is the argument.
 gawk.extra  =
 jq.extra    = $(1) $(call guest.cflags,jq) -I$(HERE)$(jq.src)/src -I$(HERE)guest -c $(HERE)guest/jq_main.c -o src/jq_main.o
@@ -355,6 +407,7 @@ micropython.extra =
 wasm3.extra =
 quickjs.extra =
 sqlite.extra =
+tcc.extra =
 
 # out/bin holds the artifact beside its argv[0] aliases; everything rebuildable stays under build/.
 guests.ape    := build/guests/ape
@@ -433,6 +486,8 @@ $(micropython.tarball): url := $(micropython.url)
 $(wasm3.tarball): url := $(wasm3.url)
 $(quickjs.tarball): url := $(quickjs.url)
 $(sqlite.tarball): url := $(sqlite.url)
+$(graphqlite.tarball): url := $(graphqlite.url)
+$(tcc.tarball): url := $(tcc.url)
 $(sed.file): url := $(sed.url)
 $(bash.file): url := $(bash.url)
 $(jb.file): url := $(jb.url)
@@ -527,6 +582,15 @@ $(wasm3.src): $(wasm3.tarball)
 $(sqlite.src): $(sqlite.tarball)
 	$(call log, patch, unpacking $(sqlite.tarball) into $@ unpatched)
 	mkdir -p src && unzip -q -o $(sqlite.tarball) -d src && touch $@
+# The release carries bindings, docs and a sample database beside the engine; the guest needs its sources and its license.
+$(graphqlite.src): $(graphqlite.tarball)
+	$(call log, patch, unpacking $(graphqlite.tarball) into $@ unpatched)
+	mkdir -p src && tar xzf $(graphqlite.tarball) -C src $(addprefix graphqlite-$(graphqlite.version)/,src LICENSE) && touch $@
+$(tcc.src): $(tcc.tarball) $(tcc.patches)
+	$(call log, patch, unpacking $(tcc.tarball) into $@)
+	rm -rf $@ && mkdir -p $@ && tar xzf $(tcc.tarball) -C $@ --strip-components=1
+	$(call apply.series,$@,$(tcc.patches),tinycc $(tcc.short))
+	touch $@
 $(quickjs.src): $(quickjs.tarball)
 	$(call log, patch, unpacking $(quickjs.tarball) into $@ unpatched)
 	mkdir -p src && tar xJf $(quickjs.tarball) -C src && touch $@
@@ -548,7 +612,7 @@ $(effection.src): $(effection.tarball)
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-guests: $(foreach e,$(engines),$(guests.ape)/$(e).o)
+guests: $(foreach e,$(engines.linked),$(guests.ape)/$(e).o)
 	@# Each guest as one fat relocatable with one global symbol, an input to the ape link.
 
 # Lua's library files, our entry point, and nothing that carries a main of its own.
@@ -655,18 +719,55 @@ build/quickjs-ape/.built: $(quickjs.src) guest/js_main.c guest/amk_guest.h $(cos
 
 # The amalgamation, the guest file, and sqlite's own shell, size-optimized with the extensions and the shared cache left out; the shell's main is renamed so the guest file can wrap it.
 sqlite.cflags := -Os -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0
+# GraphQLite and the cypher guest compile in their own directory, then join sqlite's partial link, since both call sqlite's api, which the link keeps private; sqlite knows nothing of them. The Cypher parser is bison 3 and flex output, generated from the release's grammar in the Dockerfile's parser stage, so the host build needs neither tool.
+graphqlite.parser  := build/graphqlite-parser
+graphqlite.grammar := $(graphqlite.src)/src/backend/parser
+graphqlite.cflags := -DSQLITE_CORE -Wno-sign-compare -Wno-unused-but-set-variable -I$(HERE)$(graphqlite.src)/src/include -I$(HERE)$(graphqlite.parser)
+graphqlite.sources = $$(find $(HERE)$(graphqlite.src)/src $(HERE)$(graphqlite.parser) -name '*.c' ! -name main.c)
+graphqlite.compile = for c in $(graphqlite.sources); do \
+                   $(1) $(call guest.cflags,sqlite) $(sqlite.cflags) $(graphqlite.cflags) -I$(HERE)$(sqlite.src) -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
+                 done && \
+                 $(1) $(call guest.cflags,sqlite) $(sqlite.cflags) -I$(HERE)$(sqlite.src) -I$(HERE)guest -c $(HERE)guest/cypher_main.c -o cypher_main.o
+build/graphqlite-ape/.built: $(graphqlite.src) $(graphqlite.parser)/.built guest/cypher_main.c guest/sqlite_guest.h guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling graphqlite and the cypher guest for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) sh -c '$(call graphqlite.compile,cosmocc)' >build.log 2>&1 \
+	  || $(call die, guest, graphqlite did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+$(graphqlite.parser)/.built: $(graphqlite.src) Dockerfile
+	$(call log, guest, generating GraphQLite's parser with bison and flex in a container)
+	mkdir -p $(@D)
+	DOCKER_BUILDKIT=1 docker build -q -f Dockerfile --target parser -t $(docker.image):parser $(@D) >/dev/null
+	docker run --rm --user "$$(id -u):$$(id -g)" -v "$(HERE):$(HERE)" -w "$(HERE)" $(docker.image):parser sh -c \
+	  'bison -d -o $(graphqlite.parser)/cypher_gram.tab.c $(graphqlite.grammar)/cypher_gram.y \
+	   && flex -o $(graphqlite.parser)/cypher_scanner.c --header=$(graphqlite.parser)/cypher_flex.h $(graphqlite.grammar)/cypher_scanner.l'
+	touch $@
 sqlite.compile = for c in $(HERE)$(sqlite.src)/sqlite3.c $(HERE)guest/sqlite_main.c; do \
                    $(1) $(call guest.cflags,sqlite) $(sqlite.cflags) -I$(HERE)$(sqlite.src) -I$(HERE)guest -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
                  done && \
                  $(1) $(call guest.cflags,sqlite_shell) $(sqlite.cflags) -I$(HERE)$(sqlite.src) -c $(HERE)$(sqlite.src)/shell.c -o shell.o
-build/sqlite-ape/.built: $(sqlite.src) guest/sqlite_main.c guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
+build/sqlite-ape/.built: $(sqlite.src) guest/sqlite_main.c guest/sqlite_guest.h guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
 	$(call log, guest, compiling sqlite for cosmocc -- log at $(@D)/build.log)
 	rm -rf $(@D) && mkdir -p $(@D)
 	cd $(@D) && env $(cosmocc.env) sh -c '$(call sqlite.compile,cosmocc)' >build.log 2>&1 \
 	  || $(call die, guest, sqlite did not compile -- see the tail of $(@D)/build.log)
 	touch $@
 
+# libtcc and our entry point, after the host builds c2str and turns tinycc's predefined macros into the header libtcc includes.
+tcc.compile = cc -DC2STR $(HERE)$(tcc.src)/conftest.c -o c2str && ./c2str $(HERE)$(tcc.src)/include/tccdefs.h tccdefs_.h && \
+              for c in $(HERE)$(tcc.src)/libtcc.c $(HERE)guest/tcc_main.c; do \
+                $(1) $(call guest.cflags,tcc) $(tcc.cflags) -I. -I$(HERE)guest/tcc -I$(HERE)$(tcc.src) -I$(HERE)guest \
+                  -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \
+              done
+build/tcc-ape/.built: $(tcc.src) guest/tcc_main.c guest/tcc/config.h guest/amk_guest.h $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling tinycc for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) sh -c '$(call tcc.compile,cosmocc)' >build.log 2>&1 \
+	  || $(call die, guest, tinycc did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+
 # The cosmo ld -r keeps hidden symbols global, so objcopy localizes them, once per architecture.
+$(guests.ape)/sqlite.o: $(if $(filter graphqlite,$(engines)),build/graphqlite-ape/.built)
 $(guests.ape)/%.o: build/%-ape/.built
 	$(call log, link, partial-linking $* into link input $@ for x86_64 and aarch64)
 	mkdir -p $(@D)/.aarch64
@@ -692,13 +793,13 @@ FORCE:
 build: $(artifact.ape)
 	@# The fat ape, make with the selected guests, built with cosmocc out of tree, then the payload zipped over it.
 compiled.ape := build/ape$(suffix)/make
-$(compiled.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) $(foreach e,$(engines),$(guests.ape)/$(e).o)
+$(compiled.ape): $(make.src) $(cosmocc.dir)/bin/cosmocc build/.engines$(suffix) $(foreach e,$(engines.linked),$(guests.ape)/$(e).o)
 	$(call log, build, make $(make.version) with $(engines) for cosmocc -- this is the slow one)
 	rm -rf build/ape$(suffix) && mkdir -p build/ape$(suffix)
 	cd build/ape$(suffix) \
 	  && export MAKEFLAGS=-s \
 	  && env $(cosmocc.env) $(HERE)$(make.src)/configure --disable-dependency-tracking --disable-load CPPFLAGS="$(engines.defs) $(version.defs)" \
-	  && env $(cosmocc.env) make -j$(jobs) LIBS="$(foreach e,$(engines),$(HERE)$(guests.ape)/$(e).o) -lm"
+	  && env $(cosmocc.env) make -j$(jobs) LIBS="$(foreach e,$(engines.linked),$(HERE)$(guests.ape)/$(e).o) -lm"
 
 repack:
 	@# The artifact from the engine already compiled: the payload staged and zipped over it, seconds; a change to the prelude, a library, a tool or amk.sh needs no compile.
@@ -728,7 +829,7 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 
 # The gmsl suite against the payload copy, from a directory that holds the suite but not the library, both ways upstream runs it; gmsl reads unset arguments by design, so the prelude's undefined-variable warnings are shown only when the suite fails.
 gmsl.tests = cd build/gmsl && for mode in EXPORT_ALL= EXPORT_ALL=1; do \
-	  out=$$(sh -c "$(abspath $(artifact.ape)) -I /zip/lib -f gmsl-tests $$mode" 2>&1); \
+	  out=$$(sh -c "$(abspath $(artifact.ape)) -I /zip/lib/gmsl -f gmsl-tests $$mode" 2>&1); \
 	  echo "gmsl-tests $$mode: $$(echo "$$out" | tail -1)"; \
 	  case "$$out" in *'; 0 tests failed'*) ;; *) echo "$$out" >&2; exit 1;; esac; \
 	done
@@ -789,7 +890,9 @@ smoke: $(artifact.ape) smoke.demos
 demos.wasm := $(wildcard demos/wasm-*.amk)
 # The trilog demos need trilog, so a build without it leaves them out.
 demos.trilog := $(wildcard demos/trilog-*.amk)
-demos.skip := $(if $(filter wasm3,$(engines)),,$(demos.wasm)) $(if $(filter trilog,$(engines)),,$(demos.trilog))
+# The tcc demos need tcc, so a build without it leaves them out.
+demos.tcc := $(wildcard demos/tcc-*.amk)
+demos.skip := $(if $(filter wasm3,$(engines)),,$(demos.wasm)) $(if $(filter trilog,$(engines)),,$(demos.trilog)) $(if $(filter tcc,$(engines)),,$(demos.tcc))
 # Smoke opts demos in by name: the wasm ones, whose toolchain images are heavy downloads.
 demos.smoke := $(demos.wasm)
 demos := $(filter-out $(demos.skip),$(demos.smoke))

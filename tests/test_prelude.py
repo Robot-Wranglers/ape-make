@@ -299,21 +299,17 @@ def test_amklang_runs_a_program_in_a_fork_of_the_default_workspace(amk, tmp_path
   assert "$(amklang.argv ...): the program failed" in r.stderr, r.stderr
 
 
-@pytest.mark.engines("jq", "lua")
-def test_the_bash_library_registers_on_load(amk, tmp_path):
+def test_the_bash_library_names_the_engines_row(amk, tmp_path):
   r = stacked(amk, tmp_path, [
     "load bash",
-    "$(info [$(amk.engines)] ext=$(amk.engine.ext.bash) guest=$(amk.engine.bash.guest)"
-    " impl=$(amk.engine.bash.implementation) version=$(bash.__version__)/$(lua.__version__) [$(.LOADED)])",
+    "$(info [$(amk.engines)] row=$(filter bash,$(.ENGINES)) version=$(bash.__version__) [$(.LOADED)])",
   ])
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "[amklang bash] ext=bash guest=lua impl=bash" in r.stdout, r.stdout
+  assert "[amklang] row=bash version=5." in r.stdout, r.stdout
   assert "[/zip/lib/amk/bash.amk]" in r.stdout, r.stdout
-  version = r.stdout.split("version=")[1].split()[0]
-  assert version.count("/") == 1 and version.split("/")[0] == version.split("/")[1], version
   r = stacked(amk, tmp_path, ["load bash", "$(bash.ns a, exec, b)"])
   assert r.returncode != 0, r.stdout
-  assert "stacked engine bash does not define bash.ns" in r.stderr, r.stderr
+  assert "bash has no state or workspace interface" in r.stderr, r.stderr
 
 
 @pytest.mark.parametrize("lines,message", [

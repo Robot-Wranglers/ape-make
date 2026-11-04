@@ -298,7 +298,7 @@ def child(name, src):
 
 
 def test_a_machine_invokes_another_machine_in_place(amk, tmp_path):
-  r = run(amk, tmp_path, [*child("c", "work"), "work:", "\t@echo worked", *child("sup", "c.__main__"),
+  r = run(amk, tmp_path, [*child("worker", "work"), "work:", "\t@echo worked", *child("sup", "worker.__main__"),
     "show: sup.__main__", "\t@echo 'state: $(sup.state )'"], "show")
   assert r.returncode == 0, r.stdout + r.stderr
   assert "worked" in r.stdout and "state: z" in r.stdout, r.stdout

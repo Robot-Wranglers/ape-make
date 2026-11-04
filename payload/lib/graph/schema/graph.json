@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph.json",
+  "title": "@graph",
+  "description": "a graph under @graph: nodes by id and edges by source and target, or a bare map of nodes whose list-valued keys are edge types; labels, types and property keys are identifiers",
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "description": "the nodes, keyed by id; a node's label is a string or a list of strings, and every other key is a property",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+              {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}}
+            ]
+          }
+        }
+      }
+    },
+    "edges": {
+      "description": "the edges; source and target are node ids, type is the relationship type, and every other key is a property",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "type"],
+        "properties": {
+          "source": {"type": "string"},
+          "target": {"type": "string"},
+          "type": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+        }
+      }
+    }
+  }
+}

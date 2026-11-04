@@ -1,0 +1,46 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/sim-world.amk:
+#  a world in three parts: rooms as a graph, a rule for what is
+#  reachable, and a tuple space of events; each part answers as itself.
+#
+
+load dsys/sim
+
+# The at line makes world.graph, world.rules and world.events from the keys.
+@sim
+define world
+  {
+    graph: {
+      "hall":    {"label": "Room", "DOOR": ["kitchen", "study"]},
+      "kitchen": {"label": "Room", "DOOR": ["pantry"]},
+      "study":   {"label": "Room"},
+      "pantry":  {"label": "Room"}
+    },
+    rules: [
+      "door(X, Y) :- edge(X, Y).",
+      "reach(X, Y) :- door(X, Y).",
+      "reach(X, Z) :- door(X, Y), reach(Y, Z)."
+    ],
+    events: {"seed": [["enter", "hall"]]}
+  }
+endef
+
+# The graph answers Cypher.
+got.doors := $(world.graph.match (a:Room)-[:DOOR]->(b:Room) \
+  RETURN a.id AS a, b.id AS b ORDER BY a, b)
+
+# Each edge of the graph becomes a fact, and the rules answer reachability.
+facts := $(trilog.ns world.rules, exec, $(jq.argv -r, \
+  [.edges[] | ":- assertz(edge(\(.source)$(comma) \(.target)))."] | join(" "), \
+  $(graph.dump world.graph)))
+got.reach := $(world.rules.findall reach, hall)
+
+# The events are a tuple space: the seed is there, and a move is one more tuple.
+moved := $(world.events.out enter, kitchen)
+got.where := $(world.events.all enter, ?)
+
+__main__:
+	echo 'doors:   $(strip $(got.doors))'
+	echo 'reach:   $(got.reach)'
+	echo 'entered: $(strip $(got.where))'

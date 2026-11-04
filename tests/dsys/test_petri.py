@@ -229,6 +229,20 @@ def test_agoal_steps_are_in_flight_at_once(amk, tmp_path):
   assert "[a=0 b=0 done=2 ta.busy=0 tb.busy=0] [ta=fired tb=fired] []" in r.stdout, r.stdout
 
 
+def test_agoal_firings_beyond_the_job_pool_wait_for_a_landing(amk, tmp_path):
+  body = "\n".join([
+    "$(amk.pool.close __jobs__)$(amk.pool __jobs__, 1)",
+    "show: n.__main__", "\t@echo '[$(n.marking )]'",
+    net('"go": ["a", "b", "c"], "done": []', '"t"', '["go", "t"], ["t", "done"]',
+        '"steps": { "t": { "run": "work", "kind": "agoal" } }'),
+    "work:", "\t@echo start; sleep 0.2; echo end",
+  ])
+  r = run(amk, tmp_path, body, "show")
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert re.findall(r"^(start|end)$", r.stdout, re.M) == ["start", "end"] * 3, r.stdout
+  assert "[go=0 done=3 t.busy=0]" in r.stdout, r.stdout
+
+
 def test_a_run_lands_only_its_own_jobs_and_leaves_an_outside_job_its_record(amk, tmp_path):
   """An outside job that finishes first while the net's step runs is never the net's to reap."""
   body = "\n".join([
@@ -383,7 +397,7 @@ def test_an_open_net_with_nothing_arriving_runs_out_of_patience(amk, tmp_path):
 
 def child(places, arcs, amk_keys):
   return "\n".join([
-    "@petri", "define c",
+    "@petri", "define kid",
     f'{{ "places": {{ {places} }}, "transitions": ["t"], "arcs": [{arcs}], "amk": {{ {amk_keys} }} }}',
     "endef",
   ])
@@ -393,7 +407,7 @@ def parent(runs, kind):
   return "\n".join([
     "@petri", "define p",
     f'{{ "places": {{ "s": {runs}, "e": 0 }}, "transitions": ["u"], "arcs": [["s", "u"], ["u", "e"]],',
-    f'  "amk": {{ "steps": {{ "u": {{ "run": "c.__main__", "kind": "{kind}" }} }}, "final": {{ "e": {runs} }} }} }}',
+    f'  "amk": {{ "steps": {{ "u": {{ "run": "kid.__main__", "kind": "{kind}" }} }}, "final": {{ "e": {runs} }} }} }}',
     "endef",
   ])
 
@@ -403,13 +417,13 @@ def test_a_running_child_nets_strict_places_refuse_a_write_from_outside(amk, tmp
     child('"a": 1, "b": 0', '["a", "t"], ["t", "b"]', '"steps": { "t": { "run": "nap" } }, "final": { "b": 1 }'),
     parent(1, "goal"),
     "nap:", "\t@sleep 1",
-    "poke:", "\t@sleep 0.3; echo $(amk.pool.produce c.a)",
+    "poke:", "\t@sleep 0.3; echo $(amk.pool.produce kid.a)",
     "spawn:", "\t@echo spawned $(amk.goal.spawn poke)",
     "show: spawn p.__main__", "\t@echo '[$(p.trace)]'",
   ])
   r = run(amk, tmp_path, body, "show")
   assert r.returncode == 0, r.stdout + r.stderr
-  assert "amk.pool: c.a: only the process that opened it may produce" in r.stderr, r.stderr
+  assert "amk.pool: kid.a: only the process that opened it may produce" in r.stderr, r.stderr
   assert "[u]" in r.stdout, r.stdout
 
 
@@ -433,15 +447,15 @@ def test_a_step_running_an_open_net_is_one_instance_and_refuses_a_second_firing_
   body = "\n".join([OPEN_CHILD, parent(2, "agoal"), "took:", "\t@true", "show: p.__main__", "\t@true"])
   r = run(amk, tmp_path, body, "show")
   assert r.returncode != 0, r.stdout
-  assert "p: u is already running c as instance p.u" in r.stderr, r.stderr
+  assert "p: u is already running kid as instance p.u" in r.stderr, r.stderr
 
 
 TWO_STEPS = "\n".join([
   "@petri", "define p",
   '{ "places": { "s1": 1, "s2": 1, "e": 0 }, "transitions": ["u1", "u2"],',
   '  "arcs": [["s1", "u1"], ["s2", "u2"], ["u1", "e"], ["u2", "e"]],',
-  '  "amk": { "steps": { "u1": { "run": "c.__main__", "kind": "agoal" },',
-  '                      "u2": { "run": "c.__main__", "kind": "agoal" } } } }',
+  '  "amk": { "steps": { "u1": { "run": "kid.__main__", "kind": "agoal" },',
+  '                      "u2": { "run": "kid.__main__", "kind": "agoal" } } } }',
   "endef",
 ])
 
@@ -449,7 +463,7 @@ TWO_STEPS = "\n".join([
 def test_each_instance_of_an_open_net_takes_only_the_tokens_put_to_it(amk, tmp_path):
   body = "\n".join([
     "petri.patience = 3", OPEN_CHILD, TWO_STEPS,
-    "took:", "\t@echo took as $(c.instance)",
+    "took:", "\t@echo took as $(kid.instance)",
     "nap.%:", "\t@sleep 0.5",
     "put.%: nap.%", "\t@echo $(petri.put p.$*, e)",
     "poke: put.u2 put.u1", "\t@true",
@@ -463,10 +477,10 @@ def test_each_instance_of_an_open_net_takes_only_the_tokens_put_to_it(amk, tmp_p
 
 
 def test_a_token_put_to_a_net_with_several_instances_is_refused(amk, tmp_path):
-  body = "\n".join([OPEN_CHILD, TWO_STEPS, "took:", "\t@true", "$(petri.put c, e)"])
+  body = "\n".join([OPEN_CHILD, TWO_STEPS, "took:", "\t@true", "$(petri.put kid, e)"])
   r = run(amk, tmp_path, body)
   assert r.returncode != 0, r.stdout
-  assert "c: a token for e is ambiguous among instances p.u1 p.u2" in r.stderr, r.stderr
+  assert "kid: a token for e is ambiguous among instances p.u1 p.u2" in r.stderr, r.stderr
 
 
 @pytest.mark.parametrize("body,want", [

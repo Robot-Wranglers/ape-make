@@ -15,10 +15,10 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture(autouse=True)
-def _needs_a_dialect(engine):
-  """An engine whose program is not text has no dialect here; its own file pins it."""
+def _needs_test_programs(engine):
+  """An engine these test programs do not fit has none here; its own test file covers it."""
   if STATE[engine["name"]] is None:
-    pytest.skip(f"{engine['name']} takes a module and a call, not program text")
+    pytest.skip(f"{engine['name']} has no state test programs; its own test file covers it")
 
 
 def _define(name, body):

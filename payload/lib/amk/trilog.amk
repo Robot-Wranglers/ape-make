@@ -6,6 +6,17 @@
 #
 $(amk.require trilog)
 
+# The event calculus as text, loaded ahead of a rule base that extends it.
+trilog.event_calculus := $(file < $(amk.lib.find trilog/lib/event_calculus.pl))
+define trilog.event_calculus.nl
+
+
+endef
+
+# The at line @trilog.import.event_calculus: the define after the calculus.
+trilog.import.event_calculus_star = $(trilog.import $(1), \
+  $(trilog.event_calculus)$(trilog.event_calculus.nl)$($(1)))
+
 # Every answer of a predicate, given its leading arguments, as one json list.
 trilog.findall = $(trilog.ns $(strip $1), exec, \
   :- findall(_X, $(strip $2)($(trilog.findall.lead)_X), _L), json_write(_L).)

@@ -44,20 +44,51 @@ A Makefile is a task graph too. A workflow differs from `target: prereqs` in fou
 
 | Form | Declares |
 | --- | --- |
-| `@workflow.dag` above a define | a workflow of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
-| `$(workflow.compile name)` | the compiled net's JSON, without loading it |
+| `@workflow.dag` above a define | A workflow of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
+| `$(workflow.compile name)` | The compiled net's JSON, without loading it |
 
 A workflow is an object with one key, `tasks`, mapping each task name to its keys. A task name is `[a-z0-9_-]+`.
 
 | Key | Value | Default |
 | --- | --- | --- |
-| `run` | the target the task runs | no step |
-| `needs` | task names that end before this one starts; the only order between tasks | `[]` |
+| `run` | The target the task runs | No step |
+| `needs` | Task names that end before this one starts; the only order between tasks | `[]` |
 | `when` | `success`, `failed` or `done`: whether the task runs when all needs succeeded, when any failed, or always | `success` |
-| `over` | a list of items, each 1 to 31 bytes with no whitespace; the task runs once per item | runs once |
-| `pool` | a pool name; each firing holds one of its tokens | unbounded |
+| `over` | `{"data": [..]}` or `{"targets": [..]}`, each item 1 to 31 bytes with no whitespace; the task runs once per item | Runs once |
+| `pool` | A pool name; each firing holds one of its tokens | unbounded |
 
 A task whose `when` does not hold is skipped, and its skip passes on as its outcome.
+
+Each instance of a task with `over` reads its item as `<run>.item`, under the name of the
+target it runs. Under `data` the item is the label. Under `targets` the item is the value of
+the target that the label names:
+
+```Makefile
+@workflow.dag
+define ingest
+  { "tasks": { "square": { "run": "each", "over": { "targets": ["b1", "b2"] } } } }
+endef
+
+b1:
+	@echo 1 2 3
+b2:
+	@echo 4 5 6
+each:
+	@echo 'squaring $(each.item)'
+```
+
+Every task is a target too, as in make: `<name>.<task>` runs the task and every task it
+needs, transitively, and nothing after it. In the [release demo](../demos/workflow-release.amk),
+`release.package` runs checkout, the three tests and package, but not publish or notify.
+
+Tasks with no `needs` path between them run at once, each firing of a task as a job. The
+[job pool](jobman.md) bounds how many are in flight, `AMK_MAX_JOBS` at once, and `pool`
+bounds one task. `AMK_MAX_JOBS=1`, or every task naming one pool of size 1, runs the
+workflow one task at a time:
+
+```Makefile
+$(amk.pool one, 1)
+```
 
 <a id="reduction"></a>
 
@@ -67,13 +98,14 @@ A task whose `when` does not hold is skipped, and its skip passes on as its outc
 
 | Task part | Becomes |
 | --- | --- |
-| A need | a labeled place `<need>.to.<task>`, its token the need's outcome |
-| A task with no needs | a place `<task>.ready` holding one `success` token |
-| The task | a transition guarded by `when`, its step of kind [`goal.maybe`](petri.md#amk-block), run in place, its outcome the token's label |
-| `when` other than `done` | a second transition `<task>.skip` guarded by the opposite |
-| `over` | transitions `<task>.split` and `<task>.join` around places `<task>.items` and `<task>.results` |
-| `pool` | an arc from the pool into the task and back |
-| A task nothing needs | a place `<task>.end`; the final marking wants one token in each |
+| A need | A labeled place `<need>.to.<task>`, its token the need's outcome |
+| A task with no needs | A place `<task>.ready` holding one `success` token |
+| The task | A transition guarded by `when`, its step of kind [`agoal.maybe`](petri.md#amk-block), run as a job, its outcome the token's label |
+| `when` other than `done` | A second transition `<task>.skip` guarded by the opposite |
+| `over` | Transitions `<task>.split` and `<task>.join` around places `<task>.items` and `<task>.results`, the step binding `<run>.item` |
+| A task's name | A second net `<name>.<task>.cone`, the workflow cut to the task and its needs, and a phony target `<name>.<task>` that runs it |
+| `pool` | An arc from the pool into the task and back |
+| A task nothing needs | A place `<task>.end`; the final marking wants one token in each |
 
 <a id="api"></a>
 
@@ -81,11 +113,11 @@ A task whose `when` does not hold is skipped, and its skip passes on as its outc
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `<name>.__main__` | runs the workflow as its net; typically `__main__: <name>.__main__` | a target |
-| `$(<name>.net )` | reads back the compiled net | the net's JSON |
-| `$(<name>.states )`, `$(<name>.trace)`, `$(<name>.step )` | as for [any net](petri.md#api) | words |
-| `$(<name>.exec prog)` | a jq program over the net, the workflow's JSON as `$source` and the library as `workflow::` | what it prints |
-| `$(<name>.version )` | the workflow's workspace version | a number |
+| `<name>.__main__` | Runs the workflow as its net; typically `__main__: <name>.__main__` | A target |
+| `$(<name>.net )` | Reads back the compiled net | The net's JSON |
+| `$(<name>.states )`, `$(<name>.trace)`, `$(<name>.step )` | As for [any net](petri.md#api) | words |
+| `$(<name>.exec prog)` | A jq program over the net, the workflow's JSON as `$source` and the library as `workflow::` | What it prints |
+| `$(<name>.version )` | The workflow's workspace version | A number |
 
 `workflow.dag` is a [stacked engine](FFI.md#stacked-engines) on jq, aliased `workflow`, so `@workflow.dag.target`,
 `@workflow.dag.import` and `@workflow.dag.exec (name)` are its at lines and [`load ./release.workflow`](petri.md#loading)
@@ -114,7 +146,8 @@ body given to it directly fails as a jq error.
 
 | Demo | Shows |
 | --- | --- |
-| [`workflow-release.amk`](../demos/workflow-release.amk) | a release graph with a fan-out over guests, a pool of runners, and a task run only on failure |
+| [`workflow-release.amk`](../demos/workflow-release.amk) | A release graph with a fan-out over guests, a pool of runners, and a task run only on failure |
+| [`workflow-instances.amk`](../demos/workflow-instances.amk) | One child workflow instance per batch target, each running a body on the plex |
 
 <a id="references"></a>
 
@@ -141,6 +174,13 @@ what a schema cannot say, as [errors](#errors) lists: a need that names no task,
   "type": "object",
   "additionalProperties": false,
   "required": ["tasks"],
+  "$defs": {
+    "labels": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^\\S{1,31}$" }
+    }
+  },
   "properties": {
     "tasks": {
       "description": "each task by name, in declaration order",
@@ -164,10 +204,15 @@ what a schema cannot say, as [errors](#errors) lists: a need that names no task,
             "default": "success"
           },
           "over": {
-            "description": "items the task runs once per, each a label",
-            "type": "array",
-            "minItems": 1,
-            "items": { "type": "string", "pattern": "^\\S{1,31}$" }
+            "description": "what the task runs once per: data, each item a label, or targets, each item the value of the target it names",
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "data": { "$ref": "#/$defs/labels" },
+              "targets": { "$ref": "#/$defs/labels" }
+            }
           },
           "pool": { "description": "an open pool whose tokens bound the task's runs in flight", "type": "string", "minLength": 1 }
         }

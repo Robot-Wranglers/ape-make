@@ -1,4 +1,4 @@
-<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | trilog #trilog-workspaces | Refs #references -->
+<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | cypher #cypher-workspaces | graph #graph-workspaces | trilog #trilog-workspaces | Refs #references -->
 <!-- /header -->
 
 **Language Engines vs Data Engines.** Both involve wrapping and running a guest language, but whereas language-engines involve [namespaces](FFI.md#namespaces), data-engines get that plus [workspaces](#creating-a-workspace), and some differences with [import mode](#import-mode). 
@@ -7,7 +7,7 @@ Data-engines are interesting because besides the [simple stuff](#creating-a-work
 
 The core data-engines are `jq` and `sqlite`, both embedded/linked into the `amk` binary with no need for external prerequisites.  Derived datastructures might *just* be datastructures, but might also be a [stacked engine](FFI.md#stacked-engines) in their own right.  For example the tuplespace *does* support it's own concept of [workspace](#creating-a-workspace) and despite having an [instruction set](tspace.md#operations) of its own, it supports raw SQL like the [sqlite engine](#sqlite-workspaces) that it extends.
 
-<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: petri under jq, with fsm, kahn and workflow under petri, and tuple spaces under sqlite"></p>
+<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: petri under jq, with fsm, kahn and workflow under petri, tuple spaces under sqlite, and trilog"></p>
 
 <!--Engines derived from these  their state is a workspace, a jq value or a sqlite
 database, that programs read and change through a fixed set of verbs. The verbs and the
@@ -101,8 +101,8 @@ Beside the engine's verbs, the ask channel answers two ops on every workspace. E
 
 | Op | From a recipe | Answers |
 | --- | --- | --- |
-| `version` | `amk.ns version jobs` | the workspace's version |
-| `wait` | `amk.ns wait jobs -- 7` | the version, once it is past 7; status 3 when the owner exits first |
+| `version` | `amk.ns version jobs` | The workspace's version |
+| `wait` | `amk.ns wait jobs -- 7` | The version, once it is past 7; status 3 when the owner exits first |
 
 `wait` blocks, so it runs from a recipe, a target or a spawned job; from the makefile
 itself, the owner would wait on itself and make stops.
@@ -173,17 +173,17 @@ one, declared at `create`; a repeat must match.
 
 | Backing         | Does |
 | ---             | --- |
-| `run`           | default, in-memory, workspace lives in the host process |
-| `owned=<path>`  | file-system backed workspace, loaded at use, flushed after write |
-| `shared=<path>` | like owned, but auto reloads on version changes, picking up peer edits |
+| `run`           | Default, in-memory, workspace lives in the host process |
+| `owned=<path>`  | File-system backed workspace, loaded at use, flushed after write |
+| `shared=<path>` | Like owned, but auto reloads on version changes, picking up peer edits |
 
 An engine with `open` uses the file as its store directly, held alone when owned. Each
 engine reads a backing its own way:
 
 | Backing         | jq | sqlite |
 | ---             | --- | --- |
-| `owned=<path>`  | loads the file at first use, writes it after every `update` and `load` | file *is* the database, held by this process alone |
-| `shared=<path>` | file-backed, automatically reloading when version moves | the file is the database, and owners on one host take turns, each `update` one transaction |
+| `owned=<path>`  | Loads the file at first use, writes it after every `update` and `load` | File *is* the database, held by this process alone |
+| `shared=<path>` | File-backed, automatically reloading when version moves | The file is the database, and owners on one host take turns, each `update` one transaction |
 
 ```Makefile
 $(sqlite.ns.create edges, owned=edges.db)
@@ -198,10 +198,10 @@ The workspace is one JSON value.
 
 | Verb | Runs | Stores | Prints |
 | --- | --- | --- | --- |
-| `get prog` | `prog` over the value | nothing | every output |
-| `update prog` | `prog` over the value | the first output | the rest |
-| `load text` | | the one JSON text, once it parses | nothing |
-| `dump` | `.` | nothing | the value |
+| `get prog` | `prog` over the value | nothing | Every output |
+| `update prog` | `prog` over the value | The first output | The rest |
+| `load text` | | The one JSON text, once it parses | nothing |
+| `dump` | `.` | nothing | The value |
 
 ```Makefile
 # a stack in a workspace: push, then pop the top and keep the rest
@@ -226,10 +226,10 @@ result row prints as a JSON object on a line. `--arg name value` binds `:name` a
 
 | Verb | Runs | Prints |
 | ---           | --- | --- |
-| `get prog`    | the statements; one that writes is refused | each row |
-| `update prog` | the statements, writes included | each row |
-| `load text`   | drops every table, view and trigger, then replays the text, in one transaction | nothing |
-| `dump`        | | schema and rows, as statements |
+| `get prog`    | The statements; one that writes is refused | Each row |
+| `update prog` | The statements, writes included | Each row |
+| `load text`   | Drops every table, view and trigger, then replays the text, in one transaction | nothing |
+| `dump`        | | Schema and rows, as statements |
 
 ```Makefile
 @sqlite.import
@@ -242,6 +242,96 @@ seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WH
 $(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
 ```
 
+`load sqlite` adds a `select` handle to every namespace the engine makes, the get verb with
+its first word written:
+
+```Makefile
+load sqlite
+rows := $(edges.select count(*) AS n FROM e)
+```
+
+<a id="cypher-workspaces"></a>
+
+## cypher
+
+cypher is a sqlite workspace with [GraphQLite](https://github.com/colliery-io/graphqlite)
+registered on its connection, which keeps a property graph in the database and runs
+openCypher over it. A plain sqlite workspace carries none of that schema.
+
+A program is Cypher or SQL, told apart by its first clause. Cypher goes through the
+extension: `--arg name value` and `--argjson name json` bind `$name` as parameters,
+spelled `$$name` in a makefile as any literal dollar is, each
+row of the answer prints as one JSON object on a line, a write's answer is one object of
+counts, and `get` refuses a query that creates, merges, sets, deletes or removes. SQL runs
+as it does in a sqlite workspace, so the `cypher` SQL function and the extension's tables
+are there too; the function's answer is one column holding the rows as a JSON text. `load`
+takes SQL statements.
+
+```Makefile
+@cypher.import
+define org
+  SELECT cypher('CREATE (:Person {name: "Ann", age: 30})-[:KNOWS]->(:Person {name: "Bo", age: 41})');
+endef
+
+# {"name":"Bo"}
+known := $(org.get --argjson min 35 MATCH (:Person {name: "Ann"})-[:KNOWS*1..3]->(x) WHERE x.age > $$min RETURN x.name AS name)
+# {"nodes_created":1,"relationships_created":1,"nodes_deleted":0,"relationships_deleted":0,"properties_set":1}
+hired := $(org.update MATCH (b:Person {name: "Bo"}) CREATE (:Person {name: "Cy"})-[:KNOWS]->(b))
+```
+
+`load cypher` adds four handles to every namespace the engine makes, each the verb with its
+first clause written: `match` and `select` are gets, `create` and `merge` are updates.
+
+```Makefile
+load cypher
+bosses := $(org.match (p:Person)-[:KNOWS]->(m:Person) RETURN m.name AS boss, count(p) AS n)
+hired  := $(org.create (:Person {name: "Di"}))
+people := $(org.select count(*) AS n FROM nodes)
+```
+
+[demos/cypher-org.amk](../demos/cypher-org.amk) is the same shape over an org chart, with a path query, an aggregate, and SQL over the same store. The command line `amk --cypher` is sqlite's shell.
+
+<a id="graph-workspaces"></a>
+
+## graph
+
+graph is a [stacked engine](FFI.md#stacked-engines) of the data variety on cypher: a
+cypher workspace declared from a JSON document rather than from Cypher. `load graph`, then
+`@graph` above a define compiles the document and loads it. After that the workspace is
+cypher's, with its verbs and handles.
+
+The document is nodes keyed by id and edges by source and target. A node's `label` is a
+string or a list; every other key is a property. An edge's `source`, `target` and `type`
+name its ends and its relationship type; every other key is a property. Labels, types and
+property keys are identifiers. A bare map with no `nodes` key is read as the nodes, and a
+key whose value is a list of node ids is an edge type with no properties.
+
+```Makefile
+load graph
+
+@graph
+define org
+  {"nodes": {"ann": {"label": "Person", "age": 30}, "bo": {"label": "Person", "age": 41}},
+   "edges": [{"source": "ann", "target": "bo", "type": "REPORTS_TO", "since": 2019}]}
+endef
+
+boss := $(org.match (p {id: "ann"})-[:REPORTS_TO]->(m) RETURN m.id AS id)
+
+# A second document merges in by id; it rides in a variable, since a callform splits inline json at its commas.
+more   := {"nodes": {"cy": {"label": "Person"}}, "edges": [{"source": "bo", "target": "cy", "type": "REPORTS_TO"}]}
+merged := $(org.update $(graph.compile $(more)))
+doc    := $(graph.dump org)
+```
+
+| Function | Answers |
+| --- | --- |
+| `graph.compile doc` | The document as SQL calling the cypher function, one merge per set of labels and per edge type, every value a parameter; an update of it merges the document in by id |
+| `graph.normalize doc` | The document with its sugar expanded and its keys sorted, as dump gives it |
+| `graph.dump name` | The document back from the graph, through standard Cypher |
+| `graph.create name[, backing]` | A cypher workspace; `@graph {owned=path}` passes a backing the same way |
+
+[demos/graph-org.amk](../demos/graph-org.amk) declares an org chart as a bare map, merges a second document, and dumps the result.
+
 <a id="trilog-workspaces"></a>
 
 ## trilog
@@ -252,10 +342,10 @@ value. A variable whose name starts with `_` is left out.
 
 | Verb | Runs | Stores | Prints |
 | --- | --- | --- | --- |
-| `get goal` | the goal | nothing; clauses it asserts or retracts are rolled back | each solution |
-| `update goal` | the goal | every clause it asserts or retracts | each solution |
-| `load text` | | the clauses, replacing the ones a previous load made; nothing if a clause fails to parse | nothing |
-| `dump` | | nothing | every clause, quoted, one per line |
+| `get goal` | The goal | nothing; clauses it asserts or retracts are rolled back | Each solution |
+| `update goal` | The goal | Every clause it asserts or retracts | Each solution |
+| `load text` | | The clauses, replacing the ones a previous load made; nothing if a clause fails to parse | nothing |
+| `dump` | | nothing | Every clause, quoted, one per line |
 
 Terms map to JSON this way:
 
@@ -272,9 +362,9 @@ Each takes a predicate and its leading arguments.
 
 | Handle | Does | Prints |
 | --- | --- | --- |
-| `findall pred, a1, ...` | collects every last argument that `pred(a1, ..., X)` allows | one JSON list |
-| `assertz clause` | adds the clause after the others | nothing |
-| `retract clause` | removes the first clause that matches | nothing |
+| `findall pred, a1, ...` | Collects every last argument that `pred(a1, ..., X)` allows | One JSON list |
+| `assertz clause` | Adds the clause after the others | nothing |
+| `retract clause` | Removes the first clause that matches | nothing |
 
 ```Makefile
 load trilog

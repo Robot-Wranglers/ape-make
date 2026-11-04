@@ -1,0 +1,45 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/cypher-org.amk:
+#  an org chart as a graph: who reports to whom, and Cypher
+#  asking who is above whom.
+#
+
+load cypher
+
+# The at line makes cypher workspace org: SQL calling the cypher function.
+@cypher.import
+define org
+  SELECT cypher('CREATE (a:Person {name: "Ann", age: 30})
+    -[:REPORTS_TO]->(b:Person {name: "Bo", age: 41})
+    -[:REPORTS_TO]->(c:Person {name: "Cy", age: 52})');
+  SELECT cypher('MATCH (b:Person {name: "Bo"})
+    CREATE (:Person {name: "Di", age: 28})-[:REPORTS_TO]->(b)');
+endef
+
+# A match is a get with its first clause written; a bound name is a parameter.
+got.chain := $(org.match (p:Person)-[:REPORTS_TO]->(m:Person) \
+  RETURN p.name AS who, m.name AS boss ORDER BY who)
+got.above := $(org.get --argjson min 40 \
+  MATCH (:Person {name: "Ann"})-[:REPORTS_TO*1..3]->(x:Person) \
+  WHERE x.age > $$min RETURN x.name AS name ORDER BY x.age)
+got.heads := $(org.match (p:Person)-[:REPORTS_TO]->(m:Person) \
+  RETURN m.name AS boss, count(p) AS reports ORDER BY reports DESC, boss)
+
+# A hire is an update, and the path query sees it at once.
+hired := $(org.update --arg who Ed MATCH (d:Person {name: "Di"}) \
+  CREATE (:Person {name: $$who, age: 45})-[:REPORTS_TO]->(d))
+got.above.ed := $(org.match (:Person {name: "Ed"}) \
+  -[:REPORTS_TO*1..4]->(x:Person) RETURN x.name AS name ORDER BY x.age)
+
+# SQL still reaches the same store.
+got.count := $(org.select count(*) AS people FROM nodes)
+
+# Each answer is one row per line, printed here as one line of rows.
+__main__:
+	echo 'who reports to whom:  $(strip $(got.chain))'
+	echo 'above Ann, over 40:   $(strip $(got.above))'
+	echo 'reports per boss:     $(strip $(got.heads))'
+	echo 'hired:                $(strip $(hired))'
+	echo 'above Ed, hired:      $(strip $(got.above.ed))'
+	echo 'people, by SQL:       $(strip $(got.count))'

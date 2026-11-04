@@ -45,15 +45,15 @@ Net firing, one transition at a time.  <br>Transition fires when the input place
 
 | Term | Meaning |
 | --- | --- |
-| Place | a pool named `<net>.<place>`, counted or labeled |
-| Open Place | a place named under `amk.open`, which the environment may add tokens to at any time; its pool is opened with `strategy=open` |
-| Token | one unit of a place; a labeled place's token carries a label of 1 to 31 bytes |
-| Transition | consumes from its input places and produces into its output places when it fires |
-| Arc | a place and a transition joined, with a weight, the tokens it moves per firing |
-| Marking | how many tokens each place holds |
-| Step | what a transition runs when it fires, by its kind |
-| Kind | how a step runs: in place or as a job, its failure fatal or kept as an outcome |
-| In Flight | a firing whose inputs are taken and whose job has not yet landed, counted as a token of `<t>.busy` |
+| Place | A pool named `<net>.<place>`, counted or labeled |
+| Open Place | A place named under `amk.open`, which the environment may add tokens to at any time; its pool is opened with `strategy=open` |
+| Token | One unit of a place; a labeled place's token carries a label of 1 to 31 bytes |
+| Transition | Consumes from its input places and produces into its output places when it fires |
+| Arc | A place and a transition joined, with a weight, the tokens it moves per firing |
+| Marking | How many tokens each place holds |
+| Step | What a transition runs when it fires, by its kind |
+| Kind | How a step runs: in place or as a job, its failure fatal or kept as an outcome |
+| In Flight | A firing whose inputs are taken and whose job has not yet landed, counted as a token of `<t>.busy` |
 
 <a id="syntax"></a>
 
@@ -79,12 +79,12 @@ endef
 
 | Form | Declares |
 | --- | --- |
-| `@petri` above a define | a net of the define's name, its places opened as pools and `<net>.__main__` its target |
-| `@petri.target` above a define | the same, and a phony target of the net's name that runs `<net>.__main__` |
-| `@petri.import` above a define | a file's text as the net: JSON, or PNML when the body is XML |
-| `load net.petri`, `load net.pnml` | the file as a net named by its stem; `petri` is a [stacked engine](FFI.md#stacked-engines) on jq, so `load` routes its extensions here |
-| `@petri.exec (net)` above a define | a jq program over the net, printed at parse; see [exec](#api-exec) |
-| `$(petri.load name, json)` | the same from JSON text, as a front end compiles it |
+| `@petri` above a define | A net of the define's name, its places opened as pools and `<net>.__main__` its target |
+| `@petri.target` above a define | The same, and a phony target of the net's name that runs `<net>.__main__` |
+| `@petri.import` above a define | A file's text as the net: JSON, or PNML when the body is XML |
+| `load net.petri`, `load net.pnml` | The file as a net named by its stem; `petri` is a [stacked engine](FFI.md#stacked-engines) on jq, so `load` routes its extensions here |
+| `@petri.exec (net)` above a define | A jq program over the net, printed at parse; see [exec](#api-exec) |
+| `$(petri.load name, json)` | The same from JSON text, as a front end compiles it |
 
 A PNML body is read for its place/transition core: places with their initial marking,
 transitions, and arcs with their inscription as weight. The `pnml` call in the [API](#api)
@@ -122,15 +122,15 @@ mostly its block.
 
 | Key | Role | Value |
 | --- | --- | --- |
-| `steps` | what a transition runs when it fires | by transition, `{ "run": target, "kind": .. }`; `goal` and `goal.maybe` run in place, `agoal` and `agoal.maybe` as a job, in flight as a token of `<t>.busy`; a `.maybe` failure is an outcome kept as the token's label, any other stops the run |
-| `open` | the places the environment feeds | a list of places, each opened with strategy `open`; see [endings](#endings) |
-| `strategy` | who may add tokens to the net's other places | `default`, `strict` or `open`; see [strategy](#strategy) |
-| `pools` | existing pools used as places | by place name, the open pool it stands for; its tokens bound the firings that take them |
-| `final` | how a run ends | a marking by place, or a list of markings any of which ends the run; a place left out wants 0; see [endings](#endings) |
-| `guard` | when a transition may fire, beyond its tokens | by transition, a rule over the labels it reads (`all success`, `any failed` and their negations) or `{ "label": x }`, the one label every input must carry |
-| `label` | what label a transition gives the tokens it produces | by transition, `outcome` for its step's outcome, `output` for its step's last printed value, which then goes to the token and not the console, `skipped`, `merge`, or `{ "items": [..] }`, the n-th item for the n-th token; without one the label it took passes on |
-| `invariants` | what must hold whenever nothing is in flight | a list of weighted sums over places and `<t>.busy` counts, each with its total under `=`; a broken one stops the run |
-| `backend` | which runner takes the net | `petri`, the only one today |
+| `steps` | What a transition runs when it fires | By transition, `{ "run": target, "kind": .. }`; `goal` and `goal.maybe` run as a fork the run waits for, `agoal` and `agoal.maybe` as a job, in flight as a token of `<t>.busy` and a slot of the [job pool](jobman.md) `__jobs__`, sized by `AMK_MAX_JOBS`, so a firing beyond it waits for one to land; a `.maybe` failure is an outcome kept as the token's label, any other stops the run |
+| `open` | The places the environment feeds | A list of places, each opened with strategy `open`; see [endings](#endings) |
+| `strategy` | Who may add tokens to the net's other places | `default`, `strict` or `open`; see [strategy](#strategy) |
+| `pools` | Existing pools used as places | By place name, the open pool it stands for; its tokens bound the firings that take them |
+| `final` | How a run ends | A marking by place, or a list of markings any of which ends the run; a place left out wants 0; see [endings](#endings) |
+| `guard` | When a transition may fire, beyond its tokens | By transition, a rule over the labels it reads (`all success`, `any failed` and their negations) or `{ "label": x }`, the one label every input must carry |
+| `label` | What label a transition gives the tokens it produces | By transition, `outcome` for its step's outcome, `output` for its step's last printed value, which then goes to the token and not the console, `skipped`, `merge`, or `{ "items": [..] }`, the n-th item for the n-th token; without one the label it took passes on |
+| `invariants` | What must hold whenever nothing is in flight | A list of weighted sums over places and `<t>.busy` counts, each with its total under `=`; a broken one stops the run |
+| `backend` | Which runner takes the net | `petri`, the only one today |
 
 A step's `run` may be another net's `<net>.__main__`, of any form. Every step runs in a child
 process, and a net run there opens its places afresh in that process, from its initial
@@ -144,9 +144,9 @@ parent, its steps and any job beside them can feed the instance:
 
 | Call | Puts a token into |
 | --- | --- |
-| `$(petri.put <instance>, place)` | that instance |
-| `$(petri.put <net>, place)` | the net's one instance, or the net itself when it runs as none |
-| inside an instance's run, `$(petri.put <net>, place)` | its own instance |
+| `$(petri.put <instance>, place)` | That instance |
+| `$(petri.put <net>, place)` | The net's one instance, or the net itself when it runs as none |
+| Inside an instance's run, `$(petri.put <net>, place)` | Its own instance |
 
 A put is refused when the net has several instances, or when the instance is not running,
 in any process: an instance holds a token in the open pool `petri.live.<instance>` from its
@@ -166,9 +166,9 @@ then depends on the final marking and on the net's open places, the places named
 
 | # | Nothing enabled, and | Reading | The run |
 | --- | --- | --- | --- |
-| E1 | the final marking holds | proper completion | ends |
-| E2 | no place is open | a dead marking | ends, and fails if a final marking is declared and missed |
-| E3 | some place is open | quiescent: the environment may still enable a transition | waits, then fires again once a transition is enabled |
+| E1 | The final marking holds | Proper completion | Ends |
+| E2 | No place is open | A dead marking | Ends, and fails if a final marking is declared and missed |
+| E3 | Some place is open | Quiescent: the environment may still enable a transition | Waits, then fires again once a transition is enabled |
 
 An open net waits for its input. Here `in` starts empty, so nothing is enabled until a guest
 produces into it, and the run ends once `out` holds two tokens:
@@ -233,19 +233,19 @@ time an open net's wait, as [endings](#endings) describes.
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `<net>.__main__` | fires the net until no transition is enabled and none is in flight; then it ends at the final marking, fails if a final marking is declared and missed, or, with open places, waits for the environment | a target |
-| `$(<net>.marking )`, `$(<net>.marking place)` | reads the marking, each agoal transition's `<t>.busy` included | `place=count` words, or one count |
-| `$(petri.put <net or instance>, place)` | puts one token into a place, an [instance's](#amk-block) port when the net runs as one | nothing |
-| `petri.patience`, `petri.poll_ms` | how long an open net waits with nothing enabled, in seconds, empty for no limit; and how often it looks, 50 ms by default | variables |
-| `$(<net>.states )`, `$(<net>.state t)` | reads each transition's state | `t=state` words, or one state |
-| `$(<net>.trace)` | lists the firings so far, in order | transition names |
-| `$(<net>.step )` | one firing, the first enabled transition, or none | the transition fired, or nothing |
-| `$(<net>.exec prog)` | a jq program over the net with its state bound; see [exec](#api-exec) | what the program prints |
-| `$(<net>.version )`, `$(petri.wait net, n)` | the net's workspace version, and a wait past one, as for any [data engine](data-engines.md#version-and-wait) | a number |
-| `$(petri.update net, prog[, who])` | changes the net's source by a jq program, checks it against its form's schema as `who`, compiles and plans it again; the forms over petri join late this way | nothing |
-| `$(petri.reload net, json)` | the net's JSON replaced in place and planned again | nothing |
-| `$(petri.create name[, json])` | a net from text, or an empty one; the data variety's create | nothing |
-| `$(<net>.pnml)` | the net as PNML | the XML text |
+| `<net>.__main__` | Fires the net until no transition is enabled and none is in flight; then it ends at the final marking, fails if a final marking is declared and missed, or, with open places, waits for the environment | A target |
+| `$(<net>.marking )`, `$(<net>.marking place)` | Reads the marking, each agoal transition's `<t>.busy` included | `place=count` words, or one count |
+| `$(petri.put <net or instance>, place)` | Puts one token into a place, an [instance's](#amk-block) port when the net runs as one | nothing |
+| `petri.patience`, `petri.poll_ms` | How long an open net waits with nothing enabled, in seconds, empty for no limit; and how often it looks, 50 ms by default | Variables |
+| `$(<net>.states )`, `$(<net>.state t)` | Reads each transition's state | `t=state` words, or one state |
+| `$(<net>.trace)` | Lists the firings so far, in order | Transition names |
+| `$(<net>.step )` | One firing, the first enabled transition, or none | The transition fired, or nothing |
+| `$(<net>.exec prog)` | A jq program over the net with its state bound; see [exec](#api-exec) | What the program prints |
+| `$(<net>.version )`, `$(petri.wait net, n)` | The net's workspace version, and a wait past one, as for any [data engine](data-engines.md#version-and-wait) | A number |
+| `$(petri.update net, prog[, who])` | Changes the net's source by a jq program, checks it against its form's schema as `who`, compiles and plans it again; the forms over petri join late this way | nothing |
+| `$(petri.reload net, json)` | The net's JSON replaced in place and planned again | nothing |
+| `$(petri.create name[, json])` | A net from text, or an empty one; the data variety's create | nothing |
+| `$(<net>.pnml)` | The net as PNML | The XML text |
 
 <a id="api-exec"></a>
 

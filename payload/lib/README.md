@@ -26,9 +26,10 @@ does. Something built on top of a vendored library belongs in a topic, not besid
 
 **Other policies:**
 
-- **Stock libraries carry no amk.** [s7/amb.scm](s7/amb.scm) and [plex/](plex/)`init.scm`
-  load in any s7; nothing in them names `amk-`. A library that reaches make through the
-  ffi is a binding, and lives in a topic that has an `init.amk`.
+- **Stock libraries carry no amk.** [s7/amb.scm](s7/amb.scm) loads in any s7; nothing in
+  it names `amk-`. A topic's `init.scm` names `amk-<topic>-`, so the s7 handle loads it on
+  first use, as [plex/](plex/) does with `amk-plex-run`. A library that reaches make
+  through the ffi is a binding, and lives in a topic that has an `init.amk`.
 - **A build ships what its engines can host.** The Makefile's `payload.<topic>` rule
   includes each binding only when its engine is in the build, and a topic that needs a
   library ships only when that library does; [actor/](actor/) needs `effection` and `jq`.
@@ -45,6 +46,7 @@ does. Something built on top of a vendored library belongs in a topic, not besid
 | [plex/](plex/) | topic: the plex a backend schedules on, multiplexing tasks onto one thread of the engine | js, Effection republished; s7, a cooperative ready list of continuations |
 | [jobman/](jobman/) | `amk.jobman.<pool>`, each guest's jobman, its handle on a pool of jobs: spawns under the pool's bound, waits, and maps goal lists. `load dsys/jobman` opens pools with `@jobman` above a JSON define, and the default `__jobs__` pool, sized by `AMK_MAX_JOBS` else `jobman.max_jobs` | lua, micropy, js, s7 |
 | [dsys/](dsys/) | topic: structures built on the `amk.pool` builtins, which need no topic; `@pool` above a JSON define declares a pool over the baseline, `amk.mutex` and `amk.horcrux` make locks, and `amk.rendezvous` a channel whose send waits until received | make, with jq |
+| [gmsl/](gmsl/) | topic: the GNU Make Standard Library, vendored at build beside an `init.amk` that reads it, so `load gmsl` reaches it | make |
 | [js/](js/) | engine: [effection/](js/effection/), the vendored Effection build and its host shims | js |
 | [micropy/](micropy/) | engine: on micropython's path; `asyncio`, `mip`, `requests`, `utemplate` and `ssl` land here at build | micropy |
 | [lua/](lua/) | engine: on lua's path; `dkjson.lua` lands here at build | lua |

@@ -1,0 +1,66 @@
+#
+# payload/lib/graph/init.amk:
+#  a graph as a JSON document, nodes by id and edges by source and target,
+#  compiled to Cypher and loaded into a cypher workspace. After that the
+#  workspace is cypher's, with its verbs and handles.
+#
+$(amk.require cypher jq)
+load cypher
+
+graph._lib = $(dir $(amk.lib.find graph/graph.jq))
+graph._jq = -r -L $(graph._lib)
+graph._json = -S -c -L $(graph._lib)
+
+# The document as SQL calling the cypher function, a statement per group.
+graph.compile = $(jq.argv $(graph._jq),include "graph"; compile,$(1))
+graph.compile.whole = $(jq.argv $(graph._jq), \
+  include "graph"; compile_whole,$(1))
+$(amk.fxn! graph.compile)
+$(amk.fxn! graph.compile.whole)
+
+# The document as dump gives it: sugar expanded, keys sorted, on one line.
+graph.normalize = $(jq.argv $(graph._json), \
+  include "graph"; normalize | check,$(1))
+$(amk.fxn! graph.normalize)
+
+# A graph is a cypher workspace, and version and wait are its own.
+graph.create = $(if $(value 2), \
+  $(cypher.ns.create $(1), $(2)),$(cypher.ns.create $(1)))
+graph.version = $(cypher.ns $(1), version)
+graph.wait = $(cypher.ns $(1), wait, $(2))
+$(foreach f,create version wait,$(amk.fxn! graph.$(f)))
+
+# The nodes and edges through standard Cypher, commas spelled for the callform.
+graph.dump.nodes = $(cypher.ns $(1), get, MATCH (n) \
+  RETURN n.id AS id$(comma) labels(n) AS labels$(comma) properties(n) AS props \
+  ORDER BY id)
+graph.dump.edges = $(cypher.ns $(1), get, MATCH (a)-[e]->(b) \
+  RETURN a.id AS source$(comma) type(e) AS type$(comma) b.id AS target$(comma) \
+  properties(e) AS props ORDER BY source$(comma) type$(comma) target)
+graph.dump.part = $(jq.argv -s -c $(graph._jq),include "graph"; $(2),$(1))
+graph.dump = $(jq.argv -S -c,., \
+  {"nodes":$(graph.dump.part $(graph.dump.nodes $(1)),dump_nodes), \
+   "edges":$(graph.dump.part $(graph.dump.edges $(1)),dump_edges)})
+$(foreach f,dump.nodes dump.edges dump.part dump,$(amk.fxn! graph.$(f)))
+
+# The at lines @graph and @graph.import: the define's json, braces the backing.
+graph.__schema__ := graph/schema/graph.json
+graph.import.__schema__ := graph/schema/graph.json
+graph.backing = $(subst $(space),$(comma) ,$(strip \
+  $(foreach k,$(amk.decorator.kws),$(k)=$(amk.decorator.kw.$(k)))))
+define graph_star
+$(strip
+  $(graph.create $(1), $(graph.backing))
+  $(if $(strip $(value $(1))),
+    $(cypher.ns $(1), load, $(graph.compile.whole $(amk.json5 $($(1)))))))
+endef
+graph.import_star = $(graph_star)
+
+# The at line @graph.target: a phony target printing the compiled statements.
+graph.target.rule = $(1):; \
+  $$(info $$(graph.compile $$(amk.json5 $$($(1)))))
+graph.target_star = $(eval graph.goal := $(.DEFAULT_GOAL)) \
+  $(eval .PHONY: $(1))$(eval $(call graph.target.rule,$(1))) \
+  $(eval .DEFAULT_GOAL := $(graph.goal))
+
+$(amk.engine graph, guest=cypher)

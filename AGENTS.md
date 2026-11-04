@@ -20,11 +20,7 @@ Blocked by permissions or hooks?  Don't ask Human to do something until you've c
 
 ## Documentation
 
-The main documentation in README.md is off-limits for edits unless you're asked to update it.
-
-Correcting *errors* in other docs is ok -- but do not add sections or paragraphs unless directed.  Tables or catalogs are open, correcting omissions there is generally good.
-
-Running updates for WIP is actively harmful for documentation!  Wait until features are finished.
+You are VERY bad at documentation.  The main documentation in README.md is off-limits for edits unless you're asked to update it.  Correcting *errors* in other docs is ok -- but do not add sections or paragraphs unless directed.  Tables or catalogs are open, correcting omissions there is generally good.  When you are asked to add documentation, keep it VERY brief.  Most documentation needs SMALL explanations, and is primarily a matter of examples and cross-references.  Do NOT keep running updates for WIP; this is actively harmful!  Wait until features are finished and documentation is requested.
 
 If you're asked to write documentation, remember: prose paired with fenced code is good, and encouraged.  But prose is for describing concepts, and not for describing code.  Let the code describe itself.  Syntax in prose is discouraged -- that just means we need a fenced example.
 

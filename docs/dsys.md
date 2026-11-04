@@ -1,22 +1,23 @@
-<!-- header # dsys "`mod :: dsys`" |Pools #pools | Locks #locks | Users #pool-users | Errors #errors | Demos #demos | Refs #references -->
-<h1><a id="dsys"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.up.dark.svg"><img src="img/hdr/docs-dsys.dsys.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.mod.dark.svg"><img src="img/hdr/docs-dsys.dsys.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.title.dark.svg"><img src="img/hdr/docs-dsys.dsys.title.svg" alt=" :: dsys"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.5.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.5.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.4.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.4.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.3.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.3.svg" alt="Errors"></picture></a><a href="#pool-users"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.2.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.2.svg" alt="Users"></picture></a><a href="#locks"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.1.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.1.svg" alt="Locks"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.0.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
+<!-- header # dsys "`mod :: dsys`" | Pools #syntax | Pools #pools | Locks #locks | Users #pool-users | Sims #sims | Errors #errors | Demos #demos | Refs #references -->
+<h1><a id="dsys"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.up.dark.svg"><img src="img/hdr/docs-dsys.dsys.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.mod.dark.svg"><img src="img/hdr/docs-dsys.dsys.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.title.dark.svg"><img src="img/hdr/docs-dsys.dsys.title.svg" alt=" :: dsys"></picture><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.7.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.7.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.6.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.6.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.5.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.5.svg" alt="Errors"></picture></a><a href="#sims"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.4.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.4.svg" alt="Sims"></picture></a><a href="#pool-users"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.3.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.3.svg" alt="Users"></picture></a><a href="#locks"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.2.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.2.svg" alt="Locks"></picture></a><a href="#pools"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.1.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.1.svg" alt="Pools"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-dsys.dsys.0.dark.svg"><img align=right src="img/hdr/docs-dsys.dsys.0.svg" alt="Pools"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
 
 The `dsys` module is a grab-bag of distributed-systems and dynamic-systems stuff.  Mostly these things build on [pools](pool.md) to provide locks, rendezvous, etc.  Pools themselves have a [builtin component](pool.md) but also a [user-space extension](#pools).
 
-| Topic | Import | Description |
-| --- | --- | --- |
-| [dsys](#overview) | `load dsys` | the [`pool`](#pools) and [`locks`](#locks) parts |
-| [pool](#pool-decorator) | `load dsys/pool` | the [`@pool`](#pool-decorator) decorator |
-| [locks](#locks) | `load dsys/locks` | the [locks](#locks): [`amk.mutex`](#locks), [`amk.horcrux`](#locks), [`amk.rendezvous`](#locks) |
-| [job](job.md) | `load dsys/job` | [`amk.job`](job.md): the host's job verbs under one name, with a job table, a wait on a set, and mail from make |
-| [jobman](jobman.md) | `load dsys/jobman` | [`@jobman`](jobman.md#syntax): pools of jobs, the default `__jobs__`, and each guest's handle on one as `amk.jobman.<pool>`; loads `dsys/job` |
-| [petri](petri.md) | `load dsys/petri` | [Petri nets](petri.md): [`@petri`](petri.md#syntax), every place a pool; a [data engine](FFI.md#data-variety) on jq, loading `.petri` and `.pnml` |
-| [workflow](workflow.md) | `load dsys/workflow` | [`@workflow.dag`](workflow.md): a task graph compiled to a net, each task's outcome a token's label; a data engine on jq, loading `.workflow`; loads `dsys/petri` |
-| [kahn](kahn.md) | `load dsys/kahn` | [`@kahn`](kahn.md): a Kahn network compiled to a net, each channel a place its steps write themselves; a data engine on jq, loading `.kahn`; loads `dsys/petri` |
-| [fsm](fsm.md) | `load dsys/fsm` | [`@fsm`](fsm.md): a state machine in the shape of an xstate machine config, or an scxml document, compiled to a net; a data engine on jq, loading `.fsm` and `.scxml`; loads `dsys/petri` |
+| Module | Description |
+| --- | --- |
+| [dsys](#overview) | The [`pool`](#pools) and [`locks`](#locks) parts |
+| [dsys/pool](#pool-decorator) | The [`@pool`](#pool-decorator) decorator |
+| [dsys/locks](#locks) | The [locks](#locks): [`amk.mutex`](#locks), [`amk.horcrux`](#locks), [`amk.rendezvous`](#locks) |
+| [dsys/job](job.md) | [`amk.job`](job.md): the host's job verbs under one name, with a job table, a wait on a set, and mail from make |
+| [dsys/jobman](jobman.md) | [`@jobman`](jobman.md#syntax): pools of jobs, the default `__jobs__`, and each guest's handle on one as `amk.jobman.<pool>`; loads `dsys/job` |
+| [dsys/petri](petri.md) | [Petri nets](petri.md): [`@petri`](petri.md#syntax), every place a pool; a [data engine](FFI.md#data-variety) on jq, loading `.petri` and `.pnml` |
+| [dsys/workflow](workflow.md) | [`@workflow.dag`](workflow.md): a task graph compiled to a net, each task's outcome a token's label; a data engine on jq, loading `.workflow`; loads `dsys/petri` |
+| [dsys/kahn](kahn.md) | [`@kahn`](kahn.md): a Kahn network compiled to a net, each channel a place its steps write themselves; a data engine on jq, loading `.kahn`; loads `dsys/petri` |
+| [dsys/fsm](fsm.md) | [`@fsm`](fsm.md): a state machine in the shape of an xstate machine config, or an scxml document, compiled to a net; a data engine on jq, loading `.fsm` and `.scxml`; loads `dsys/petri` |
+| [dsys/sim](#sims) | [`@sim`](#sims): a world as a graph, Prolog rules and a tuple space under one name, each key optional; loads `graph`, `trilog` and `tspace` |
 
 <a id="pools"></a>
 <a id="syntax"></a>
@@ -49,7 +50,7 @@ endef
 
 | Form | Declares |
 | --- | --- |
-| `@pool` above `define name { "size": .., "labels": [..], "strategy": .. } endef` | a pool of the define's name, its keys from the json over the [baseline](../payload/lib/dsys/pool.default.json) |
+| `@pool` above `define name { "size": .., "labels": [..], "strategy": .. } endef` | A pool of the define's name, its keys from the json over the [baseline](../payload/lib/dsys/pool.default.json) |
 
 The keys are those of [`amk.pool`](pool.md#syntax). Every `@pool` body is checked first
 against its JSON Schema, [`schema/pool.json`](../payload/lib/dsys/schema/pool.json),
@@ -109,9 +110,9 @@ Under the guests' fields are the factories and their verbs as make functions:
 
 | Form | Does |
 | --- | --- |
-| `$(amk.mutex name)` | a pool of one; `amk.mutex.name.lock` waits, `.trylock` answers at once, `.unlock` gives it back |
-| `$(amk.horcrux name, pieces)` | a pool of `pieces` and a writer's mutex `name.w`; `amk.horcrux.name.rlock` and `.tryrlock` take one piece, `.runlock` returns it, `.wlock` takes the writer's mutex then every piece, `.wunlock` returns them all |
-| `$(amk.rendezvous name)` | a channel whose send waits until its value is received: an open labeled pool `name` for the value, an open pool `name.ack` for the receipt, and a sender's mutex `name.s`; `amk.rendezvous.name.send v` returns once `v` is received, `.recv` waits for a value and answers it |
+| `$(amk.mutex name)` | A pool of one; `amk.mutex.name.lock` waits, `.trylock` answers at once, `.unlock` gives it back |
+| `$(amk.horcrux name, pieces)` | A pool of `pieces` and a writer's mutex `name.w`; `amk.horcrux.name.rlock` and `.tryrlock` take one piece, `.runlock` returns it, `.wlock` takes the writer's mutex then every piece, `.wunlock` returns them all |
+| `$(amk.rendezvous name)` | A channel whose send waits until its value is received: an open labeled pool `name` for the value, an open pool `name.ack` for the receipt, and a sender's mutex `name.s`; `amk.rendezvous.name.send v` returns once `v` is received, `.recv` waits for a value and answers it |
 
 A rendezvous value is a label, 1 to 31 bytes with no whitespace. Three pools make one
 rendezvous, so each counts three against the cap of 64.
@@ -125,11 +126,44 @@ Most of the [runtime flavors](runtime.md) have need of a kind of budget for boun
 | Flavor | Holder | Handle |
 | --- | --- | --- |
 | [Task graph](dataflow.md) | make, one token of `goals` per running recipe | `-j`; the jobserver itself |
-| [Multiprocessing](runtime.md#job-pools) | the spawner, across the job's lifetime | pools of jobs: `spawn`, `wait`, `map` |
-| [Control Multiplexer](plex.md) | the coroutine, across a yield | `acquire` with `ms` 0 between sleeps, since a waiting acquire holds the plex |
-| [Actor Model](actor.md#actor-pools) | the supervisor, one token per live leaf member, taken before a start and given back at its exit; with `"mailbox": "pool"`, an inbox per member | the charter's `pool` key, `actors` by default, which `load actor` opens from `AMK_MAX_ACTORS` else `actor.max_actors` |
-| [Automata & DEDS](runtime.md#automata) | the model's [Petri net](petri.md): every place is a pool, a firing consumes its inputs when it starts and produces its outputs when it lands | `@petri`, `@workflow.dag` and `@kahn`, and arcs from an existing pool named under `amk.pools`, which bound the firings in flight |
-| [Tuplespace Reactor](runtime.md#tuplespace-reactor) | the space itself: n identical tuples are a pool, `in` is acquire, `out` is release | none needed; a pool is a tuple space of one tuple type kept in a pipe, and the two differ by reach, not meaning |
+| [Multiprocessing](runtime.md#job-pools) | The spawner, across the job's lifetime | Pools of jobs: `spawn`, `wait`, `map` |
+| [Control Multiplexer](plex.md) | The coroutine, across a yield | `acquire` with `ms` 0 between sleeps, since a waiting acquire holds the plex |
+| [Actor Model](actor.md#actor-pools) | The supervisor, one token per live leaf member, taken before a start and given back at its exit; with `"mailbox": "pool"`, an inbox per member | The charter's `pool` key, `actors` by default, which `load actor` opens from `AMK_MAX_ACTORS` else `actor.max_actors` |
+| [Automata & DEDS](runtime.md#automata) | The model's [Petri net](petri.md): every place is a pool, a firing consumes its inputs when it starts and produces its outputs when it lands | `@petri`, `@workflow.dag` and `@kahn`, and arcs from an existing pool named under `amk.pools`, which bound the firings in flight |
+| [Tuplespace Reactor](runtime.md#tuplespace-reactor) | The space itself: n identical tuples are a pool, `in` is acquire, `out` is release | None needed; a pool is a tuple space of one tuple type kept in a pipe, and the two differ by reach, not meaning |
+
+<a id="sims"></a>
+
+## Sims
+
+`load dsys/sim`, then `@sim` above a JSON define makes three workspaces under the define's
+name. The `graph` key seeds `name.graph`, a [graph](data-engines.md#graph-workspaces). The
+`rules` key, one text or a list of texts, loads `name.rules`, a
+[trilog workspace](data-engines.md#trilog-workspaces). The `events` key makes
+`name.events`, a [tuple space](tspace.md), with the seed, strategy and backing `@tspace`
+takes. A key left out makes its workspace empty. The decorator adds nothing to the three,
+and afterward each answers its own engine's verbs and handles under its dotted name.
+
+```Makefile
+load dsys/sim
+
+@sim
+define world
+  {
+    graph: {"hall": {"label": "Room", "DOOR": ["kitchen"]}, "kitchen": {"label": "Room"}},
+    rules: ["reach(X, Y) :- door(X, Y).", "reach(X, Z) :- door(X, Y), reach(Y, Z)."],
+    events: {"seed": [["enter", "hall"]]}
+  }
+endef
+
+doors := $(world.graph.match (a:Room)-[:DOOR]->(b:Room) RETURN a.id AS a, b.id AS b)
+told  := $(world.rules.assertz door(hall, kitchen))
+reach := $(world.rules.findall reach, hall)
+moved := $(world.events.out enter, kitchen)
+```
+
+What carries facts from the graph to the rules, and what the events drive, is the caller's
+for now; [demos/sim-world.amk](../demos/sim-world.amk) does both by hand.
 
 <a id="errors"></a>
 
@@ -148,12 +182,13 @@ See also [pool errors](pool.md#errors).
 
 | Demo | Shows |
 | ---  | --- |
-| [`pool-locking.amk`](../demos/pool-locking.amk) | the lock factories: workers on `amk.mutex.door`, readers sharing `amk.horcrux.book` while a writer waits for every piece |
-| [`petri-csp.amk`](../demos/petri-csp.amk) | a rendezvous: two micropy senders and a slow js receiver, each send returning once its value is received |
-| [`actors-mailbox.amk`](../demos/actors-mailbox.amk) | open labeled pools as actor inboxes and reply pools, under a charter's `"mailbox": "pool"` |
-| [`petri-batch.amk`](../demos/petri-batch.amk) | a pool of three runners bounding a net's firings in flight |
-| [`kahn-parity.amk`](../demos/kahn-parity.amk) | open labeled pools as Kahn channels, produced to from a step's fork |
-| [`dsys-fsm.amk`](../demos/dsys-fsm.amk) | a state machine's events as open places, its entry actions and service as steps in four guests |
+| [`pool-locking.amk`](../demos/pool-locking.amk) | The lock factories: workers on `amk.mutex.door`, readers sharing `amk.horcrux.book` while a writer waits for every piece |
+| [`petri-csp.amk`](../demos/petri-csp.amk) | A rendezvous: two micropy senders and a slow js receiver, each send returning once its value is received |
+| [`actors-mailbox.amk`](../demos/actors-mailbox.amk) | Open labeled pools as actor inboxes and reply pools, under a charter's `"mailbox": "pool"` |
+| [`petri-batch.amk`](../demos/petri-batch.amk) | A pool of three runners bounding a net's firings in flight |
+| [`kahn-parity.amk`](../demos/kahn-parity.amk) | Open labeled pools as Kahn channels, produced to from a step's fork |
+| [`dsys-fsm.amk`](../demos/dsys-fsm.amk) | A state machine's events as open places, its entry actions and service as steps in four guests |
+| [`sim-world.amk`](../demos/sim-world.amk) | A world under `@sim`: rooms as a graph, reachability as rules over the graph's edges, and moves as tuples |
 
 <a id="references"></a>
 

@@ -1,5 +1,5 @@
-<!-- header # tuple-space "`mod :: amk.tspace`" | Concepts #concepts | Syntax #syntax | Strategy #strategy | API #api | Usage #usage | Fields #fields | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
-<h1><a id="tuple-space"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.up.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.mod.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.title.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.title.svg" alt=" :: amk.tspace"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.9.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.9.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.8.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.8.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.7.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.7.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.6.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.6.svg" alt="Errors"></picture></a><a href="#fields"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.5.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.5.svg" alt="Fields"></picture></a><a href="#usage"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.4.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.4.svg" alt="Usage"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.3.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.3.svg" alt="API"></picture></a><a href="#strategy"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.2.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.2.svg" alt="Strategy"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.1.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.0.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
+<!-- header # tuple-space "`mod :: amk.tspace`" | Concepts #concepts | Syntax #engine-api | Syntax #syntax | Strategy #strategy | API #api | Usage #usage | Fields #fields | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
+<h1><a id="tuple-space"></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.up.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.up.svg" alt="up to the module index"></picture></a><a href="../README.md#module-index"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.mod.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.mod.svg" alt="mod"></picture></a><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.title.dark.svg"><img src="img/hdr/docs-tspace.tuple-space.title.svg" alt=" :: amk.tspace"></picture><a href="#schema"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.10.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.10.svg" alt="Schema"></picture></a><a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.9.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.9.svg" alt="Refs"></picture></a><a href="#demos"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.8.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.8.svg" alt="Demos"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.7.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.7.svg" alt="Errors"></picture></a><a href="#fields"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.6.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.6.svg" alt="Fields"></picture></a><a href="#usage"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.5.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.5.svg" alt="Usage"></picture></a><a href="#api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.4.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.4.svg" alt="API"></picture></a><a href="#strategy"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.3.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.3.svg" alt="Strategy"></picture></a><a href="#syntax"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.2.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.2.svg" alt="Syntax"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.1.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.1.svg" alt="Syntax"></picture></a><a href="#concepts"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-tspace.tuple-space.0.dark.svg"><img align=right src="img/hdr/docs-tspace.tuple-space.0.svg" alt="Concepts"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 <a id="overview"></a>
@@ -97,17 +97,17 @@ tick 5: a blue sky at night
 
 | Term | Meaning |
 | --- | --- |
-| Tuple | an ordered list of json values, stored in a space |
-| Actual | a concrete value in a field; every field `out` takes is one, see [actuals](#actuals) |
-| Formal | a typed placeholder, `?int` and the like, that only a pattern may hold, see [formals](#formals) |
-| Pattern | a tuple of actuals and formals; it matches tuples of the same length whose fields it matches |
-| Space | an sqlite [workspace](data-engines.md#sqlite-workspaces) holding the tuple schema, made by `@tspace` or `tspace.create`, see [declaring a space](#syntax) |
-| `tuplespace` | the default space, made when the library loads, whose verbs are `tspace`, see [`@tspace.target`](#syntax) |
-| Owner | the process that parsed the makefile; it holds every space |
-| Forwarder | any process that inherited a live ask channel from the owner, and sends every request up, see [blocking verbs](#blocking) |
-| Handler | a make function bound to a space and a pattern, which takes the `out`s that match it, see [the reactor](#routed-bound-workers) |
-| Reflex | a handler declared by `@<space>.reflex/<engine> (<fields...>)` above a define, see [reflexes](#reflexes) |
-| Version | a counter each change to a space moves, which `wait` blocks on |
+| Tuple | An ordered list of json values, stored in a space |
+| Actual | A concrete value in a field; every field `out` takes is one, see [actuals](#actuals) |
+| Formal | A typed placeholder, `?int` and the like, that only a pattern may hold, see [formals](#formals) |
+| Pattern | A tuple of actuals and formals; it matches tuples of the same length whose fields it matches |
+| Space | An sqlite [workspace](data-engines.md#sqlite-workspaces) holding the tuple schema, made by `@tspace` or `tspace.create`, see [declaring a space](#syntax) |
+| `tuplespace` | The default space, made when the library loads, whose verbs are `tspace`, see [`@tspace.target`](#syntax) |
+| Owner | The process that parsed the makefile; it holds every space |
+| Forwarder | Any process that inherited a live ask channel from the owner, and sends every request up, see [blocking verbs](#blocking) |
+| Handler | A make function bound to a space and a pattern, which takes the `out`s that match it, see [the reactor](#routed-bound-workers) |
+| Reflex | A handler declared by `@<space>.reflex/<engine> (<fields...>)` above a define, see [reflexes](#reflexes) |
+| Version | A counter each change to a space moves, which `wait` blocks on |
 
 <a id="syntax"></a>
 <a id="engine-api"></a>
@@ -169,9 +169,9 @@ guest's handle, as `amk.tspace[name]` answers it:
 
 | Engine | Bound As |
 | --- | --- |
-| lua | a local, `local SHOP = amk.tspace["SHOP"]` |
-| micropy | a global, after `import amk` |
-| js | a property of `globalThis` that import does not lift |
+| lua | A local, `local SHOP = amk.tspace["SHOP"]` |
+| micropy | A global, after `import amk` |
+| js | A property of `globalThis` that import does not lift |
 | s7 | `(define SHOP (amk-tspace-on "SHOP"))` |
 
 <a id="handlers"></a>
@@ -192,7 +192,7 @@ endef
 | # | Signature | Does |
 | --- | --- | --- |
 | B1 | `@<space>.reflex/<engine> (<field...>) [: prereqs]` above `define <name>` | Compiles the define as the body of the make function `<name>` in the engine, then registers it for the pattern the fields spell; the fields are under [fields](#fields-in-a-decorator). `tspace.create` makes one for every space; lua, js, s7 and micropy compile, `amk` makes the define a make function that takes the tuple by position, and every other engine is refused. |
-| B2 | the body | Runs once per routed tuple, in the engine of B1, with the space's handle under the space's own name and each named field as a parameter. Its helpers are its own locals, so nothing else reaches make. |
+| B2 | The body | Runs once per routed tuple, in the engine of B1, with the space's handle under the space's own name and each named field as a parameter. Its helpers are its own locals, so nothing else reaches make. |
 
 The engine follows a slash, outside the pattern, and the parentheses hold only the pattern's
 fields; they and the commas are optional, so `@shop.reflex/lua order item=str qty=int` is
@@ -228,8 +228,8 @@ endef
 
 | Form | Strategy |
 | --- | --- |
-| `{ "strategy": { "reflexes": "shared" } }` in an `@tspace` body | shared, beside `seed` and the backing keys |
-| `$(tspace.create SKY, reflexes=shared)` | the same, as an option beside the backing's |
+| `{ "strategy": { "reflexes": "shared" } }` in an `@tspace` body | Shared, beside `seed` and the backing keys |
+| `$(tspace.create SKY, reflexes=shared)` | The same, as an option beside the backing's |
 | Neither | exclusive |
 
 The space records its strategy, so a file-backed space keeps the one it was last declared
@@ -297,24 +297,24 @@ reaches the space whole; `@tspace` passes its seed whole the same way.
 
 | Verb | Takes | Answers |
 | --- | --- | --- |
-| `out` | actuals only | nothing |
-| `read` | a pattern | every matching tuple, oldest first |
-| `inp` | a pattern | the oldest matching tuple, removed, or nothing |
-| `in` | a pattern | the oldest matching tuple, removed, once there is one |
-| `rd` | a pattern | the oldest matching tuple, once there is one |
-| `no` | a pattern | true, once no tuple matches |
-| `rdp` | a pattern | the oldest matching tuple, or nothing |
-| `nop` | a pattern | status 0 when no tuple matches, a refusal otherwise; a boolean in the bindings |
-| `all` | nothing | every tuple, oldest first; TuCSoN's `get`, whose name every workspace handle already uses |
-| `set` | tuples | the space replaced by them, in one request |
-| `out_all` | tuples | all added, in one request |
-| `in_all` | a pattern | every matching tuple, removed |
-| `urdp`, `uinp` | a pattern | a random matching tuple, copied or removed, or nothing |
-| `urd`, `uin` | a pattern | a random matching tuple, copied or removed, once there is one |
-| `out_s` | a name, then a pattern | the make function of that name registered as a [handler](#handlers) for the pattern, the raw form of `@<space>.reflex amk (...)`; a name already taken is replaced, and a pattern another handler's overlaps is refused, see [R1](runtime.md#reactions) |
-| `rd_s` | nothing | every handler as `[name, pattern]`, oldest first |
-| `in_s` | a name | the handler, removed, or nothing |
-| `react` | nothing | nothing; every stored tuple a handler matches is taken and routed to it, oldest first, the rest left stored. `<space>.__main__` is a target that runs it |
+| `out` | Actuals only | nothing |
+| `read` | A pattern | Every matching tuple, oldest first |
+| `inp` | A pattern | The oldest matching tuple, removed, or nothing |
+| `in` | A pattern | The oldest matching tuple, removed, once there is one |
+| `rd` | A pattern | The oldest matching tuple, once there is one |
+| `no` | A pattern | true, once no tuple matches |
+| `rdp` | A pattern | The oldest matching tuple, or nothing |
+| `nop` | A pattern | Status 0 when no tuple matches, a refusal otherwise; a boolean in the bindings |
+| `all` | nothing | Every tuple, oldest first; TuCSoN's `get`, whose name every workspace handle already uses |
+| `set` | Tuples | The space replaced by them, in one request |
+| `out_all` | Tuples | All added, in one request |
+| `in_all` | A pattern | Every matching tuple, removed |
+| `urdp`, `uinp` | A pattern | A random matching tuple, copied or removed, or nothing |
+| `urd`, `uin` | A pattern | A random matching tuple, copied or removed, once there is one |
+| `out_s` | A name, then a pattern | The make function of that name registered as a [handler](#handlers) for the pattern, the raw form of `@<space>.reflex amk (...)`; a name already taken is replaced, and a pattern another handler's overlaps is refused, see [R1](runtime.md#reactions) |
+| `rd_s` | nothing | Every handler as `[name, pattern]`, oldest first |
+| `in_s` | A name | The handler, removed, or nothing |
+| `react` | nothing | Nothing; every stored tuple a handler matches is taken and routed to it, oldest first, the rest left stored. `<space>.__main__` is a target that runs it |
 
 In a recipe or from make, a tuple for `set` and `out_all` is one json array, `'["k", 1]'`;
 in a binding it is the language's list.
@@ -352,8 +352,8 @@ Two channel ops serve a caller whose condition the space cannot express:
 
 | Op on a Workspace Namespace | From a Recipe | Answers |
 | --- | --- | --- |
-| `version` | `amk.ns version jobs` | the namespace's version, moved by each change |
-| `wait` | `amk.ns wait jobs -- 7` | the version, once it is past 7; status 3 when the owner exits first |
+| `version` | `amk.ns version jobs` | The namespace's version, moved by each change |
+| `wait` | `amk.ns wait jobs -- 7` | The version, once it is past 7; status 3 when the owner exits first |
 
 How a request asks to be held: its operation answers the park status, 4. In SQL, a
 statement that calls `amk_sqlite_park()` does that for the whole request, the way
@@ -678,8 +678,8 @@ type becomes when a guest reads a tuple back.
 
 | Caller | An Argument Becomes |
 | --- | --- |
-| make, recipe | its json type when it parses as json, a string otherwise |
-| lua, micropy, js, s7 | the json of the language's own value |
+| make, recipe | Its json type when it parses as json, a string otherwise |
+| lua, micropy, js, s7 | The json of the language's own value |
 
 | Json | lua | micropy | js | s7 |
 | --- | --- | --- | --- | --- |
@@ -702,9 +702,9 @@ describes, and the parens around them are optional.
 
 | # | Field | Means |
 | --- | --- | --- |
-| F1 | a word or a `"quoted literal"` | an actual in the pattern, bound to no name; `_` is the formal `?` |
-| F2 | `name=type` | the formal `?type`, bound to the parameter `name` and read back from text by its type; `name=` is `name=any` |
-| F3 | `type` in F2 | one of `any`, `str`, `int`, `float`, `bool`, `null`, `list`, `dict`, `number`, `table`: a [formal](#formals) without its `?` |
+| F1 | A word or a `"quoted literal"` | An actual in the pattern, bound to no name; `_` is the formal `?` |
+| F2 | `name=type` | The formal `?type`, bound to the parameter `name` and read back from text by its type; `name=` is `name=any` |
+| F3 | `type` in F2 | One of `any`, `str`, `int`, `float`, `bool`, `null`, `list`, `dict`, `number`, `table`: a [formal](#formals) without its `?` |
 
 <a id="rules"></a>
 
@@ -717,11 +717,11 @@ to json. The table gives each case and how it is read or refused.
 
 | Rule | |
 | --- | --- |
-| A formal in `out` | refused: `out takes actuals only` |
-| An unknown `?` formal | refused: `unknown formal` |
-| A string beginning with `?` in a pattern | read as a formal |
-| A lua type name in a pattern | read as a formal; in `out`, a string |
-| A js float with no fraction, such as `7.0` | sent as `7`, stored as an integer |
+| A formal in `out` | Refused: `out takes actuals only` |
+| An unknown `?` formal | Refused: `unknown formal` |
+| A string beginning with `?` in a pattern | Read as a formal |
+| A lua type name in a pattern | Read as a formal; in `out`, a string |
+| A js float with no fraction, such as `7.0` | Sent as `7`, stored as an integer |
 
 <a id="errors"></a>
 
@@ -742,7 +742,7 @@ to json. The table gives each case and how it is read or refused.
 | A field named after its space | `a field cannot be named after its space` |
 | A field name used twice | `a field name is used twice` |
 | A handler pattern overlapping another's | `overlaps`, naming both at lines, a witness tuple and the fields |
-| A held request when the owner exits | status 3, and the caller ends |
+| A held request when the owner exits | Status 3, and the caller ends |
 
 <a id="demos"></a>
 
@@ -750,12 +750,12 @@ to json. The table gives each case and how it is read or refused.
 
 | Demo | Shows |
 | --- | --- |
-| [`tuplespace-1.amk`](../demos/tuplespace-1.amk) | a Linda tuple space shared by workers in four guests under `-j4`, each taking typed candidates through one atomic pattern match |
+| [`tuplespace-1.amk`](../demos/tuplespace-1.amk) | A Linda tuple space shared by workers in four guests under `-j4`, each taking typed candidates through one atomic pattern match |
 | [`tuplespace-basic.amk`](../demos/tuplespace-basic.amk) | `@tspace` creating and seeding a space, read from make, python and js, counted in SQL; embedded under [basic](#usage-basic) |
-| [`tuplespace-reactor.amk`](../demos/tuplespace-reactor.amk) | handlers in three guests and make routing an order through a space; embedded under [reactor](#routed-bound-workers) |
-| [`tuplespace-sailors.amk`](../demos/tuplespace-sailors.amk) | a js world reflex ticking a sky through a day, watched by a lua sailor and a micropy sailor on a space whose reflexes are shared, each keeping a feeling of its own; embedded under the [overview](#overview) |
-| [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | a space as mailboxes for python goal actors, with a selective receive; embedded under [actors](#usage-actors) |
-| [`tuplespace-todo.amk`](../demos/tuplespace-todo.amk) | a todo list in an `owned` space that keeps its items across runs; embedded under [filesystem](#usage-filesystem) |
+| [`tuplespace-reactor.amk`](../demos/tuplespace-reactor.amk) | Handlers in three guests and make routing an order through a space; embedded under [reactor](#routed-bound-workers) |
+| [`tuplespace-sailors.amk`](../demos/tuplespace-sailors.amk) | A js world reflex ticking a sky through a day, watched by a lua sailor and a micropy sailor on a space whose reflexes are shared, each keeping a feeling of its own; embedded under the [overview](#overview) |
+| [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | A space as mailboxes for python goal actors, with a selective receive; embedded under [actors](#usage-actors) |
+| [`tuplespace-todo.amk`](../demos/tuplespace-todo.amk) | A todo list in an `owned` space that keeps its items across runs; embedded under [filesystem](#usage-filesystem) |
 
 <a id="references"></a>
 

@@ -1,0 +1,42 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/trilog-eventcalculus.amk:
+#  Shanahan's light switch over the event calculus, then a kettle whose
+#  effects depend on what holds; each a rule base asked what holds when.
+#
+
+load trilog
+
+# The at line makes workspace switch from the define, the calculus ahead of it.
+@trilog.import.event_calculus
+define switch
+  initially(lightOff).
+  initiates(switchOn, lightOn, _).
+  terminates(switchOn, lightOff, _).
+  initiates(switchOff, lightOff, _).
+  terminates(switchOff, lightOn, _).
+  happens(switchOn, 1).
+  happens(switchOff, 3).
+  happens(switchOn, 5).
+endef
+
+got.light := $(foreach t,0 2 4 6,$(t):$(strip $(switch.get holdsAt(F, $(t)))))
+
+# Fill fills it, wait changes nothing, and boil heats only a full kettle.
+@trilog.import.event_calculus
+define kettle
+  initially(cold).
+  initiates(fill, full, _).
+  initiates(boil, hot, T) :- holdsAt(full, T).
+  terminates(boil, cold, T) :- holdsAt(full, T).
+  happens(fill, 1).
+  happens(wait, 2).
+  happens(boil, 3).
+endef
+
+got.kettle := $(foreach t,1 2 3 4, \
+  $(t):[$(strip $(kettle.get holdsAt(F, $(t))))])
+
+__main__:
+	echo 'the light, at 0 2 4 6:  $(got.light)'
+	echo 'the kettle, at 1 2 3 4: $(got.kettle)'

@@ -24,7 +24,8 @@ define release
       "checkout": { "run": "checkout" },
       // one test per engine, two at a time under the runners pool
       "test":     { "run": "test", "needs": ["checkout"],
-                    "over": ["lua", "js", "micropy"], "pool": "runners" },
+                    "over": { "data": ["lua", "js", "micropy"] },
+                    "pool": "runners" },
       "package":  { "run": "package", "needs": ["test"] },
       "publish":  { "run": "publish", "needs": ["package"] },
       // runs only when package fails
@@ -37,10 +38,10 @@ endef
 checkout:
 	@echo "checkout"
 
-# A step run over a list reads its item as release.<task>.token.
+# A step run over a list reads its item as <run>.item.
 @lua.target
 define test
-  print("test " .. amk.var["release.test.token"])
+  print("test " .. amk.var["test.item"])
 endef
 
 package:

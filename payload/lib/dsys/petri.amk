@@ -2,12 +2,13 @@
 # payload/lib/dsys/petri.amk:
 #  petri nets: JSON under @petri, read once by petri.jq into variables, each
 #  place a pool <net>.<place>; <net>.run fires in two halves, inputs then
-#  outputs, with agoal steps in flight as jobs counted in <t>.busy. a run
-#  ends at the final marking, fails dead, or waits while places are open.
+#  outputs, with agoal steps in flight as jobs counted in <t>.busy and bounded
+#  by the job pool. a run ends at the final marking, fails dead, or waits
+#  while places are open.
 #
 petri._lib := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 $(amk.require jq)
-load dsys/job
+load dsys/jobman
 
 petri.max_firings ?= 1000
 petri.patience ?=
@@ -190,8 +191,15 @@ $(strip
       $(if $($(1).$(2).short),,
         $(if $(call petri._try,$(1),$(call petri._place,$(a)),$(2)),,
           $(eval $(1).$(2).short := y)))))
+  $(if $($(1).$(2).short),,$(call petri._slot,$(1),$(2)))
   $(if $($(1).$(2).short),$(call petri._undo,$(1),$(2)),y))
 endef
+
+# An agoal firing takes a slot of the job pool, given back when it lands.
+petri.jobs ?= __jobs__
+petri._slot = $(if $(and $(filter $($(1).$(2).kind),$(petri.async)), \
+    $(amk.pool $(petri.jobs))), \
+  $(if $(amk.pool.acquire $(petri.jobs), 0),,$(eval $(1).$(2).short := y)))
 
 # A token given: its label into a labeled place, else one more into the pool.
 petri._put = $(if $(filter $(2),$($(1).labeled)), \
@@ -269,6 +277,7 @@ $(strip
     $(if $(filter stopped,$(call petri._rec,$(2),status)),,
       $(foreach t,$($(1).job.$(p)),
         $(eval $(1).inflight := $(filter-out $(p),$($(1).inflight)))
+        $(if $(amk.pool $(petri.jobs)),$(amk.pool.release $(petri.jobs)))
         $(eval $(1).$(t).token := $($(1).job.$(p).token))
         $(eval $(1).$(t).taken := $($(1).job.$(p).taken))
         $(eval $(1).$(t).outcome := $(call petri._outcome,$(2)))
@@ -304,7 +313,9 @@ petri._loop = $(eval $(1).next := $(call petri._next,$(1))) \
         $(call petri._loop,$(1)), \
         $(if $(filter met,$(word 2,$($(1).next))),,$(if $($(1).open), \
           $(call petri._patience,$(1))))), \
-      $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t))) \
+      $(if $(call petri._grab,$(1),$(t)),$(call petri._fire,$(1),$(t)), \
+        $(if $($(1).inflight), \
+          $(call petri._land,$(1),$(amk.job.any $($(1).inflight))))) \
       $(call petri._loop,$(1))))
 petri._final = $(call petri._exec,$(1),stuck($$net; $$marking))
 petri.run = $(strip $(call petri._fresh,$(1))$(call petri._own.places,$(1)) \

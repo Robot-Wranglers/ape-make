@@ -1,76 +1,76 @@
 /* The payload: booting into its entry script, unpacking and listing its members, putting its tools on PATH, and bundling a makefile program into a copy of the binary.  */
 
 #include "makeint.h"
+#include "filedef.h"
+#include "variable.h"
 #include <fcntl.h>
 #include "amk.h"
 
-/* Payload boot: a distribution appends its own entry script to the binary and
-   this hands control to it, so the engine learns one filename and nothing about
-   whatever framework rides on top.  */
+/* Payload boot: a distribution appends its own entry program to the binary and
+   this hands control to it, so the engine learns one member name and nothing
+   about whatever framework rides on top.  */
 
 #ifdef __COSMOPOLITAN__
 #include <cosmo.h>
 
-#define AMK_BOOT_SCRIPT "/zip/__main__.sh"
+#define AMK_ENTRY "/zip/__main__."
+
+/* The engine and path of the payload's entry: the first member named for an extension that a row claims and can run as a file; an empty member is a payload that does not want to boot.  */
+static const struct amk_engine *
+amk_payload_entry (char *path, size_t size)
+{
+  const struct amk_engine *e;
+  struct stat st;
+  for (e = amk_engines; e->name; ++e)
+    {
+      const char *p = e->name;
+      if (e->cli->argv && !e->cli->file)
+        continue;
+      while (p != NULL && *p)
+        {
+          size_t n = strcspn (p, " ");
+          snprintf (path, size, "%s%.*s", AMK_ENTRY, (int) n, p);
+          if (stat (path, &st) == 0 && st.st_size > 0)
+            return e;
+          p = p == e->name ? e->aliases : p + n + (p[n] == ' ');
+        }
+    }
+  return NULL;
+}
 
 void
 amk_payload_boot (int argc, char **argv)
 {
-  char *script, **av;
-  size_t len = 0, cap = 1 << 16;
-  int fd, i, j;
+  static char path[64];
+  const struct amk_engine *e;
+  char **av;
+  int i, j, rc;
 
   /* Recursion routes back into this binary, so a child must not boot again.  */
   if (getenv ("AMK_BOOTED"))
     return;
-  EINTRLOOP (fd, open (AMK_BOOT_SCRIPT, O_RDONLY));
-  if (fd < 0)
+  e = amk_payload_entry (path, sizeof path);
+  if (e == NULL)
     return;
-  script = xmalloc (cap + 1);
-  while (1)
-    {
-      ssize_t r;
-      if (len == cap)
-        {
-          cap *= 2;
-          script = xrealloc (script, cap + 1);
-        }
-      EINTRLOOP (r, read (fd, script + len, cap - len));
-      if (r < 0)
-        {
-          close (fd);
-          free (script);
-          return;
-        }
-      if (r == 0)
-        break;
-      len += (size_t) r;
-    }
-  close (fd);
-  script[len] = '\0';
-  /* An empty script is a payload that does not want to boot; do not spawn.  */
-  if (len == 0)
-    {
-      free (script);
-      return;
-    }
+  /* A row that runs a file by exec reads it through a payload tool, which a bare PATH does not have.  */
+  if (e->cli->file && getenv ("AMK_NO_PATH"))
+    amk_warn ("AMK_NO_PATH is set, and the entry needs the payload's %s to read %s",
+              e->name, path);
 
-  /* The absolute self path becomes the script's argument zero, so it can read
-     its own payload after a directory change, and the caller's arguments
-     follow it.  */
-  av = xmalloc ((argc + 4) * sizeof *av);
+  /* The entry is the program and the caller's arguments follow it; a row that takes its program as text gets the member's text.  */
+  av = xmalloc ((argc + 2) * sizeof *av);
   i = 0;
-  av[i++] = (char *) "bash";
-  av[i++] = (char *) "-c";
-  av[i++] = script;
-  av[i++] = (char *) GetProgramExecutableName ();
+  av[i++] = (char *) e->name;
+  av[i++] = path;
   for (j = 1; j < argc; ++j)
     av[i++] = argv[j];
   av[i] = NULL;
-  execvp ("bash", av);
-  /* No bash on the host: fall through and serve as an ordinary make.  */
-  free (av);
-  free (script);
+  if (!e->cli->argv)
+    amk_program_from_stdin (e, i, av);
+  rc = e->cli->main (i, av);
+  if (e->cli->file)
+    amk_warn ("the entry %s did not run", path);
+  exit (rc);
 }
 #else
 void
@@ -230,9 +230,9 @@ amk_walk (const char *dir, char ***names, size_t *n, size_t *cap)
   closedir (d);
 }
 
-/* The payload's members, one per line, sorted, as --ape-unpack names them.  */
-int
-amk_ape_list (void)
+/* The payload's members, one per line, sorted, each spelled from the given offset into its path under /zip.  */
+static int
+amk_payload_list (const char *verb, size_t skip)
 {
   char **names = NULL;
   size_t i, n = 0, cap = 0;
@@ -240,18 +240,25 @@ amk_ape_list (void)
 
   if (stat ("/zip", &st) < 0)
     {
-      fprintf (stderr, "amk: --ape-list: this build carries no payload\n");
+      fprintf (stderr, "amk: %s: this build carries no payload\n", verb);
       return MAKE_FAILURE;
     }
   amk_walk ("/zip", &names, &n, &cap);
   qsort (names, n, sizeof *names, amk_walk_cmp);
   for (i = 0; i < n; ++i)
     {
-      puts (names[i] + 5);
+      puts (names[i] + skip);
       free (names[i]);
     }
   free (names);
   return MAKE_SUCCESS;
+}
+
+/* The members as --ape-unpack names them, relative to the payload's root.  */
+int
+amk_ape_list (void)
+{
+  return amk_payload_list ("--ape-list", 5);
 }
 #else
 int
@@ -279,8 +286,52 @@ amk_ape_list (void)
 
 #define AMK_TOOLS_DIR "/zip/bin"
 
-void
-amk_payload_path (void)
+/* One engine name in the tools directory, a link that runs this binary under that name; a payload tool of the same name stays, and a link to a binary since moved is replaced.  */
+static void
+amk_payload_link (const char *dir, const char *name, size_t nl)
+{
+  const char *self = GetProgramExecutableName ();
+  char *dest = xmalloc (strlen (dir) + nl + 2), have[PATH_MAX];
+  ssize_t r;
+
+  sprintf (dest, "%s/%.*s", dir, (int) nl, name);
+  r = readlink (dest, have, sizeof have - 1);
+  if (r >= 0)
+    {
+      have[r] = '\0';
+      if (strcmp (have, self) != 0)
+        unlink (dest);
+    }
+  if ((r >= 0 || errno == ENOENT) && symlink (self, dest) < 0 && errno != EEXIST)
+    amk_warn ("the engine name %s did not link into %s: %s", dest + strlen (dir) + 1,
+              dir, strerror (errno));
+  free (dest);
+}
+
+/* Every name and alias of an engine whose command line is the tool's own.  */
+static void
+amk_payload_links (const char *dir)
+{
+  const struct amk_engine *e;
+  for (e = amk_engines; e->name; ++e)
+    {
+      const char *p = e->aliases;
+      if (e->cli == NULL || !e->cli->tool)
+        continue;
+      amk_payload_link (dir, e->name, strlen (e->name));
+      while (p != NULL && *p)
+        {
+          size_t n = strcspn (p, " ");
+          amk_payload_link (dir, p, n);
+          p += n;
+          while (*p == ' ')
+            ++p;
+        }
+    }
+}
+
+static void
+amk_payload_tools (void)
 {
   const char *base, *sub, *path;
   char *dir, *name, *dest, *next;
@@ -301,7 +352,11 @@ amk_payload_path (void)
       sub = "/.cache";
     }
   if (!base || !*base)
-    return;
+    {
+      if (stat (AMK_TOOLS_DIR, &self) == 0)
+        amk_warn ("no HOME and no XDG_CACHE_HOME, so the payload's tools are not unpacked and the host's are used");
+      return;
+    }
 
   /* The key changes with the binary, so an upgrade never runs a stale tool.  */
   dir = xmalloc (strlen (base) + 64);
@@ -338,18 +393,30 @@ amk_payload_path (void)
       /* A tool that failed to land leaves PATH alone rather than half set.  */
       if (r != MAKE_SUCCESS)
         {
+          amk_warn ("the payload's tools did not unpack into %s, so the host's are used",
+                    dir);
           closedir (d);
           free (dir);
           return;
         }
     }
   closedir (d);
+  amk_payload_links (dir);
 
   next = xmalloc (n + (path ? strlen (path) : 0) + 2);
   sprintf (next, "%s%s%s", dir, path && *path ? ":" : "", path ? path : "");
   setenv ("PATH", next, 1);
   free (next);
   free (dir);
+}
+
+/* A cosmo child maps the file this names as its own /zip, so a payload tool reads this payload in place; an inherited name goes before the first read of /zip, and the new one follows the change to PATH because it moves the environment main holds.  */
+void
+amk_payload_path (void)
+{
+  unsetenv ("COSMOPOLITAN_INIT_ZIPOS");
+  amk_payload_tools ();
+  setenv ("COSMOPOLITAN_INIT_ZIPOS", GetProgramExecutableName (), 1);
 }
 #else
 void
@@ -358,12 +425,22 @@ amk_payload_path (void)
 }
 #endif
 
+/* The name set at startup is new to the environment make already read, so it becomes an exported variable for recipes to inherit.  */
+void
+amk_payload_init (void)
+{
+  const char *zip = getenv ("COSMOPOLITAN_INIT_ZIPOS");
+  if (zip && *zip)
+    define_variable_global ("COSMOPOLITAN_INIT_ZIPOS", 23, zip, o_env, 0, NILF)->export = v_export;
+}
+
 /* Payload bundle: write a copy of this binary whose payload carries a makefile
    program, and run that program when the caller names no makefile.  */
 
 #define AMK_MAIN_MK "/zip/__main__.mk"
 
 #ifdef __COSMOPOLITAN__
+#include <sys/file.h>
 #include "third_party/zlib/zlib.h"
 
 struct amk_member
@@ -375,10 +452,13 @@ struct amk_member
   unsigned int mode, dostime, dosdate;
 };
 
+/* The flag a failure names, since bundle and unbundle share their zip code.  */
+static const char *amk_bundle_verb = "--bundle";
+
 static int
 amk_bundle_fail (const char *what, const char *path)
 {
-  fprintf (stderr, "amk: --bundle: %s: %s: %s\n", what, path,
+  fprintf (stderr, "amk: %s: %s: %s: %s\n", amk_bundle_verb, what, path,
            strerror (errno));
   return MAKE_FAILURE;
 }
@@ -556,47 +636,13 @@ amk_bundle_walk (struct amk_members *s, const char *dir, const char *name)
   return r;
 }
 
-int
-amk_bundle (int n, char **files, const char *out)
+/* The end record's counts for this binary's zip, or a failure when it is not a plain one.  */
+static int
+amk_zip_end (unsigned char *self, size_t selflen, size_t *entries,
+             size_t *cdsize, size_t *cdoff)
 {
-  struct amk_members set = { NULL, 0, 0 };
-  struct amk_member *m;
-  unsigned char *self, *eocd = NULL, *q, hdr[46];
-  size_t selflen, cdoff, cdsize, entries, pos, cdstart, kept = 0;
-  const char *base;
-  char *tmp;
-  int fd, r, i, e, reported = 0;
+  unsigned char *eocd = NULL, *q;
 
-  if (n < 1)
-    {
-      fprintf (stderr, "amk: --bundle: names no makefile\n");
-      return MAKE_FAILURE;
-    }
-  if (!out || !*out)
-    {
-      fprintf (stderr, "amk: --bundle: names no --out\n");
-      return MAKE_FAILURE;
-    }
-
-  /* The first file is the entry; the rest keep their names under the root.  */
-  {
-    struct stat st;
-    if (stat (files[0], &st) == 0 && !S_ISREG (st.st_mode))
-      {
-        errno = EISDIR;
-        return amk_bundle_fail ("the entry must be a file", files[0]);
-      }
-  }
-  for (i = 0; i < n; ++i)
-    if (amk_bundle_add (&set, files[i], i == 0 ? "__main__.mk" : files[i])
-        != MAKE_SUCCESS)
-      return MAKE_FAILURE;
-  m = set.m;
-  n = set.n;
-
-  self = amk_slurp (GetProgramExecutableName (), &selflen);
-  if (!self)
-    return amk_bundle_fail ("read", GetProgramExecutableName ());
   for (q = self + selflen - 22; selflen >= 22 && q >= self; --q)
     {
       if (amk_get32 (q) == 0x06054b50)
@@ -612,16 +658,262 @@ amk_bundle (int n, char **files, const char *out)
       errno = EINVAL;
       return amk_bundle_fail ("no zip end record", GetProgramExecutableName ());
     }
-  entries = amk_get16 (eocd + 10);
-  cdsize = amk_get32 (eocd + 12);
-  cdoff = amk_get32 (eocd + 16);
+  *entries = amk_get16 (eocd + 10);
+  *cdsize = amk_get32 (eocd + 12);
+  *cdoff = amk_get32 (eocd + 16);
   /* Only a plain end record is rewritten; zip64 and split archives stop here.  */
-  if (entries == 0xffff || cdoff == 0xffffffff
-      || cdoff + cdsize > (size_t) (eocd - self))
+  if (*entries == 0xffff || *cdoff == 0xffffffff
+      || *cdoff + *cdsize > (size_t) (eocd - self))
     {
       errno = ENOTSUP;
       return amk_bundle_fail ("unsupported zip layout",
                               GetProgramExecutableName ());
+    }
+  return MAKE_SUCCESS;
+}
+
+/* The member name an entry file takes: the makefile entry for a makefile, else the entry of the engine that claims the file's extension and can run it as a file.  */
+static const char *
+amk_bundle_entry (const char *file)
+{
+  static char entry[80];
+  const char *base = strrchr (file, '/');
+  const char *ext = strrchr (base != NULL ? base : file, '.');
+  const struct amk_engine *e = ext != NULL ? amk_engine_by_extension (ext + 1) : NULL;
+
+  if (ext != NULL && (strcmp (ext, ".mk") == 0 || strcmp (ext, ".amk") == 0))
+    return "__main__.mk";
+  if (e == NULL || (e->cli->argv && !e->cli->file) || strlen (ext) + 9 > sizeof entry)
+    {
+      fprintf (stderr, "amk: --bundle-main: %s: no engine runs this extension as an entry; the extensions are %s\n",
+               file, amk_engine_extensions ());
+      return NULL;
+    }
+  sprintf (entry, "__main__%s", ext);
+  return entry;
+}
+
+static int amk_payload_rewrite (struct amk_members *set, int n, char **names,
+                                int all, const char *out);
+
+static int
+amk_bundle (int n, char **files, int by_engine, const char *out)
+{
+  struct amk_members set = { NULL, 0, 0 };
+  const char *entry = "__main__.mk";
+  int i;
+
+  if (n < 1)
+    {
+      fprintf (stderr, "amk: %s: names no %s\n", amk_bundle_verb, by_engine ? "entry" : "makefile");
+      return MAKE_FAILURE;
+    }
+  if (!out || !*out)
+    {
+      fprintf (stderr, "amk: %s: names no --out\n", amk_bundle_verb);
+      return MAKE_FAILURE;
+    }
+  if (by_engine && (entry = amk_bundle_entry (files[0])) == NULL)
+    return MAKE_FAILURE;
+
+  /* The first file is the entry; the rest keep their names under the root.  */
+  {
+    struct stat st;
+    if (stat (files[0], &st) == 0 && !S_ISREG (st.st_mode))
+      {
+        errno = EISDIR;
+        return amk_bundle_fail ("the entry must be a file", files[0]);
+      }
+  }
+  for (i = 0; i < n; ++i)
+    if (amk_bundle_add (&set, files[i], i == 0 ? entry : files[i])
+        != MAKE_SUCCESS)
+      return MAKE_FAILURE;
+  return amk_payload_rewrite (&set, 0, NULL, 0, out);
+}
+
+/* Payload rewrite: one writer behind every verb that changes the payload, so
+   each of them replaces, removes and closes the space the same way.  */
+
+struct amk_entry
+{
+  unsigned char *rec;
+  size_t reclen, nl, off, end, newoff;
+  int drop, own;
+};
+
+static int
+amk_entry_cmp (const void *a, const void *b)
+{
+  const struct amk_entry *x = *(const struct amk_entry *const *) a;
+  const struct amk_entry *y = *(const struct amk_entry *const *) b;
+  return x->off < y->off ? -1 : x->off > y->off;
+}
+
+/* The linker's members sit inside the program image: a dot name, or the zone database.  */
+static int
+amk_entry_own (const unsigned char *name, size_t nl)
+{
+  return (nl > 0 && name[0] == '.') || (nl >= 4 && memcmp (name, "usr/", 4) == 0);
+}
+
+/* An entry besides the makefile's: a member named for some engine's extension.  */
+static int
+amk_entry_boots (const unsigned char *name, size_t nl)
+{
+  return nl > 9 && memcmp (name, "__main__.", 9) == 0 && !(nl == 11 && memcmp (name + 9, "mk", 2) == 0);
+}
+
+/* The named members and everything under them leave, or every member a strip takes; the set's members land, each replacing one of its name; what is left moves up over the space the departed held.  */
+static int
+amk_payload_rewrite (struct amk_members *set, int n, char **names, int all, const char *out)
+{
+  struct amk_entry *ent, **byoff;
+  struct amk_member *add = set != NULL ? set->m : NULL;
+  unsigned char *self, *q, hdr[46];
+  size_t selflen, cdoff, cdsize, entries, pos, cdstart, kept = 0, fixed = 0, e;
+  const char *base;
+  char *tmp;
+  int adds = set != NULL ? set->n : 0;
+  int fd, r, i, reported = 0, turn = -1;
+  struct stat held, named;
+
+  /* A rewrite of this binary itself waits its turn before it reads: the lock is on the file, and the writer ahead put a new file under the name, so the name is checked against the file once the wait ends.  */
+  while (stat (out, &named) == 0 && stat (GetProgramExecutableName (), &held) == 0
+         && named.st_dev == held.st_dev && named.st_ino == held.st_ino)
+    {
+      EINTRLOOP (turn, open (out, O_RDONLY));
+      if (turn < 0)
+        return amk_bundle_fail ("open", out);
+      EINTRLOOP (r, flock (turn, LOCK_EX));
+      if (r < 0)
+        return amk_bundle_fail ("lock", out);
+      if (fstat (turn, &held) == 0 && stat (out, &named) == 0
+          && named.st_dev == held.st_dev && named.st_ino == held.st_ino)
+        break;
+      close (turn);
+      turn = -1;
+    }
+
+  /* A rename needs only the directory, so the binary's own protection is asked about here; a file of another user's comes back as the writer's own, which is said and not refused.  */
+  if (turn >= 0)
+    {
+      if (access (out, W_OK) < 0)
+        {
+          fprintf (stderr, "amk: %s: cannot rewrite %s in place: %s\n", amk_bundle_verb, out, strerror (errno));
+          return MAKE_FAILURE;
+        }
+      if (held.st_uid != geteuid ())
+        amk_warn ("%s belongs to another user, and the rewritten file will belong to you", out);
+    }
+
+  self = amk_slurp (turn >= 0 ? out : GetProgramExecutableName (), &selflen);
+  if (!self)
+    return amk_bundle_fail ("read", GetProgramExecutableName ());
+  if (amk_zip_end (self, selflen, &entries, &cdsize, &cdoff) != MAKE_SUCCESS)
+    return MAKE_FAILURE;
+
+  ent = xcalloc ((entries + 1) * sizeof *ent);
+  byoff = xcalloc ((entries + 1) * sizeof *byoff);
+  for (q = self + cdoff, e = 0; e < entries; ++e)
+    {
+      if (q + 46 > self + cdoff + cdsize || amk_get32 (q) != 0x02014b50)
+        {
+          errno = EINVAL;
+          return amk_bundle_fail ("damaged central directory",
+                                  GetProgramExecutableName ());
+        }
+      ent[e].rec = q;
+      ent[e].nl = amk_get16 (q + 28);
+      ent[e].reclen = 46 + ent[e].nl + amk_get16 (q + 30) + amk_get16 (q + 32);
+      ent[e].off = amk_get32 (q + 42);
+      ent[e].own = amk_entry_own (q + 46, ent[e].nl);
+      /* A strip keeps the tools beside the program's own members.  */
+      ent[e].drop = all && !ent[e].own
+                    && !(ent[e].nl >= 4 && memcmp (q + 46, "bin/", 4) == 0);
+      if (ent[e].off + 30 > cdoff || amk_get32 (self + ent[e].off) != 0x04034b50)
+        {
+          errno = EINVAL;
+          return amk_bundle_fail ("damaged member record",
+                                  GetProgramExecutableName ());
+        }
+      byoff[e] = &ent[e];
+      q += ent[e].reclen;
+    }
+
+  /* Each name takes the member it spells and every member under it as a directory.  */
+  for (i = 0; i < n; ++i)
+    {
+      const char *nm = names[i];
+      size_t len, hits = 0;
+      /* A member is named as the listing prints it, under /zip, or from the payload's root.  */
+      if (strncmp (nm, "/zip/", 5) == 0)
+        nm += 5;
+      while (nm[0] == '.' && nm[1] == '/')
+        nm += 2;
+      len = strlen (nm);
+      while (len > 0 && nm[len - 1] == '/')
+        --len;
+      if (len == 0 || nm[0] == '/' || strstr (nm, ".."))
+        {
+          fprintf (stderr, "amk: %s: '%s' is not a payload name\n", amk_bundle_verb,
+                   names[i]);
+          return MAKE_FAILURE;
+        }
+      for (e = 0; e < entries; ++e)
+        {
+          const unsigned char *have = ent[e].rec + 46;
+          if (ent[e].nl < len || memcmp (have, nm, len) != 0
+              || (ent[e].nl > len && have[len] != '/'))
+            continue;
+          if (ent[e].own)
+            {
+              fprintf (stderr, "amk: %s: '%s' belongs to the program itself\n",
+                       amk_bundle_verb, names[i]);
+              return MAKE_FAILURE;
+            }
+          ent[e].drop = 1;
+          ++hits;
+        }
+      if (hits == 0)
+        {
+          errno = ENOENT;
+          return amk_bundle_fail ("no payload member", names[i]);
+        }
+    }
+
+  /* A member that lands replaces the one of its name, and a payload holds one entry besides the makefile's.  */
+  for (i = 0; i < adds; ++i)
+    {
+      size_t nl = strlen (add[i].name);
+      if (amk_entry_own ((const unsigned char *) add[i].name, nl))
+        {
+          fprintf (stderr, "amk: %s: '%s' belongs to the program itself\n",
+                   amk_bundle_verb, add[i].name);
+          return MAKE_FAILURE;
+        }
+      for (e = 0; e < entries; ++e)
+        {
+          const unsigned char *have = ent[e].rec + 46;
+          if (ent[e].nl == nl && memcmp (have, add[i].name, nl) == 0)
+            ent[e].drop = 1;
+          else if (!ent[e].drop && amk_entry_boots ((const unsigned char *) add[i].name, nl)
+                   && amk_entry_boots (have, ent[e].nl))
+            {
+              errno = EEXIST;
+              return amk_bundle_fail ("the payload already has an entry, which --bundle-rm removes",
+                                      xstrndup ((const char *) have, ent[e].nl));
+            }
+        }
+    }
+
+  /* A member's bytes run to the next member's record, and nothing at or below the linker's last member moves.  */
+  qsort (byoff, entries, sizeof *byoff, amk_entry_cmp);
+  for (e = 0; e < entries; ++e)
+    {
+      byoff[e]->end = e + 1 < entries ? byoff[e + 1]->off : cdoff;
+      if (byoff[e]->own && byoff[e]->end > fixed)
+        fixed = byoff[e]->end;
     }
 
   tmp = xmalloc (strlen (out) + 32);
@@ -631,80 +923,79 @@ amk_bundle (int n, char **files, const char *out)
            base);
   EINTRLOOP (fd, open (tmp, O_WRONLY | O_CREAT | O_TRUNC, 0755));
   if (fd < 0)
-    return amk_bundle_fail ("open", tmp);
-
-  /* Everything ahead of the central directory is kept byte for byte.  */
-  if (amk_write_all (fd, self, cdoff) < 0)
-    goto fail;
-  pos = cdoff;
-  for (i = 0; i < n; ++i)
     {
-      size_t nl = strlen (m[i].name);
+      /* The result is written beside the destination, so the failure is the directory's, and the message names what was asked for.  */
+      fprintf (stderr, "amk: %s: cannot write %s: its directory takes no new file: %s\n",
+               amk_bundle_verb, out, strerror (errno));
+      return MAKE_FAILURE;
+    }
+
+  pos = entries ? byoff[0]->off : cdoff;
+  if (amk_write_all (fd, self, pos) < 0)
+    goto fail;
+  for (e = 0; e < entries; ++e)
+    {
+      struct amk_entry *m = byoff[e];
+      if (m->drop && m->off >= fixed)
+        continue;
+      if (amk_write_all (fd, self + m->off, m->end - m->off) < 0)
+        goto fail;
+      m->newoff = pos;
+      pos += m->end - m->off;
+    }
+  for (i = 0; i < adds; ++i)
+    {
+      size_t nl = strlen (add[i].name);
       memset (hdr, 0, 30);
       amk_put32 (hdr, 0x04034b50);
       amk_put16 (hdr + 4, 20);
-      amk_put16 (hdr + 10, m[i].dostime);
-      amk_put16 (hdr + 12, m[i].dosdate);
-      amk_put32 (hdr + 14, m[i].crc);
-      amk_put32 (hdr + 18, m[i].len);
-      amk_put32 (hdr + 22, m[i].len);
+      amk_put16 (hdr + 10, add[i].dostime);
+      amk_put16 (hdr + 12, add[i].dosdate);
+      amk_put32 (hdr + 14, add[i].crc);
+      amk_put32 (hdr + 18, add[i].len);
+      amk_put32 (hdr + 22, add[i].len);
       amk_put16 (hdr + 26, nl);
-      m[i].off = pos;
+      add[i].off = pos;
       if (amk_write_all (fd, hdr, 30) < 0
-          || amk_write_all (fd, m[i].name, nl) < 0
-          || amk_write_all (fd, m[i].data, m[i].len) < 0)
+          || amk_write_all (fd, add[i].name, nl) < 0
+          || amk_write_all (fd, add[i].data, add[i].len) < 0)
         goto fail;
-      pos += 30 + nl + m[i].len;
+      pos += 30 + nl + add[i].len;
     }
 
-  /* The old directory minus any member a new one replaces, then the new ones.  */
   cdstart = pos;
-  for (q = self + cdoff, e = 0; (size_t) e < entries; ++e)
+  for (e = 0; e < entries; ++e)
     {
-      size_t nl, rec;
-      int replaced = 0;
-      if (q + 46 > self + cdoff + cdsize || amk_get32 (q) != 0x02014b50)
-        {
-          errno = EINVAL;
-          reported = amk_bundle_fail ("damaged central directory",
-                                      GetProgramExecutableName ());
-          goto fail;
-        }
-      nl = amk_get16 (q + 28);
-      rec = 46 + nl + amk_get16 (q + 30) + amk_get16 (q + 32);
-      for (i = 0; i < n; ++i)
-        if (strlen (m[i].name) == nl && memcmp (m[i].name, q + 46, nl) == 0)
-          replaced = 1;
-      if (!replaced)
-        {
-          if (amk_write_all (fd, q, rec) < 0)
-            goto fail;
-          pos += rec;
-          ++kept;
-        }
-      q += rec;
+      if (ent[e].drop)
+        continue;
+      amk_put32 (ent[e].rec + 42, ent[e].newoff);
+      if (amk_write_all (fd, ent[e].rec, ent[e].reclen) < 0)
+        goto fail;
+      pos += ent[e].reclen;
+      ++kept;
     }
-  for (i = 0; i < n; ++i)
+  for (i = 0; i < adds; ++i)
     {
-      size_t nl = strlen (m[i].name);
+      size_t nl = strlen (add[i].name);
       memset (hdr, 0, 46);
       amk_put32 (hdr, 0x02014b50);
       amk_put16 (hdr + 4, (3 << 8) | 30);
       amk_put16 (hdr + 6, 20);
-      amk_put16 (hdr + 12, m[i].dostime);
-      amk_put16 (hdr + 14, m[i].dosdate);
-      amk_put32 (hdr + 16, m[i].crc);
-      amk_put32 (hdr + 20, m[i].len);
-      amk_put32 (hdr + 24, m[i].len);
+      amk_put16 (hdr + 12, add[i].dostime);
+      amk_put16 (hdr + 14, add[i].dosdate);
+      amk_put32 (hdr + 16, add[i].crc);
+      amk_put32 (hdr + 20, add[i].len);
+      amk_put32 (hdr + 24, add[i].len);
       amk_put16 (hdr + 28, nl);
-      amk_put32 (hdr + 38, (unsigned long) (S_IFREG | m[i].mode) << 16);
-      amk_put32 (hdr + 42, m[i].off);
+      amk_put32 (hdr + 38, (unsigned long) (S_IFREG | add[i].mode) << 16);
+      amk_put32 (hdr + 42, add[i].off);
       if (amk_write_all (fd, hdr, 46) < 0
-          || amk_write_all (fd, m[i].name, nl) < 0)
+          || amk_write_all (fd, add[i].name, nl) < 0)
         goto fail;
       pos += 46 + nl;
+      ++kept;
     }
-  if (pos > 0xffffffffUL || kept + n > 0xfffe)
+  if (pos > 0xffffffffUL || kept > 0xfffe)
     {
       errno = EFBIG;
       reported = amk_bundle_fail ("too large for a plain zip", out);
@@ -712,13 +1003,17 @@ amk_bundle (int n, char **files, const char *out)
     }
   memset (hdr, 0, 22);
   amk_put32 (hdr, 0x06054b50);
-  amk_put16 (hdr + 8, kept + n);
-  amk_put16 (hdr + 10, kept + n);
+  amk_put16 (hdr + 8, kept);
+  amk_put16 (hdr + 10, kept);
   amk_put32 (hdr + 12, pos - cdstart);
   amk_put32 (hdr + 16, cdstart);
   if (amk_write_all (fd, hdr, 22) < 0)
     goto fail;
-  fchmod (fd, 0755);
+  fchmod (fd, turn >= 0 ? held.st_mode & 0777 : 0755);
+  /* The new file reaches the disk before it takes the name, so a crash leaves the old binary or the whole new one.  */
+  EINTRLOOP (r, fsync (fd));
+  if (r < 0)
+    goto fail;
   close (fd);
 
   EINTRLOOP (r, rename (tmp, out));
@@ -728,6 +1023,16 @@ amk_bundle (int n, char **files, const char *out)
       unlink (tmp);
       return MAKE_FAILURE;
     }
+  /* The name's own change is in the directory, which is flushed where the system lets a directory be.  */
+  sprintf (tmp, "%.*s", (int) (base - out), out);
+  EINTRLOOP (fd, open (*tmp ? tmp : ".", O_RDONLY));
+  if (fd >= 0)
+    {
+      fsync (fd);
+      close (fd);
+    }
+  if (turn >= 0)
+    close (turn);
   return MAKE_SUCCESS;
 
  fail:
@@ -736,6 +1041,177 @@ amk_bundle (int n, char **files, const char *out)
   close (fd);
   unlink (tmp);
   return MAKE_FAILURE;
+}
+
+/* Payload verbs: the payload as a small filesystem, listed, copied into and out of, and removed from, by the flags that begin with the bundle word.  */
+
+/* The last word of a path, trailing slashes aside, as a new string.  */
+static char *
+amk_path_base (const char *path)
+{
+  size_t len = strlen (path);
+  const char *p;
+  while (len > 1 && path[len - 1] == '/')
+    --len;
+  for (p = path + len; p > path && p[-1] != '/'; --p)
+    ;
+  return xstrndup (p, len - (p - path));
+}
+
+/* Whether a word names the payload's side of a copy: /zip or a path under it.  */
+static int
+amk_path_zip (const char *path)
+{
+  return strncmp (path, "/zip", 4) == 0 && (path[4] == '/' || path[4] == '\0');
+}
+
+/* Where one source of a copy lands under a destination: at the destination itself when it is the only source, and under its own last word when there are several or when a lone file is copied into a name that ends in a slash.  */
+static char *
+amk_copy_name (const char *dest, const char *src, int several, int is_dir)
+{
+  size_t len = strlen (dest);
+  int into = several || (!is_dir && (len == 0 || dest[len - 1] == '/'));
+  char *base, *name;
+  while (len > 0 && dest[len - 1] == '/')
+    --len;
+  if (!into)
+    return xstrndup (dest, len);
+  base = amk_path_base (src);
+  name = xmalloc (len + strlen (base) + 2);
+  sprintf (name, "%.*s%s%s", (int) len, dest, len ? "/" : "", base);
+  free (base);
+  return name;
+}
+
+/* Host files and directories into the payload, under the destination past its /zip.  */
+static int
+amk_copy_in (int n, char **srcs, const char *dest, const char *out)
+{
+  struct amk_members set = { NULL, 0, 0 };
+  int i;
+  dest += 4;
+  while (*dest == '/')
+    ++dest;
+  for (i = 0; i < n; ++i)
+    {
+      struct stat st;
+      if (amk_path_zip (srcs[i]))
+        {
+          fprintf (stderr, "amk: --bundle-cp: '%s' and the destination are both in the payload\n", srcs[i]);
+          return MAKE_FAILURE;
+        }
+      if (stat (srcs[i], &st) < 0)
+        return amk_bundle_fail ("stat", srcs[i]);
+      if (amk_bundle_add (&set, srcs[i], amk_copy_name (dest, srcs[i], n > 1, S_ISDIR (st.st_mode)))
+          != MAKE_SUCCESS)
+        return MAKE_FAILURE;
+    }
+  return amk_payload_rewrite (&set, 0, NULL, 0, out);
+}
+
+/* Payload members and directories out to the host, each file by the unpack every member takes.  */
+static int
+amk_copy_out (int n, char **srcs, const char *dest)
+{
+  struct stat st;
+  int i, dest_dir = stat (dest, &st) == 0 && S_ISDIR (st.st_mode);
+  for (i = 0; i < n; ++i)
+    {
+      char **names = NULL, *to;
+      size_t k, count = 0, cap = 0, root = strlen (srcs[i]);
+      int is_dir;
+      if (!amk_path_zip (srcs[i]) || amk_path_zip (dest))
+        {
+          fprintf (stderr, "amk: --bundle-cp: one side of the copy is under /zip and the other is not\n");
+          return MAKE_FAILURE;
+        }
+      while (root > 4 && srcs[i][root - 1] == '/')
+        --root;
+      if (stat (srcs[i], &st) < 0)
+        {
+          errno = ENOENT;
+          return amk_bundle_fail ("no payload member", srcs[i]);
+        }
+      is_dir = S_ISDIR (st.st_mode);
+      to = amk_copy_name (dest, srcs[i], n > 1 || (!is_dir && dest_dir), is_dir);
+      if (!is_dir)
+        {
+          if (amk_ape_unpack (srcs[i] + 5, to, 1) != MAKE_SUCCESS)
+            return MAKE_FAILURE;
+          continue;
+        }
+      amk_walk (xstrndup (srcs[i], root), &names, &count, &cap);
+      for (k = 0; k < count; ++k)
+        {
+          char *file = xmalloc (strlen (to) + strlen (names[k]) + 2);
+          sprintf (file, "%s%s", to, names[k] + root);
+          if (amk_ape_unpack (names[k] + 5, file, 1) != MAKE_SUCCESS)
+            return MAKE_FAILURE;
+        }
+    }
+  return MAKE_SUCCESS;
+}
+
+/* A flag that begins with the bundle word is one of the payload's verbs: its status, or a negative number for any other word.  A verb that writes names its result, a new file or this binary in place, and prints that path.  */
+int
+amk_payload_verb (int argc, char **argv)
+{
+  static const char *const verbs[] = { "--bundle", "--bundle-main", "--bundle-ls", "--bundle-cp", "--bundle-rm", "--bundle-strip", NULL };
+  const char *verb = argv[1], *out = NULL;
+  char **words = xmalloc (argc * sizeof *words);
+  int i, n = 0, in_place = 0, writes, r;
+
+  for (i = 0; verbs[i] != NULL && strcmp (verbs[i], verb) != 0; ++i)
+    ;
+  if (verbs[i] == NULL)
+    return -1;
+  amk_bundle_verb = verb;
+  for (i = 2; i < argc; ++i)
+    if (strcmp (argv[i], "--out") == 0 && i + 1 < argc)
+      out = argv[++i];
+    else if (strncmp (argv[i], "--out=", 6) == 0)
+      out = argv[i] + 6;
+    else if (strcmp (argv[i], "--in-place") == 0)
+      in_place = 1;
+    else
+      words[n++] = argv[i];
+
+  if (strcmp (verb, "--bundle-ls") == 0)
+    return amk_payload_list (verb, 0);
+  writes = strcmp (verb, "--bundle-cp") != 0 || (n >= 2 && amk_path_zip (words[n - 1]));
+  if (writes ? (out != NULL && *out) == in_place : (out != NULL || in_place))
+    {
+      fprintf (stderr, "amk: %s: %s\n", verb,
+               writes ? "names one of --out DEST and --in-place" : "a copy out of the payload takes neither --out nor --in-place");
+      return MAKE_FAILURE;
+    }
+  if (in_place)
+    out = GetProgramExecutableName ();
+
+  if (strcmp (verb, "--bundle-cp") == 0)
+    {
+      if (n < 2)
+        {
+          fprintf (stderr, "amk: %s: names a source and a destination, one of them under /zip\n", verb);
+          return MAKE_FAILURE;
+        }
+      r = writes ? amk_copy_in (n - 1, words, words[n - 1], out) : amk_copy_out (n - 1, words, words[n - 1]);
+    }
+  else if (strcmp (verb, "--bundle-rm") == 0 || strcmp (verb, "--bundle-strip") == 0)
+    {
+      int all = verb[9] == 's';
+      if (all ? n > 0 : n < 1)
+        {
+          fprintf (stderr, "amk: %s: %s\n", verb, all ? "takes no member names" : "names no member");
+          return MAKE_FAILURE;
+        }
+      r = amk_payload_rewrite (NULL, n, words, all, out);
+    }
+  else
+    r = amk_bundle (n, words, verb[8] != '\0', out);
+  if (r == MAKE_SUCCESS && writes)
+    puts (out);
+  return r;
 }
 
 /* A bundle runs its program when the caller names no makefile of their own.  */
@@ -790,9 +1266,11 @@ amk_payload_main (int *argcp, char ***argvp)
 }
 #else
 int
-amk_bundle (int n UNUSED, char **files UNUSED, const char *out UNUSED)
+amk_payload_verb (int argc UNUSED, char **argv)
 {
-  fprintf (stderr, "amk: --bundle: this build carries no payload\n");
+  if (strncmp (argv[1], "--bundle", 8) != 0)
+    return -1;
+  fprintf (stderr, "amk: %s: this build carries no payload\n", argv[1]);
   return MAKE_FAILURE;
 }
 

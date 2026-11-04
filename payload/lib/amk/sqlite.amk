@@ -1,0 +1,19 @@
+#
+# payload/lib/amk/sqlite.amk:
+#  make's side of the sqlite engine; every namespace gains a select
+#  handle, the get verb with its first word written for it.
+#
+$(amk.require sqlite)
+
+# The rows of one select, its commas rejoined from the arguments.
+sqlite.select = $(sqlite.ns $(strip $1), get, SELECT $(sqlite.rest))
+sqlite.rest = $(strip $2)$(foreach i,3 4 5 6 7 8 9, \
+  $(if $(filter undefined,$(origin $i)),,$(comma)$($i)))
+$(amk.fxn! sqlite.select)
+
+# The helper answers under the engine's aliases too, as its builtins do.
+$(foreach s,sqlite3,$(amk.fxn! $s.select, sqlite.select))
+
+# Each namespace's handle is the helper with that namespace bound first.
+sqlite.ns.handles = $(amk.fxn! $1.select, sqlite.select, $1)
+$(sqlite.ns.hook sqlite.ns.handles)

@@ -91,7 +91,7 @@ jb:
 # The build passes its zipped libraries; gmsl is read in place with its helper.
 libs ?=
 ifneq ($(filter gmsl,$(libs)),)
-include /zip/lib/gmsl
+load gmsl
 endif
 
 define lua.dkjson
@@ -106,8 +106,9 @@ utemplate.name = $(strip $(micropy \
   from utemplate.source import Compiler; print(Compiler.__name__)))
 
 libs:
-	$(if $(filter gmsl,$(libs)),test "$(wildcard /zip/lib/gmsl)" = /zip/lib/gmsl)
-	$(if $(filter gmsl,$(libs)),test "$(__gmsl_root)" = /zip/lib/)
+	$(if $(filter gmsl,$(libs)),\
+	  test "$(wildcard /zip/lib/gmsl/gmsl)" = /zip/lib/gmsl/gmsl)
+	$(if $(filter gmsl,$(libs)),test "$(__gmsl_root)" = /zip/lib/gmsl/)
 	$(if $(filter gmsl,$(libs)),test "$(call uc,hello)" = HELLO)
 	$(if $(filter gmsl,$(libs)),test "$(call int_decode,$(gmsl.five))" = 5)
 	$(if $(filter gmsl,$(libs)),\
@@ -122,7 +123,7 @@ libs:
 	  test "$(wildcard /zip/lib/micropy/utemplate/source.py)" \
 	    = /zip/lib/micropy/utemplate/source.py)
 	$(if $(filter utemplate,$(libs)),echo "utemplate: $(utemplate.name)")
-	$(if $(libs),,test -z "$(wildcard /zip/lib/gmsl)")
+	$(if $(libs),,test -z "$(wildcard /zip/lib/gmsl/gmsl)")
 	echo "libs: $(or $(libs),none)"
 
 # The build passes its selected engines; each must be present, the rest absent.

@@ -71,8 +71,9 @@ def plain($k; $in; $out; $go): {
   arcs: (arcs_in($in; $k) + arcs_out($k; $out)),
   amk: {label: {($k): "outcome"}, guard: guarded($k; $go)}
 };
+def labels($v): $v.over | .data // .targets;
 def over($k; $v; $in; $out; $go):
-  "\($k).split" as $split | "\($k).join" as $join | ($v.over | length) as $n
+  "\($k).split" as $split | "\($k).join" as $join | (labels($v) | length) as $n
   | {
       places: {(items($k)): [], (results($k)): []},
       transitions: [$split, $k, $join],
@@ -81,7 +82,7 @@ def over($k; $v; $in; $out; $go):
            [$k, results($k)], [results($k), $join, $n]]
         + arcs_out($join; $out)),
       amk: {
-        label: {($split): {items: $v.over}, ($k): "outcome", ($join): "merge"},
+        label: {($split): {items: labels($v)},($k): "outcome", ($join): "merge"},
         guard: guarded($split; $go)
       }
     };
@@ -92,15 +93,23 @@ def skip($k; $in; $out; $no):
       arcs: (arcs_in($in; $s) + arcs_out($s; $out)),
       amk: {label: {($s): "skipped"}, guard: {($s): $no}}
     };
-def step($k; $v):
-  if $v.run then {amk: {steps: {($k): {run: $v.run, kind: "goal.maybe"}}}} else {} end;
+# An instance's item, bound as <run>.item: the label, or the value of the target it names.
+def item($net; $k; $v):
+  "\($net).\($k)" as $t
+  | if $v.over.targets then "$$(\($t).value)"
+    elif $v.over.data then "$$(\($t).token)" else null end;
+def step($net; $k; $v):
+  if $v.run then {amk: {steps: {($k): ({run: $v.run, kind: "agoal.maybe"}
+    + (item($net; $k; $v) as $i
+      | if $i then {bind: {("\($v.run).item"): $i}} else {} end))}}}
+  else {} end;
 def pooled($k; $v):
   if $v.pool then {
     arcs: [[$v.pool, $k], [$k, $v.pool]],
     amk: {pools: {($v.pool): $v.pool}}
   } else {} end;
 
-def fragment($k):
+def fragment($net; $k):
   .tasks[$k] as $v | inputs($k) as $in | outputs($k) as $out
   | whens[$v.when] as [$go, $no]
   | [
@@ -109,10 +118,11 @@ def fragment($k):
       (if $v | has("over") then over($k; $v; $in; $out; $go)
        else plain($k; $in; $out; $go) end),
       (if $no then skip($k; $in; $out; $no) else empty end),
-      step($k; $v),
+      step($net; $k; $v),
       pooled($k; $v)
     ]
   | merge;
+def fragment($k): fragment("workflow"; $k);
 
 # Every task that nothing needs ends holding one token; nothing else holds any.
 def finish($wf):
@@ -120,7 +130,14 @@ def finish($wf):
   | .amk.final = ([$wf.order[] as $k
       | select($wf | dependents($k) == []) | {(sink($k)): 1}] | add // {});
 
-def compile:
+# The smallest workflow that ends with task k done: k and everything it needs, transitively.
+def upstream($t; $k): $k, ($t[$k].needs[]? as $n | upstream($t; $n));
+def cone($k):
+  [upstream(.tasks; $k)] as $keep
+  | .tasks |= with_entries(select(.key | IN($keep[])));
+
+def compile($net):
   validate | normalize | . as $wf
-  | [{places: {}, transitions: [], arcs: []}, (.order[] as $k | $wf | fragment($k))]
+  | [{places: {}, transitions: [], arcs: []}, (.order[] as $k | $wf | fragment($net; $k))]
   | merge | finish($wf);
+def compile: compile("workflow");

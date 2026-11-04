@@ -4,14 +4,47 @@
 #include "filedef.h"
 #include "variable.h"
 #include "amk.h"
+#include <stdarg.h>
 
-/* $(amk.require names...): empty when every name is a feature, fatal naming the missing ones otherwise, in red on a terminal unless NO_COLOR, or the same name without its underscore, is set; commas and spaces both separate names.  */
+/* Whether stderr takes color: a terminal, unless NO_COLOR, or the same name without its underscore, is set.  */
+int
+amk_color (void)
+{
+  return getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (stderr));
+}
+
+/* The sequence that starts bold red on stderr, or nothing where stderr takes no color.  */
+const char *
+amk_red (void)
+{
+  return amk_color () ? "\033[1;31m" : "";
+}
+
+/* The sequence that ends a color on stderr, or nothing where stderr takes no color.  */
+const char *
+amk_color_off (void)
+{
+  return amk_color () ? "\033[0m" : "";
+}
+
+/* One warning line on stderr under amk's name, in red where stderr takes color.  */
+void
+amk_warn (const char *fmt, ...)
+{
+  va_list ap;
+  fprintf (stderr, "%samk: warning: ", amk_red ());
+  va_start (ap, fmt);
+  vfprintf (stderr, fmt, ap);
+  va_end (ap);
+  fprintf (stderr, "%s\n", amk_color_off ());
+}
+
+/* $(amk.require names...): empty when every name is a feature, fatal naming the missing ones otherwise, in red where stderr takes color; commas and spaces both separate names.  */
 char *
 amk_func_require (char *o, char **argv, const char *funcname)
 {
   size_t len = 64;
   char **a, *names, *text, *want, *missing, *msg;
-  const char *red = "", *off = "";
 
   for (a = argv; *a != NULL; a++)
     len += strlen (*a) + 1;
@@ -31,10 +64,8 @@ amk_func_require (char *o, char **argv, const char *funcname)
   free (names);
   if (*missing != '\0')
     {
-      if (getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (stderr)))
-        red = "\033[1;31m", off = "\033[0m";
       msg = xmalloc (strlen (want) + strlen (missing) + strlen (funcname) + 128);
-      sprintf (msg, "%s%s: this makefile needs amk with %s, and this amk has no %s%s", red, funcname, want, missing, off);
+      sprintf (msg, "%s%s: this makefile needs amk with %s, and this amk has no %s%s", amk_red (), funcname, want, missing, amk_color_off ());
       OS (fatal, reading_file, "%s", msg);
     }
   free (want);

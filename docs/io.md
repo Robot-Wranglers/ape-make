@@ -51,8 +51,8 @@ JSON5 is read by a builtin every amk with sqlite has, with or without `load io/j
 
 | Form | Answers |
 | --- | --- |
-| `$(amk.json5 text)` | the text, JSON5, as plain JSON on one line; fatal when it does not parse |
-| `$(amk.val.json5 name)` | the value of the define `name`, read the same way; the value unchanged in an amk without sqlite |
+| `$(amk.json5 text)` | The text, JSON5, as plain JSON on one line; fatal when it does not parse |
+| `$(amk.val.json5 name)` | The value of the define `name`, read the same way; the value unchanged in an amk without sqlite |
 
 The decorators that read a define as JSON, [`@actor.group`](actor.md), [`@petri`](petri.md),
 `@kahn`, `@workflow.dag`, [`@pool`](dsys.md#pool-decorator), [`@jobman`](jobman.md#syntax),
@@ -76,8 +76,8 @@ See also [json errors](json.md#errors).
 
 | Demo | Shows |
 | --- | --- |
-| [`json-schema.amk`](../demos/json-schema.amk) | a JSON5 schema, an order checked against it as it is read, and a bad order's errors on demand |
-| [`supervise-3.amk`](../demos/supervise-3.amk) | an actor charter written as JSON5, with a comment on each key |
+| [`json-schema.amk`](../demos/json-schema.amk) | A JSON5 schema, an order checked against it as it is read, and a bad order's errors on demand |
+| [`supervise-3.amk`](../demos/supervise-3.amk) | An actor charter written as JSON5, with a comment on each key |
 
 <a id="references"></a>
 

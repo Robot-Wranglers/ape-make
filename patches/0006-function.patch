@@ -130,7 +130,7 @@ assignment's whole value is armed with that variable's name once its arguments a
  #define FT_ENTRY(_name, _min, _max, _exp, _func) \
    { { (_func) }, STRING_SIZE_TUPLE(_name), (_min), (_max), (_exp), 0, 0 }
 
-@@ -2527,8 +2633,38 @@
+@@ -2527,8 +2633,37 @@
    FT_ENTRY ("if",            2,  3,  0,  func_if),
    FT_ENTRY ("or",            1,  0,  0,  func_or),
    FT_ENTRY ("and",           1,  0,  0,  func_and),
@@ -152,7 +152,6 @@ assignment's whole value is armed with that variable's name once its arguments a
 +  FT_ENTRY ("re.match.file", 2,  2,  1,  amk_func_match),
 +  FT_ENTRY ("re.match*",     2,  2,  1,  func_star),
 +  FT_ENTRY ("amk.stdin",     1,  1,  1,  amk_func_stdin),
-+  FT_ENTRY ("amk.bash",      1,  1,  1,  amk_func_bash),
 +  FT_ENTRY ("amk.args",      0,  1,  1,  amk_func_args),
 +  FT_ENTRY ("amk.kwarg",     2,  2,  1,  amk_func_kwarg),
 +  FT_ENTRY ("amk.json5",     1,  1,  1,  amk_func_json5),
@@ -270,7 +269,7 @@ assignment's whole value is armed with that variable's name once its arguments a
 +}
 +
 +/* The engine builtins join the table from the engine rows, so a row is the whole registration.  */
-+static struct function_table_entry amk_function_entries[512];
++static struct function_table_entry amk_function_entries[768];
 +
 +/* One engine builtin into its slot and the table, answering the slot after it.  */
 +static struct function_table_entry *
@@ -302,9 +301,9 @@ assignment's whole value is armed with that variable's name once its arguments a
 +{
 +  const char *p = AMK_OPS_ALL, *w;
 +  size_t wlen;
-+  f = amk_entry_add (f, spelling, func_engine, 1, 2);
++  f = amk_entry_add (f, spelling, func_engine, 1, e->cli->whole ? 1 : 2);
 +  if (e->cli->argv)
-+    f = amk_entry_add (f, amk_entry_name (spelling, "argv", 4), func_engine, 2, 3);
++    f = amk_entry_add (f, amk_entry_name (spelling, "argv", 4), func_engine, 2, e->cli->whole ? 2 : 3);
 +  while ((w = find_next_token (&p, &wlen)) != NULL)
 +    if (wlen != 6 || memcmp (w, "import", 6) != 0)
 +      f = amk_entry_add (f, amk_entry_name (spelling, w, wlen), amk_engine_has_op (e, w, wlen) ? func_op : func_refuse, 1, 1);

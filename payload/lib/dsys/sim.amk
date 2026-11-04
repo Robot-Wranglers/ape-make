@@ -1,0 +1,51 @@
+#
+# payload/lib/dsys/sim.amk:
+#  the @sim decorator: above a JSON define with graph, rules and events
+#  keys, each optional, it makes a graph, a trilog workspace and a tuple
+#  space under the define's name, each seeded from its key or left empty.
+#  The rules workspace speaks the event calculus, trilog's library, loaded
+#  before the rules.
+#
+$(amk.require cypher jq trilog sqlite)
+load graph
+load trilog
+load tspace
+
+sim.__schema__ := dsys/schema/sim.json
+
+# One key of the body as its own json, or nothing when the key is absent.
+sim._part = $(jq.argv -c,.$(2) // empty,$(1))
+# The rules key as clauses: one text, or a list of texts joined by lines.
+sim._rules = $(jq.argv -r, \
+  .rules // empty | if type == "array" then join("\n") else . end,$(1))
+$(amk.fxn! sim._part)
+$(amk.fxn! sim._rules)
+
+# The events key as a tuple space's backing and seed, read as @tspace does.
+sim._backing = $(jq.argv $(tspace.cfg.argv),$(tspace.cfg.backing),$(1))
+sim._seed = $(jq.argv $(tspace.cfg.argv),$(tspace.cfg.seed),$(1))
+$(amk.fxn! sim._backing)
+$(amk.fxn! sim._seed)
+
+# The constructor: name.graph, name.rules and name.events, each from its key.
+@amk.fxn!
+define sim.create
+$(strip
+  $(graph.create $(1).graph)
+  $(if $(strip $(sim._part $(2),graph)),
+    $(cypher.ns $(1).graph, load, \
+      $(graph.compile.whole $(sim._part $(2),graph))))
+  $(trilog.ns.create $(1).rules)
+  $(trilog.ns $(1).rules, load, \
+    $(trilog.event_calculus)$(trilog.event_calculus.nl)$(sim._rules $(2)))
+  $(if $(strip $(sim._part $(2),events)),
+    $(tspace.create $(1).events, \
+      $(sim._backing $(sim._part $(2),events)), \
+      $(sim._seed $(sim._part $(2),events))),
+    $(tspace.create $(1).events)))
+endef
+
+# The at line @sim: the define's json, or an empty world when the body is empty.
+define sim_star
+$(sim.create $(1),$(if $(strip $(value $(1))),$(amk.json5 $($(1))),{}))
+endef

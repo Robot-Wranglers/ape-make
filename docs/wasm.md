@@ -1,5 +1,5 @@
-<!-- header # wasm "WebAssembly Engine" | ^ ../README.md#wasm | Engine API #engine-api | Engine #engine | Zig #zig | Wat #wat | Go #golang | Cache #cache | Errors #errors | Refs #references -->
-<h1><a id="wasm"></a><a href="../README.md#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.up.dark.svg"><img src="img/hdr/docs-wasm.wasm.up.svg" alt="up"></picture></a>WebAssembly Engine<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.7.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.7.svg" alt="Refs"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.6.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.6.svg" alt="Errors"></picture></a><a href="#cache"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.5.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.5.svg" alt="Cache"></picture></a><a href="#golang"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.4.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.4.svg" alt="Go"></picture></a><a href="#wat"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.3.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.3.svg" alt="Wat"></picture></a><a href="#zig"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.2.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.2.svg" alt="Zig"></picture></a><a href="#engine"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.1.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.1.svg" alt="Engine"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.0.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.0.svg" alt="Engine API"></picture></a><br clear="all"></h1>
+<!-- header # wasm "WebAssembly Engine" | ^ ../README.md#wasm | See Also #see-also | Engine API #forms | Engine API #engine-api | Engine #engine | Zig #zig | Wat #wat | Usage (Go) #wasi-programs | Go #golang | Cache #cache | Errors #errors | Refs #references -->
+<h1><a id="wasm"></a><a href="../README.md#wasm"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.up.dark.svg"><img src="img/hdr/docs-wasm.wasm.up.svg" alt="up"></picture></a>WebAssembly Engine<a href="#references"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.10.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.10.svg" alt="Refs"></picture></a><a href="#errors"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.9.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.9.svg" alt="Errors"></picture></a><a href="#cache"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.8.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.8.svg" alt="Cache"></picture></a><a href="#golang"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.7.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.7.svg" alt="Go"></picture></a><a href="#wasi-programs"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.6.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.6.svg" alt="Usage (Go)"></picture></a><a href="#wat"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.5.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.5.svg" alt="Wat"></picture></a><a href="#zig"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.4.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.4.svg" alt="Zig"></picture></a><a href="#engine"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.3.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.3.svg" alt="Engine"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.2.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.2.svg" alt="Engine API"></picture></a><a href="#forms"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.1.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.1.svg" alt="Engine API"></picture></a><a href="#see-also"><picture><source media="(prefers-color-scheme: dark)" srcset="img/hdr/docs-wasm.wasm.0.dark.svg"><img align=right src="img/hdr/docs-wasm.wasm.0.svg" alt="See Also"></picture></a><br clear="all"></h1>
 <!-- /header -->
 
 WASM support in `amk` is via an interface that follows the [language engine API](#engine-api), using a cosmo'd wasm3 interpreter[^wasm3], bundled by default at 0.9.0.
@@ -34,14 +34,14 @@ which turns a compiler into a [stacked engine](FFI.md#stacked-engines) of its ow
 
 | Form | Does | When |
 | --- | --- | --- |
-| `$(wasm.import path-or-hex)` | loads a module into the kept runtime and lifts its exports as make functions; its value is the names | at the expansion |
-| `$(wasm.exec name args...)` | calls one export by name, results on one line; `deadline ms` ahead of the name bounds the call | at the expansion |
-| `$(wasm path args...)` | runs wasm3's own command line in a fork; `amk --wasm` is the same | at the expansion |
-| `$(amk.engine name, guest=wasm, ...)` | registers a toolchain as an engine: a namespace, `@name.import`, `@name.target`, and the extensions `load` routes to it | at the expansion, once |
-| `@name.import` | over a source define: the module built once by the toolchain and imported into the namespace; the value is the names | at parse time, once per input set |
-| `@name.target` | over a source define: a phony target of the define's stem that builds the module when it runs and runs it as a wasi program | at parse time |
-| `$(name define)` | the one-shot form: the define built as needed and run as a wasi program in a fork, its stdout the value | at the expansion |
-| `$(name.exec fn args...)` | the namespace handle: one export of the toolchain's modules by name | at the expansion |
+| `$(wasm.import path-or-hex)` | Loads a module into the kept runtime and lifts its exports as make functions; its value is the names | At the expansion |
+| `$(wasm.exec name args...)` | Calls one export by name, results on one line; `deadline ms` ahead of the name bounds the call | At the expansion |
+| `$(wasm path args...)` | Runs wasm3's own command line in a fork; `amk --wasm` is the same | At the expansion |
+| `$(amk.engine name, guest=wasm, ...)` | Registers a toolchain as an engine: a namespace, `@name.import`, `@name.target`, and the extensions `load` routes to it | At the expansion, once |
+| `@name.import` | Over a source define: the module built once by the toolchain and imported into the namespace; the value is the names | At parse time, once per input set |
+| `@name.target` | Over a source define: a phony target of the define's stem that builds the module when it runs and runs it as a wasi program | At parse time |
+| `$(name define)` | The one-shot form: the define built as needed and run as a wasi program in a fork, its stdout the value | At the expansion |
+| `$(name.exec fn args...)` | The namespace handle: one export of the toolchain's modules by name | At the expansion |
 
 `wasm.import` lifts every export make can spell, and a call's arguments are numbers, split
 on commas or spaces alike. A module reaches make through imports under the module name
@@ -49,11 +49,11 @@ on commas or spaces alike. A module reaches make through imports under the modul
 
 | Import | Does |
 | --- | --- |
-| `print(ptr, len)` | writes to the call's value |
-| `var_get(name, len, buf, cap)` | reads a make variable |
-| `var_set(name, len, value, len)` | writes a make variable |
-| `expand(text, len, buf, cap)` | expands text as make would |
-| `eval(text, len)` | reads text as makefile syntax |
+| `print(ptr, len)` | Writes to the call's value |
+| `var_get(name, len, buf, cap)` | Reads a make variable |
+| `var_set(name, len, value, len)` | Writes a make variable |
+| `expand(text, len, buf, cap)` | Expands text as make would |
+| `eval(text, len)` | Reads text as makefile syntax |
 
 A reader answers the whole length, so a call with a short buffer can retry with a larger one.
 
@@ -216,9 +216,9 @@ A module is content-addressed. By default intermediate compilation (e.g. golang 
 
 | Message | Means |
 | --- | --- |
-| `amk.engine: <name>: a wasm guest imports modules; give jit.build=, the compile command, or define <name>.build` | the engine was registered before its compile command was defined |
-| `<name>.import: wasm import exited with status 1` | the build left no module, or not a module; the compiler's own stderr is above the message |
-| `stacked engine <name> does not define <form>` | a form the factory does not make, such as `@name.exec` |
+| `amk.engine: <name>: a wasm guest imports modules; give jit.build=, the compile command, or define <name>.build` | The engine was registered before its compile command was defined |
+| `<name>.import: wasm import exited with status 1` | The build left no module, or not a module; the compiler's own stderr is above the message |
+| `stacked engine <name> does not define <form>` | A form the factory does not make, such as `@name.exec` |
 
 Each stops make at the line.
 
@@ -231,5 +231,5 @@ Each stops make at the line.
 - [Import mode](../README.md#import-mode), what `load` and `import` share.
 - [WebAssembly](https://en.wikipedia.org/wiki/WebAssembly), on Wikipedia.
 
-[^wasm3]: wasm3, a fast WebAssembly interpreter, [github.com/wasm3/wasm3](https://github.com/wasm3/wasm3).
+[^wasm3]: wasm3, a fast WebAssembly interpreter, [gh://wasm3/wasm3](https://github.com/wasm3/wasm3).
 [^make-load]: The GNU make manual, "The load Directive", [gnu.org](https://www.gnu.org/software/make/manual/html_node/load-Directive.html).

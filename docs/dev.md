@@ -231,10 +231,10 @@ and verifies it, so a digest that moved upstream surfaces before it breaks a rel
 
 | Path | What It Is |
 | --- | --- |
-| `./amk` | the deliverable, the copy `make amk` lands for a caller |
-| `out/bin/amk` | the artifact: make with its guests, both architectures, one file |
-| `out/bin/{awk,jq,wasm3}` | symlinks to `amk` beside them, the names its argv[0] dispatch answers to |
-| `build/.engines` | the engine list the artifacts were built from, so a change to it relinks |
+| `./amk` | The deliverable, the copy `make amk` lands for a caller |
+| `out/bin/amk` | The artifact: make with its guests, both architectures, one file |
+| `out/bin/{awk,jq,wasm3}` | Symlinks to `amk` beside them, the names its argv[0] dispatch answers to |
+| `build/.engines` | The engine list the artifacts were built from, so a change to it relinks |
 
 `build/guests/ape/` holds each guest partial-linked into one
 relocatable, the inputs the final link consumes. They are the expensive half of a build,
@@ -251,7 +251,7 @@ and costs a full rebuild. The downloads and the unpacked toolchain always stay.
 ## Payload Internals
 
 The payload tools are the released cosmos binaries, unchanged, as the payload members
-`bin/sed` and `bin/bash`, plus the json.bash script as `bin/jb`, `bin/jb-array`, and
+`bin/sed`, `bin/bash`, `bin/cat` and `bin/ls`, plus the json.bash script as `bin/jb`, `bin/jb-array`, and
 `bin/json.bash`, unpacked to `${XDG_CACHE_HOME:-$HOME/.cache}/amk/<size>-<mtime>/bin`.
 A recursive make finds that directory already first on `PATH` and leaves `PATH` alone. A
 tool is added by pinning its release in the Makefile beside `sed` and naming it in
@@ -262,10 +262,11 @@ bash is a separate binary rather than a guest linked into amk because a shell fo
 constantly, and a fork inside a large cosmo image can lose part of its text on Apple
 Silicon; the small standalone build does not.
 
-`--bundle` edits the zip in place rather than rebuilding: everything ahead of the central
-directory is kept, new members are appended stored, and a new directory drops any member
-they replace. `--ape-unpack` and `--bundle` both write beside the destination and rename
-into place. A zygote started from a bundle holds the entry among its own options, so its
+The flags that change the payload share one writer, which edits the zip rather than
+rebuilding it: the program image and the linker's own members are kept byte for byte, a
+member that is replaced or removed gives up its bytes and the ones after it move up, and
+new members are appended stored under a fresh directory. `--ape-unpack` and those flags
+write beside the destination and rename into place. A zygote started from a bundle holds the entry among its own options, so its
 clients match it.
 
 <a id="ape-loader"></a>

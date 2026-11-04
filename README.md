@@ -8,13 +8,17 @@
 
 Broadly, `amk` transforms what is already your default choice for a *coordination language* into a **small-but-powerful polyglot VM**.  Huh?  Ok.. `amk` stays close to shell if you need that, but is also effectively a portable, single-file, multi-language scripting environment without any need for docker.  Besides embedding support for [python](#micropy), [js](#js), [lua](#lua), and [lisp](#s7), other guests can be reached via [wasm](#wasm).  FFI support is omnidirectional: guest-to-host, host-to-guest, and guest-to-guest are all supported.  Additionally `amk` can also handle [modules](#modules), package [external tools](#tools), and can output a [bundle](#bundles) as a portable artifact.
 
+<br/>
+
 <p align="center"><img src="docs/img/lang-engines.png" width="90%" alt="amk's engines as a tree: language and data engines, with the stacked engines and services under the engines they run on"></p>
 
-One consequence of this is that Makefile *(and a small, [optional extension](#) of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh? Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.  But there's more!  Is it ready for concurrent guests?  [Yes.](docs/runtime.md) Collaborative datastructures and ways to build more?  [Yes.](docs/data-engines.md)
+<br/>
+
+One consequence of this is that Makefile *(and a small, [optional extension](#extended-grammar) of the baseline grammar)* remains an incremental computing toolkit suitable for DAGs and builds, but also turns into a more powerful **polyglot data-flow language**.  Huh? Ok.. Think of it as something like a notebook where downstream cells can update when the prerequisites change.  But there's more!  Is it ready for concurrent guests?  [Yes.](docs/runtime.md) Collaborative datastructures and ways to build more?  [Yes.](docs/data-engines.md)
 
 Hater who thinks `make` is only a build tool?  Now it's definitely not.  Enthusiast who loves `make`, but sort of wishes it was a Real Language(tm)?  Now it definitely is.  Or rather.. `amk` is several languages + the new one that coordinates.  AMK-Lang is a <a href=https://esolangs.org/wiki/Matrioshka_language>Matrioshka Language</a> that's actually useful.
 
-<a id="just-show-me"></a>
+<a id="just-show-me"></a><br/>
 
 ## Just Show Me
 
@@ -109,7 +113,7 @@ A toy example, but what do you think?  Not so far away from useful FAAS or MCP, 
 
 * Optional [Extended Grammar](#extended-grammar) with `@micropy.import` and friends
 * [Simple Reflection](docs/FFI.md#reflection) with `amk.fxns?`
-* [Bundled Builtin Libs](#libraries), via `include /zip/..`
+* [Bundled Builtin Libs](#libraries), via `load`
 * [Guest Handles](#bridge-mode), as seen in `amk.var`, `amk.acall`
 
 If you're moving past the Makefiles of your ancestors, you may want to consider a `.amk` extension when leveraging the optional features.  And speaking of highlighting and grammar, syntax coloring for the guests [is supported too](docs/syntax-hl.md).  
@@ -183,8 +187,7 @@ docker run --rm -v "$PWD:/work" \
   ghcr.io/robot-wranglers/amk:latest <target>
 ```
 
-<a id="bundling"></a><br/>
-<a id="payloads"></a><br/>
+<a id="bundling"></a><a id="payloads"></a><br/>
 
 ## Bundling & Distribution
 
@@ -205,7 +208,16 @@ amk --bundle main.mk lib/ --out my.tool
 # spin-offs: add new entrypoint, keep same lib/
 ./my.tool --bundle another.mk --out second.tool
 
-# artifact extraction: copy things outside of 
+# a shell script as the entry, run as written with the bundled tools on PATH
+amk --bundle-main tool.sh --out my.script
+
+# the inverse: a copy without a file, or a whole directory
+./my.tool --bundle-rm __main__.mk lib/ --out smaller.tool
+
+# a copy that keeps only the bundled tools
+amk --bundle-strip --out bare.amk
+
+# artifact extraction: copy things outside of
 # the bundle using `--ape-unpack NAME` or `-x`
 ./my.tool -x main.mk
 ```
@@ -222,162 +234,208 @@ From `amk` derived bundles though, both `include` and `load` support [Modules](#
 - A file of the same name in the working directory shadows a payload include.
 - Bundling needs nothing but amk: no compiler, no external `zip` tool.
 
-## Batteries Included 
+<br/>
 
-[Bundled tools](#tools) and [a few libraries](#libraries) ride along in the [payload](#payloads).
+## Batteries Included
+
+[Bundled tools](#tools) and [a few libraries](#libraries) ride along inside the default [payload](#payloads).
 
 The problem this solves is that certain platforms (looking at you MacOS, but also minimal containers) may default to having *other* utilities besides `make` which are missing by default, or non-GNU, or pinned to incredibly ancient versions.  Usual suspects might include things like *bash, awk, sed, jq*.  Luckily this is solvable with some combination of APEs and bundling, so, `amk` ships with those and a few more.
 
-<a id="tools"></a><br/>
+<a id="tools"></a>
 
-### Tools
-
-To make this stuff as portable as `amk` itself, tools must also be platform-independent.
-
-
-| Tool | Version | From |
-| --- | --- | --- |
-| sed | GNU sed 4.9 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) |
-| bash | 5.2.0 (cosmos 4.0.2) | [cosmo.zip](https://cosmo.zip/pub/cosmos/v/4.0.2/bin/) |
-| awk | gawk 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) |
-| jq | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) |
-| jb | json.bash 0.3.0 | [github.com/h4l](https://github.com/h4l/json.bash/tree/v0.3.0) |
+### Bundled Tools
 
 Bundled tools are on `PATH` for any recipe, on any host, and ahead of the system path so that reference by name just works.  For example.. a modern bash on MacOS, and a working bash even in a container where it doesn't ship.
 
-```Makefile
-SHELL:=bash
-check:
-	echo "$${BASH_VERSINFO[0]}"
-```
 
-In a few cases the standard guests are also [*special guests*](#engines), which we'll discuss in more detail later.  Briefly though, `jq` and `awk` are *linked* as well as bundled.  Thus `jq` is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, compiled Makefile looks to have suddenly grown [sophisticated datastructures](docs/data-engines.md) and a query-language, with no speed penalty.
+<table>
+<thead>
+<tr><th>Tool</th><th>Version</th><th>From</th></tr>
+</thead>
+<tbody>
+<tr><td>sed</td><td>GNU sed 4.9 (cosmos 4.0.2)</td><td><a href="https://cosmo.zip/pub/cosmos/v/4.0.2/bin/">cosmo.zip</a></td></tr>
+<tr><td>bash</td><td>5.2.0 (cosmos 4.0.2)</td><td><a href="https://cosmo.zip/pub/cosmos/v/4.0.2/bin/">cosmo.zip</a></td></tr>
+<tr><td>cat, ls</td><td>GNU coreutils 9.4 (cosmos 4.0.2)</td><td><a href="https://cosmo.zip/pub/cosmos/v/4.0.2/bin/">cosmo.zip</a></td></tr>
+<tr><td>awk</td><td>gawk 5.3.1</td><td><a href="https://ftp.gnu.org/gnu/gawk/">ftp.gnu.org</a></td></tr>
+<tr><td>jq</td><td>1.7.1</td><td><a href="https://github.com/jqlang/jq/releases/tag/jq-1.7.1">gh://jqlang/jq</a></td></tr>
+<tr><td>sqlite3</td><td>3.53.4</td><td><a href="https://sqlite.org/download.html">sqlite.org</a></td></tr>
+<tr><td>jb</td><td>json.bash 0.3.0</td><td><a href="https://github.com/h4l/json.bash/tree/v0.3.0">gh://h4l/json.bash</a></td></tr>
+</tbody>
+</table>
 
-<a id="libraries"></a><br/>
+In some cases standard guests are also [*special guests*](#engines), which we'll discuss in more detail later.  Briefly though, `jq` and `awk` are *linked* as well as bundled.  Thus `jq` is available via libjq, and via `$(jq ..)` from Makefiles, with no penalty for forking a subprocess.  Great!, now JSON is a native "type" and your portable, quasi-compiled Makefile (or amk-lang) scripts have suddenly grown [sophisticated datastructures](docs/data-engines.md) and a query-language with no speed penalty.
 
-### Vendored Libraries
+<a id="libraries"></a>
 
-A library is portable if its platform is.  Your own libraries [bundle](#bundling) the same way, so the vendored third-party list stays short: things almost always needed, or things needed at bootstrap.  
+### Bundled Libraries
 
-| Library | Platform | Version | From | Use As |
-| --- | --- | --- | --- | --- |
-| gmsl | make | 1.2.4 | [github.com/jgrahamc](https://github.com/jgrahamc/gmsl/tree/v1.2.4) | `include /zip/lib/gmsl` for sets, associative arrays, stacks, and integer and string ops in pure make |
-| dkjson | [lua](#lua) | 2.8 | [dkolf.de](http://dkolf.de/dkjson-lua/) | `require("dkjson")` inside [`$(lua)`](#lua) for JSON |
-| utemplate | [micropython](#micropy) | 1.4.1 | [pypi.org](https://pypi.org/project/utemplate/) | `load utmpl` for jinja-style templates (see [these docs](docs/utmpl.md)) |
-| mip | [micropython](#micropy) | micropython-lib | [github.com/micropython](https://github.com/micropython/micropython-lib) | `load mip` for pinned [micropy](#micropy) packages, a json define under `@mip.install` whose name is their install target (see [these docs](docs/mip.md)) |
-| trilog.amk | trilog | in-tree | this repository | `load trilog` or `load prolog` for `findall`, `assertz` and `retract` helpers, bound per namespace as handles |
+Vendored libraries are portable if their platform is.  Your own libraries [bundle](#bundling) the same way, so the list of vendored-by-default 3rd party stuff stays short: just the things almost always needed, or the things needed at bootstrap.  
+
+<table>
+<thead>
+<tr><th>Library</th><th>Platform</th><th>Version</th><th>From</th><th>Use As</th></tr>
+</thead>
+<tbody>
+<tr><td>gmsl</td><td>make</td><td>1.2.4</td><td><a href="https://github.com/jgrahamc/gmsl/tree/v1.2.4">gh://jgrahamc/gmsl</a></td><td><code>load gmsl</code> for sets, associative arrays, stacks, and integer and string ops in pure make</td></tr>
+<tr><td>dkjson</td><td><a href="#lua">lua</a></td><td>2.8</td><td><a href="http://dkolf.de/dkjson-lua/">dkolf.de</a></td><td><code>require("dkjson")</code> inside <a href="#lua"><code>$(lua)</code></a> for JSON</td></tr>
+<tr><td>utemplate</td><td><a href="#micropy">micropython</a></td><td>1.4.1</td><td><a href="https://pypi.org/project/utemplate/">pypi.org</a></td><td><code>load utmpl</code> for jinja-style templates (see <a href="docs/utmpl.md">these docs</a>)</td></tr>
+<tr><td>mip</td><td><a href="#micropy">micropython</a></td><td>micropython-lib</td><td><a href="https://github.com/micropython/micropython-lib">gh://micropython/micropython-lib</a></td><td><code>load mip</code> for pinned <a href="#micropy">micropy</a> packages, a json define under <code>@mip.install</code> whose name is their install target (see <a href="docs/mip.md">these docs</a>)</td></tr>
+</tbody>
+</table>
 
 See also the [modules documentation](#modules) for more details about usage.
 
 <a id="modules"></a><a id="stdlib"></a><a id="lib"></a>
-
-### Standard Lib
-
-Modules in `amk` are reached via the `load` directive, and can be written in any language that an [engine](#engines) supports.  
-
-Search order covers the filesystem the way you'd expect, and it also works inside [bundles](#bundles) and [payloads](#payloads): a module rides in a bundle the way a makefile does.
-
-The semantics for `load` are similar to the associated engine's [import-mode](#import-mode), i.e. it lifts code from a guest into the host, but from files instead of inlined strings.  To put it another way, amk's `load` directive generalizes make's upstream `load` directive[^make-load].  Whereas stock make loads a shared object into the runtime, amk loads an engine's file into that guest instead, then lifts the results into the shared host namespace.
-
+<a id="standard-lib"></a>
 <a id="load-filesystem"></a>
+<a id="load-standard-library"></a>
 
-#### Usage (Filesystem)
+### Modules & Standard Lib
+
+The last section touches on vendored / third-party libraries.  Additionally, `amk` also has a standard library and a concept of modules.  Besides being *available to the host*, modules can also be made available to guests, and can be written in any language that an [engine](#engines) supports. 
+
+Importing libraries and modules works the same way, whether they are user-provided, builtin, or vendored; imports from the filesystem work the way you'd expect and support user-defined import paths, and also works inside [bundles](#bundles) and [payloads](#payloads).
+
+#### Load Directive 
+
+Engines also load their own files in the way you'd expect, i.e. **file extensions matter if they are used.**  See the [engines table](#engines) for a list.  Semantics for `load` are similar to the associated engine's [import-mode](#import-mode), i.e. it lifts code from a guest into the host, but from files instead of inlined strings.  Read on for examples.
+
+Another way of looking at what `load` really does.  For classic Makefile,[^make-load] this only works with shared object files.. and due to cosmo-dlopen subtleties, that's the one thing that `amk` must refuse.  The classical version is nonportable, difficult to work with, and very rarely used anyway.. so you'll like this one better ;) Instead of pulling shared objects into the runtime, amk loads an engine's file into that guest instead, then lifts the results into the shared host namespace.
+
+#### Qualified Paths
+
+An example pulling in lua functions and wasm exports, making them available to the host and thus to guests: 
 
 ```Makefile
-# ./ and / are the filesystem; a bare name is the payload's library for that engine
-load ./lib/twice.lua               # twice(x) is now $(twice 21)
-load /opt/mods/fib32.wasm          # a wasm module's exports, $(fib 10)
-load dkjson.lua                    # /zip/lib/lua/dkjson.lua
-load ./src/.../stats.jq            # one file at any depth below src/, as jq's state
+# via filesystem
+load ./lib/twice.lua           
+load /opt/mods/fib32.wasm 
 ```
 
-<a id="stdlib"></a>
+#### Unqualified Paths
 
-#### Standard Lib
-
-A bare name with no extension is looked up in amk's **standard library**, the `lib/` folder inside the payload: first as an engine's own file, `lib/<eng>/<name>.*`, then as whatever `$(amk.include <name>)` would read, `lib/amk/<name>.mk` or the topic's `lib/<name>/init.amk`.
+Unqualified paths are found amongst what is vendored or bundled into the payload.
 
 ```Makefile
-# resolves to /zip/lib/tspace/init.amk
-load tspace
+# via bundle, in this case at payload/lib/lua/
+load dkjson.lua
 ```
 
-So in this case `load tspace` is exactly equivalent to `$(amk.include tspace)`, guard included: the file is read once however many times either line asks for it.
+#### Recursive Descent 
 
-<a id="load-guest-standard-library"></a>
-
-#### Usage (Guest Standard Library)
-
-A bare name is first tried as an engine's own library file, `lib/<eng>/<name>.*`, and the folder it is found in names the engine, with a warning saying which.  The match has to be unique: a stem that two engine libraries both hold stops make, naming both files.  An example with the [amb operator](payload/lib/s7/README.md), s7's library file:
+Recursive descent for subdirs takes the first available match:
 
 ```Makefile
-# resolves to /zip/lib/s7/amb.scm, loaded in s7; load amb.scm spells the same file exactly
+# via filesystem, anywhere
+load ./src/.../stats.py 
+```
+
+#### Best Effort
+
+Without an extension, you get best-effort, tried as `lib/<eng>/<name>.*`.  If found the match must be unique.  An example with the [amb operator](payload/lib/s7/README.md), a lisp library:
+
+```Makefile
+# via bundle, at payload/lib/s7/amb.scm
 load amb
 ```
 
-`AMKPATH`, colon separated, adds library roots searched ahead of the payload's `lib/`, each laid out like it, so an entry shadows the payload the way python's path shadows its stdlib; `AMK_PATH` is read when `AMKPATH` is unset, and `amk.include` walks the same roots.  The extensions are the [engine table](#engines)'s names and aliases, `.FEATURES` says `load`, and `amk.loaded` records every `load` line as `amk.included` records every include.  One path component spelled `...` walks every depth below the folder before it and must land on exactly one file.  The full search order and each error case are in [docs/FFI.md#load](docs/FFI.md#load).  The payload's own [module directories](docs/payloads.md#modules), one init per guest, are a different thing: they are what `amk.<name>` reaches from inside a guest.
+#### Module Path
 
+`AMKPATH`, colon separated, adds library roots searched ahead of the payload's `lib/`.  Each elements on the path supports a layout like the builtin bundle: topic folders, engine-specific files, and so on.. see examples above.  And as usual for this sort of thing.. if you're using a custom path, beware that it can shadow the builtins.
+
+`AMK_PATH` is supported as a fallback too if `AMKPATH` is unset.
+
+<a id="load-guest-standard-library"></a>
 <a id="module-index"></a>
 
-#### Module Index
+### Module Index
 
-Every module with a page of its own. A module page's up arrow returns here, and a
-submodule page's left arrow returns to its parent module.
+True modules, or what you might call **amk-lang modules or "topics"** are different from simpler guest-mediated modules discussed above.  Topic modules are optionally polyglot, usually involve folders instead of files.  They have a concept of bootstrap too, roughly similar to python's __init__.py.  
 
-| Module | Load | Description |
-| --- | --- | --- |
-| [actor](docs/actor.md) | `load actor` | supervision trees under a charter |
-| [amb](docs/amb.md) | `load amb` | McCarthy's `amb` for s7 |
-| [dsys](docs/dsys.md) | `load dsys` | distributed and dynamic systems over pools |
-| [dsys/job](docs/job.md) | `load dsys/job` | the host's job verbs under one name |
-| [dsys/petri](docs/petri.md) | `load dsys/petri` | Petri nets as data |
-| [dsys/workflow](docs/workflow.md) | `load dsys/workflow` | task graphs compiled to a net |
-| [dsys/kahn](docs/kahn.md) | `load dsys/kahn` | Kahn networks compiled to a net |
-| [dsys/fsm](docs/fsm.md) | `load dsys/fsm` | state machines, xstate or scxml, compiled to a net |
-| [io](docs/io.md) | `load io/json` | data in defines, read and checked |
-| [io/json](docs/json.md) | `load io/json` | JSON5 and JSON Schema for defines |
-| [dsys/jobman](docs/jobman.md) | `load dsys/jobman` | pools of jobs and each guest's handle on one |
-| [plex](docs/plex.md) | `load plex` | the control multiplexer |
-| [tspace](docs/tspace.md) | `load tspace` | tuple spaces |
-| [utmpl](docs/utmpl.md) | `load utmpl` | templates |
+For example, things like [tuplespaces support](docs/tuplespaces.md) actually *span* guests.
+
+```Makefile
+# via bundle, at payload/lib/tspace/
+load tspace
+```
+
+So, why multiple files, and what does "spanning guests" really mean?  Topics may wish to publish a guest-interface as well as one for the host!  For example, from python you can write `amk.tspace[<key>]` and so on.
+
+<table>
+<thead>
+<tr><th>Module</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="docs/actor.md">actor</a></td><td>Supervision trees under a charter</td></tr>
+<tr><td><a href="docs/amb.md">amb</a></td><td>Backtracking <code>amb</code> for s7</td></tr>
+<tr><td><a href="docs/dsys.md">dsys</a></td><td>Umbrella: Distributed and dynamic systems</td></tr>
+<tr><td><a href="docs/fsm.md">dsys/fsm</a></td><td>State machines, xstate or scxml, compiled to a net</td></tr>
+<tr><td><a href="docs/job.md">dsys/job</a></td><td>The host's job verbs under one name</td></tr>
+<tr><td><a href="docs/jobman.md">dsys/jobman</a></td><td>Pools of jobs and each guest's handle on one</td></tr>
+<tr><td><a href="docs/kahn.md">dsys/kahn</a></td><td>Kahn networks compiled to a net</td></tr>
+<tr><td><a href="docs/petri.md">dsys/petri</a></td><td>Petri nets as data</td></tr>
+<tr><td><a href="docs/workflow.md">dsys/workflow</a></td><td>Task graphs compiled to a net</td></tr>
+<tr><td><a href="docs/io.md">io</a></td><td>Data in defines, read and checked; load a submodule such as <code>io/json</code></td></tr>
+<tr><td><a href="docs/json.md">io/json</a></td><td>JSON5 and JSON Schema for defines</td></tr>
+<tr><td><a href="docs/plex.md">plex</a></td><td>The control multiplexer</td></tr>
+<tr><td><a href="docs/tspace.md">tspace</a></td><td>Tuple spaces</td></tr>
+<tr><td><a href="docs/utmpl.md">utmpl</a></td><td>Templates</td></tr>
+</tbody>
+</table>
+
+<br/>
 
 <!-- header engines "Engines" | Tool #tool-mode | Eval #eval-mode | Exec #exec-mode | Import #import-mode | Bridge #bridge-mode | Engine API #engine-api | Examples #misc-examples -->
 <h2><a id="engines"></a>Engines<a href="#misc-examples"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.6.dark.svg"><img align=right src="docs/img/hdr/readme.engines.6.svg" alt="Examples"></picture></a><a href="#engine-api"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.5.dark.svg"><img align=right src="docs/img/hdr/readme.engines.5.svg" alt="Engine API"></picture></a><a href="#bridge-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.4.dark.svg"><img align=right src="docs/img/hdr/readme.engines.4.svg" alt="Bridge"></picture></a><a href="#import-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.3.dark.svg"><img align=right src="docs/img/hdr/readme.engines.3.svg" alt="Import"></picture></a><a href="#exec-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.2.dark.svg"><img align=right src="docs/img/hdr/readme.engines.2.svg" alt="Exec"></picture></a><a href="#eval-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.1.dark.svg"><img align=right src="docs/img/hdr/readme.engines.1.svg" alt="Eval"></picture></a><a href="#tool-mode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/hdr/readme.engines.0.dark.svg"><img align=right src="docs/img/hdr/readme.engines.0.svg" alt="Tool"></picture></a><br clear="all"></h2>
 <!-- /header -->
 
-Most guest engines are embedded, i.e. linked into `amk` directly. 
+Most guest engines are embedded, i.e. linked into `amk` directly.  Jump to [stacked engines](#stacked-engines) for engines built on other engines.  
+
+{# Beyond that split, there's others too, sLet's get organized, we need a few concepts. #}
+
 
 <dl>
 <dt>Language Engines</dt>
 <dd>
 
-<p align="center"><img src="docs/img/lang-engines.png" width="90%" alt="The language engines as a tree: bash under lua, utmpl under micropython, and zig, golang and wat under wasm3"></p>
-
-| Guest | Version | From | Adds | Default |
-| --- | --- | --- | --- | --- |
-| [lua](#lua) | 5.4.8 | [lua.org](https://www.lua.org/ftp/) | 0.5 MB | on |
-| [micropython](#micropy) | 1.29.0 | [github.com/micropython](https://github.com/micropython/micropython/releases/tag/v1.29.0) | 0.9 MB | on |
-| [s7](#s7) (lisp) | 11.9 | [ccrma.stanford.edu](https://ccrma.stanford.edu/software/s7/) | 4.1 MB | on |
-| [quickjs](#js) | 2026-06-04 | [bellard.org](https://bellard.org/quickjs/) | 2.0 MB | on |
-| [gawk](#awk) | 5.3.1 | [ftp.gnu.org](https://ftp.gnu.org/gnu/gawk/) | 1.3 MB | on |
-| [wasm3](#wasm) | 0.9.0 | [github.com/wasm3](https://github.com/wasm3/wasm3/tree/v0.9.0) | 0.4 MB | on |
+<table>
+<thead>
+<tr><th>Guest</th><th>Version</th><th>From</th><th>Adds</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#lua">lua</a></td><td>5.4.8</td><td><a href="https://www.lua.org/ftp/">lua.org</a></td><td>0.5 MB</td><td>on</td></tr>
+<tr><td><a href="#micropy">micropython</a></td><td>1.29.0</td><td><a href="https://github.com/micropython/micropython/releases/tag/v1.29.0">gh://micropython/micropython</a></td><td>0.9 MB</td><td>on</td></tr>
+<tr><td><a href="#s7">s7</a> (lisp)</td><td>11.9</td><td><a href="https://ccrma.stanford.edu/software/s7/">ccrma.stanford.edu</a></td><td>4.1 MB</td><td>on</td></tr>
+<tr><td><a href="#js">quickjs</a></td><td>2026-06-04</td><td><a href="https://bellard.org/quickjs/">bellard.org</a></td><td>2.0 MB</td><td>on</td></tr>
+<tr><td><a href="#awk">gawk</a></td><td>5.3.1</td><td><a href="https://ftp.gnu.org/gnu/gawk/">ftp.gnu.org</a></td><td>1.3 MB</td><td>on</td></tr>
+<tr><td><a href="#wasm">wasm3</a></td><td>0.9.0</td><td><a href="https://github.com/wasm3/wasm3/tree/v0.9.0">gh://wasm3/wasm3</a></td><td>0.4 MB</td><td>on</td></tr>
+</tbody>
+</table>
 
 </dd>
+
+**Data Engines,** like language engines, have a concept of "statefulness", but there's a difference.  Guests like SQL and jqlang *involve* languages but there's something extra too.  Full details [here](docs/data-engines.md), but let's do the overview quickly:  Language engines keep **namespaces**, which is a group of functions and values that *[import](#import-mode)* may lift into the host (and make available to other guests via [FFI](docs/FFI.md)). Data engines keep **workspaces**, which are data stores that `import` can seed with a value, plus mutators that change values.  Data-engines are interesting because besides the [simple stuff](#sqlite), `amk` also leverages them into [collaborative concurrent datastructures](docs/tspace.md), allowing for guests to talk to each other without the host in the middle.
+
+
 <dt>Data Engines</dt>
 <dd>
 
-| Guest | Version | From | Adds | Default |
-| --- | --- | --- | --- | --- |
-| [jq](#jq) | 1.7.1 | [github.com/jqlang](https://github.com/jqlang/jq/releases/tag/jq-1.7.1) | 1.9 MB | on |
-| [sqlite](#sqlite) | 3.53.4 | [sqlite.org](https://sqlite.org/download.html) | 1.0 MB | on |
-| [trilog](docs/data-engines.md#trilog-workspaces) (prolog) | c3f7dcb | [github.com/mattvonrocketstein](https://github.com/mattvonrocketstein/trilog/tree/dev), a pin of upstream's `dev` | 0.3 MB | on |
+<table>
+<thead>
+<tr><th>Guest</th><th>Version</th><th>From</th><th>Adds</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#jq">jq</a></td><td>1.7.1</td><td><a href="https://github.com/jqlang/jq/releases/tag/jq-1.7.1">gh://jqlang/jq</a></td><td>1.9 MB</td><td>on</td></tr>
+<tr><td><a href="#sqlite">sqlite</a></td><td>3.53.4</td><td><a href="https://sqlite.org/download.html">sqlite.org</a></td><td>1.0 MB</td><td>on</td></tr>
+<tr><td><a href="docs/data-engines.md#cypher-workspaces">cypher</a></td><td>0.12.0</td><td><a href="https://github.com/colliery-io/graphqlite/releases/tag/v0.12.0">gh://colliery-io/graphqlite</a>, a sqlite extension</td><td>1.4 MB</td><td>on</td></tr>
+<tr><td><a href="docs/data-engines.md#trilog-workspaces">trilog</a> (prolog)</td><td>c3f7dcb</td><td><a href="https://github.com/no382001/trilog/pull/30">gh://no382001/trilog#30</a>, the head of upstream's v0.2.0 PR</td><td>0.3 MB</td><td>on</td></tr>
+</tbody>
+</table>
 
  </dd>
 </dl>
 
-Let's get organized, we need a few concepts.
-
-**Language Engines vs Data Engines.**  Both engine types have a concept of "statefulness", but there's a difference.  You can guess that jqlang and SQL are different than the other engines, right?  These guests do *involve* languages but there's something extra too.  Full details [here](docs/data-engines.md), but let's do the overview quickly:  Language engines keep **namespaces**, which is a group of functions and values that *[import](#import-mode)* may lift into the host (and make available to other guests via [FFI](docs/FFI.md)). Data engines keep **workspaces**, which are data stores that `import` can seed with a value, plus mutators that change values.  Data-engines are interesting because besides the [simple stuff](#sqlite), `amk` also leverages them into [collaborative concurrent datastructures](docs/tspace.md), allowing for guests to talk to each other without the host in the middle.
 
 **[Stacked Engines](docs/FFI.md#stacked-engines).** Do we need engines on engines?  Yes!  A stacked engine runs guests *derived* from the layers above: they are not linked into the binary, and may involve a caching JIT cross-compilation pipeline.  For something like the [wasm support](#wasm) that is the point, and there are other reasons too, like wrangling DSLs, or moving from data engines to [datastructures](docs/dsys.md#pools) and [services on those datastructures](docs/tspace.md).  Stacked engines are *user-space*, with no C layer, so they live in the [standard library](#stdlib) and can be user-defined and distributed as [modules](#modules) via [bundling](#bundling) or [payload](#payloads).
 
@@ -385,12 +443,17 @@ Let's get organized, we need a few concepts.
 <dt>Stacked Engines</dt>
 <dd>
 
-| Guest | Version | From | Adds | Default |
-| --- | --- | --- | --- | --- |
-| [golang](docs/wasm.md#golang) | tinygo 0.39.0 | [hub.docker.com/r/tinygo](https://hub.docker.com/r/tinygo/tinygo), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
-| [zig](docs/wasm.md#zig) | 0.13.0 | [pkgs.alpinelinux.org](https://pkgs.alpinelinux.org/package/v3.21/community/x86_64/zig), on the [wasm guest](docs/wasm.md) | 0 MB | with wasm3 |
-| [amklang](docs/FFI.md#stacked-engines) | amk's own | make itself, registered by the prelude; exec and argv run in a fork of this make | 0 MB | on |
-| [bash](docs/FFI.md#stacked-engines) | lua 5.4.8 | the bash on `PATH`, on the [lua guest](#lua): `@bash.target` | 0 MB | with lua |
+<table>
+<thead>
+<tr><th>Guest</th><th>Version</th><th>From</th><th>Adds</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="docs/wasm.md#golang">golang</a></td><td>tinygo 0.39.0</td><td><a href="https://hub.docker.com/r/tinygo/tinygo">hub.docker.com/r/tinygo</a>, on the <a href="docs/wasm.md">wasm guest</a></td><td>0 MB</td><td>with wasm3</td></tr>
+<tr><td><a href="docs/wasm.md#zig">zig</a></td><td>0.13.0</td><td><a href="https://pkgs.alpinelinux.org/package/v3.21/community/x86_64/zig">pkgs.alpinelinux.org</a>, on the <a href="docs/wasm.md">wasm guest</a></td><td>0 MB</td><td>with wasm3</td></tr>
+<tr><td><a href="docs/FFI.md#stacked-engines">amklang</a></td><td>Makefile-superset</td><td>make itself, registered by the prelude; exec and argv run in a fork of this make</td><td>0 MB</td><td>on</td></tr>
+<tr><td><a href="docs/payloads.md#entry-script">bash</a></td><td>5.2.0</td><td>The bundled bash as an engine, run by exec and not linked: <code>$(bash cmd)</code>, <code>@bash.target</code>, and a script as a bundle's entry</td><td>0 MB</td><td>with the tool</td></tr>
+</tbody>
+</table>
 
 </dd>
 </dl>
@@ -472,7 +535,7 @@ Sometimes called the "star mode" API.  See the extended documentation [here](doc
 
 ##### Extended Grammar
 
-We met the optional, extended Makefile grammar already in the [server example](#just-show-me) in the introduction.  Here's an overview of how it works, and why it's simpler than it looks.  Recall the [pass-by-reference](#pass-by-reference) interface style from the last section?  It's common to put guest code in a `define my_prog .. endef` block then use an API call like `$(my_engine.import* my_prog)` on that same block.  **Much** more readable to flip it though, which is exactly what the decorator-style idiom does, now dropping the star since it's implied.  
+We met the optional, extended Makefile grammar already in the [server example](#just-show-me) in the introduction.  Here's an overview of how it works, and why it's simpler than it looks.  
 
 ```Makefile
 @my_engine.import
@@ -481,11 +544,40 @@ define my_prog
 endef
 ```
 
-No extra semantics.. just syntactic sugar.  The sugar is general too, and there's nothing special about `<eng>.import` here.  That means decorators work for the full [pass-by-reference engine API](#pass-by-reference), and that **user-defined code can create and call new decorators too**.
+To get the same effect without the decorator write instead:
 
-There are other smaller extensions to grammar, but they aren't related to the the engine API.  See the full docs [here](docs/grammar.md)
+```Makefile
+define my_prog
+  ..guest program, optionally indented..
+endef
+$(my_engine.import* my_prog)
+```
 
---------------
+That's the whole gist of it:  The second version is [pass-by-reference](#pass-by-reference) interface style, but it's much more readable to flip it, so the first version is optional but preferred, and drops the asterisk since it's implied.  
+
+No extra semantics.. just syntactic sugar.  The sugar is general too, and there's nothing special about `<eng>.import` here.  So **user-defined code can create and call new decorators too**.
+
+```Makefile
+# a decorator is any macro named <name>_star, called with the define's name
+loud_star = $(eval $(1) := $(shell echo '$(value $(1))' | tr a-z A-Z))
+
+@loud
+define motto
+  make is a language
+endef
+
+__main__:
+	echo '$(motto)'
+```
+
+The decorator rewrites `motto` in place, so running it prints the body in capitals:
+
+```bash
+$ amk -s
+MAKE IS A LANGUAGE
+```
+
+There are other small extensions to default grammar too, but they aren't related to the the engine API.  See the full docs [here](docs/grammar.md)
 
 <a id="access-mode"></a>
 
@@ -665,15 +757,20 @@ amk hi
 
 Every language engine's guest reaches `amk` through the same handle, named `amk`. Spellings below are lua's; micropy and js match it, and s7 uses `amk-var`, `amk-call` and so on.
 
-| Call | Does |
-| --- | --- |
-| `amk.var.NAME`, `amk.var.NAME = v` | reads or writes a make variable |
-| `amk.expand(text)` | expands make text, functions included |
-| `amk.eval(text)` | evaluates make text, such as a new rule |
-| `amk.call(name, ...)` | calls a make function, which may be another guest's |
-| `amk.func(name, fn)` | gives make a new function, answered by this guest |
-| `amk.ask(op, ns, prog)` | runs an operation in any namespace or workspace |
-| `amk.on[event]` | hears goal and recipe [hooks](docs/FFI.md#hooks) |
+<table>
+<thead>
+<tr><th>Call</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>amk.var.NAME</code>, <code>amk.var.NAME = v</code></td><td>Reads or writes a make variable</td></tr>
+<tr><td><code>amk.expand(text)</code></td><td>Expands make text, functions included</td></tr>
+<tr><td><code>amk.eval(text)</code></td><td>Evaluates make text, such as a new rule</td></tr>
+<tr><td><code>amk.call(name, ...)</code></td><td>Calls a make function, which may be another guest's</td></tr>
+<tr><td><code>amk.func(name, fn)</code></td><td>Gives make a new function, answered by this guest</td></tr>
+<tr><td><code>amk.ask(op, ns, prog)</code></td><td>Runs an operation in any namespace or workspace</td></tr>
+<tr><td><code>amk.on[event]</code></td><td>Hears goal and recipe <a href="docs/FFI.md#hooks">hooks</a></td></tr>
+</tbody>
+</table>
 
 Guest-to-guest calls go through make: one guest's function becomes a make function, and any other guest reaches it with `amk.call`. See [the guest handle](docs/FFI.md#guest-handle) for every call in every language, including the async `amk.acall`, and [the host handle](docs/FFI.md#host-handle) for `amk.spawn`, `amk.wait` and the rest of job control.
 
@@ -919,25 +1016,28 @@ opts = -n -r --arg alts 'k/a k/b' --arg none ""
 frame := $(jq.argv ${opts}, $$alts + "|" + $$none)
 ```
 
---------------
-
 <a id="further-reading"></a>
 
 ### Further Reading
 
 The [FFI docs](docs/FFI.md) cover the rest of the bridge:
 
-| Topic | What It Gives |
-| --- | --- |
-| [Persistent state](docs/FFI.md#persistent-state) | one engine state kept for the life of the make process |
-| [Data engines](docs/FFI.md#data-engines) | jq values and sqlite databases held by the make process, and the verbs every workspace has |
-| [jq workspaces](docs/data-engines.md#jq-workspaces) | named JSON values, updated in the make process with no fork |
-| [Asks from a recipe](docs/FFI.md#calls-from-a-recipe) | namespaces and workspaces from a running recipe's shell |
-| [Init](docs/FFI.md#init) | a chunk run in each scripting guest's main state before the parse |
-| [Hooks](docs/FFI.md#hooks) | goal and recipe events delivered to a guest |
-| [The guest handle](docs/FFI.md#guest-handle) | variable reads and writes, expansion, and eval from a guest |
-| [The host handle](docs/FFI.md#host-handle) | spawned jobs, their mail, signals and the terminal, and the exit status, from lua and js |
-| [Registering make functions](docs/FFI.md#registering-make-functions) | guest functions and values as make functions and variables |
+<table>
+<thead>
+<tr><th>Topic</th><th>What It Gives</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="docs/FFI.md#persistent-state">Persistent state</a></td><td>One engine state kept for the life of the make process</td></tr>
+<tr><td><a href="docs/FFI.md#data-engines">Data engines</a></td><td>jq values and sqlite databases held by the make process, and the verbs every workspace has</td></tr>
+<tr><td><a href="docs/data-engines.md#jq-workspaces">jq workspaces</a></td><td>Named JSON values, updated in the make process with no fork</td></tr>
+<tr><td><a href="docs/FFI.md#calls-from-a-recipe">Asks from a recipe</a></td><td>Namespaces and workspaces from a running recipe's shell</td></tr>
+<tr><td><a href="docs/FFI.md#init">Init</a></td><td>A chunk run in each scripting guest's main state before the parse</td></tr>
+<tr><td><a href="docs/FFI.md#hooks">Hooks</a></td><td>Goal and recipe events delivered to a guest</td></tr>
+<tr><td><a href="docs/FFI.md#guest-handle">The guest handle</a></td><td>Variable reads and writes, expansion, and eval from a guest</td></tr>
+<tr><td><a href="docs/FFI.md#host-handle">The host handle</a></td><td>Spawned jobs, their mail, signals and the terminal, and the exit status, from lua and js</td></tr>
+<tr><td><a href="docs/FFI.md#registering-make-functions">Registering make functions</a></td><td>Guest functions and values as make functions and variables</td></tr>
+</tbody>
+</table>
 
 <a id="zygote"></a><br/>
 
@@ -988,20 +1088,25 @@ that:
 
 Primitive functions amk adds beside the engines. 
 
-| Function | Answers | Feature |
-| --- | --- | --- |
-| `$(cksum text)`, `$(cksum.file path)` | the checksum and byte length the cksum utility prints, joined by a dash | `cksum` |
-| `$(cksum.hex text)`, `$(cksum.file.hex path)` | seven hex digits of that checksum modulo 2^28 | `cksum` |
-| `$(cksum* var)`, `$(cksum.hex* var)` | the same over a variable's dedented value | `cksum` |
-| `$(amk.sys name)` | `pid`, `ppid`, `uid`, `uname`, `arch`, `hostname`, `epoch` or `uuid` from the kernel; an unknown name is fatal | `sys` |
-| `$(re.match re,text)`, `$(re.match.file re,path)` | the lines an extended regular expression matches, joined by newlines; a bad pattern is fatal, a missing file is empty with a warning | `match` |
-| `$(re.match* re, var)` | the same with either argument read from a variable | `match` |
-| `$(amk.dedent text)`, `$(amk.val.dedent var)`, `$(amk.dedent* var)` | the block indent removed from the text, or from a variable's unexpanded value | always |
-| `$(amk.kwarg key, arg)` | the value of `arg` when it reads `key=value` with that key, split at the first `=`; otherwise empty | always |
-| `$(amk.require names...)` | empty, or fatal naming the features this amk lacks | always |
-| `$(amk.goal name)` | the goal brought up to date in a fork, and its value | always |
-| `$(amk.mode name)`, `$(amk.mode)` | sets the [mode](docs/dataflow.md#modes) for the whole process, before any file target; answers the active mode's name | always |
-| `$(amk.stdin text)` | the text fed to the recipe line's command on its standard input | always |
+<table>
+<thead>
+<tr><th>Function</th><th>Answers</th><th>Feature</th></tr>
+</thead>
+<tbody>
+<tr><td><code>$(cksum text)</code>, <code>$(cksum.file path)</code></td><td>The checksum and byte length the cksum utility prints, joined by a dash</td><td><code>cksum</code></td></tr>
+<tr><td><code>$(cksum.hex text)</code>, <code>$(cksum.file.hex path)</code></td><td>Seven hex digits of that checksum modulo 2^28</td><td><code>cksum</code></td></tr>
+<tr><td><code>$(cksum* var)</code>, <code>$(cksum.hex* var)</code></td><td>The same over a variable's dedented value</td><td><code>cksum</code></td></tr>
+<tr><td><code>$(amk.sys name)</code></td><td><code>pid</code>, <code>ppid</code>, <code>uid</code>, <code>uname</code>, <code>arch</code>, <code>hostname</code>, <code>epoch</code> or <code>uuid</code> from the kernel; an unknown name is fatal</td><td><code>sys</code></td></tr>
+<tr><td><code>$(re.match re,text)</code>, <code>$(re.match.file re,path)</code></td><td>The lines an extended regular expression matches, joined by newlines; a bad pattern is fatal, a missing file is empty with a warning</td><td><code>match</code></td></tr>
+<tr><td><code>$(re.match* re, var)</code></td><td>The same with either argument read from a variable</td><td><code>match</code></td></tr>
+<tr><td><code>$(amk.dedent text)</code>, <code>$(amk.val.dedent var)</code>, <code>$(amk.dedent* var)</code></td><td>The block indent removed from the text, or from a variable's unexpanded value</td><td>always</td></tr>
+<tr><td><code>$(amk.kwarg key, arg)</code></td><td>The value of <code>arg</code> when it reads <code>key=value</code> with that key, split at the first <code>=</code>; otherwise empty</td><td>always</td></tr>
+<tr><td><code>$(amk.require names...)</code></td><td>Empty, or fatal naming the features this amk lacks</td><td>always</td></tr>
+<tr><td><code>$(amk.goal name)</code></td><td>The goal brought up to date in a fork, and its value</td><td>always</td></tr>
+<tr><td><code>$(amk.mode name)</code>, <code>$(amk.mode)</code></td><td>Sets the <a href="docs/dataflow.md#modes">mode</a> for the whole process, before any file target; answers the active mode's name</td><td>always</td></tr>
+<tr><td><code>$(amk.stdin text)</code></td><td>The text fed to the recipe line's command on its standard input</td><td>always</td></tr>
+</tbody>
+</table>
 
 Each function names its feature in `.FEATURES`, so a makefile can guard on it and keep a shell for a stock make.  See [reflection](docs/FFI.md#reflection) for more details.
 
@@ -1014,55 +1119,72 @@ recursive variable by name and appends the table when the process dies.  See [pr
 
 The catalog of what `amk` reads from its command line and its environment beyond what `make` does.  Other sections above have the details; see also `amk --help`.
 
-<a id="cli"></a><br/>
+<a id="cli"></a>
 
 ### Command Line
 
 Several new flags are added by `amk` to defaults for `make`, each read ahead of other option decoding.
 
-| Flag | Takes | Does |
-| --- | --- | --- |
-| `--<engine>` | the engine's arguments | runs that engine with the rest of the line: `--awk`, `--jq`, `--lua`, `--s7`, `--micropy`, `--js`, `--wasm`, `--sqlite` |
-| `--list-engines` | | prints every engine as JSON: its names, language, guest and version, interface, and the capabilities it supports |
-| `--serve SOCK` | a socket path, then make's arguments | parses once and answers requests on the socket as the [zygote](#zygote) |
-| `--client SOCK` | a socket path, then the request, optionally `-- <cold command>` | runs the request against a zygote, or the cold command when refused |
-| `--resident` | make's arguments | one command served by a zygote it starts and reaps itself |
-| `--ape-unpack NAME`, `-x NAME`, `--ape-unpack=NAME [DEST]` | a payload member, an optional destination | copies the member out and prints its [path](#payloads) |
-| `--force` | | with `--ape-unpack`, overwrites a destination that exists |
-| `--ape-list` | | prints every payload member, one per line, sorted, as `--ape-unpack` names them |
-| `--bundle FILES... --out DEST` | makefiles and directories, the output path | writes a copy of amk whose default entry is that [program](#bundles) |
-| `--preprocessor [FILE]` | a makefile, or stdin | prints the makefile with its [decorators](#extended-grammar) rewritten and does nothing else, exiting 76 on a refused decorator line; `AMK_DISABLE_PREPROCESS=1` skips that rewrite inside amk |
-| `--profile`, `--profile=FILE` | an optional output file | sets `AMK_PROFILE` to FILE, or to stderr without one, from anywhere on the line |
+<table>
+<thead>
+<tr><th>Flag</th><th>Takes</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--&lt;engine&gt;</code></td><td>The engine's arguments</td><td>Runs that engine with the rest of the line: <code>--awk</code>, <code>--jq</code>, <code>--lua</code>, <code>--s7</code>, <code>--micropy</code>, <code>--js</code>, <code>--wasm</code>, <code>--sqlite</code></td></tr>
+<tr><td><code>--list-engines</code></td><td></td><td>Prints every engine as JSON: its names, language, guest and version, interface, and the capabilities it supports</td></tr>
+<tr><td><code>--serve SOCK</code></td><td>A socket path, then make's arguments</td><td>Parses once and answers requests on the socket as the <a href="#zygote">zygote</a></td></tr>
+<tr><td><code>--client SOCK</code></td><td>A socket path, then the request, optionally <code>-- &lt;cold command&gt;</code></td><td>Runs the request against a zygote, or the cold command when refused</td></tr>
+<tr><td><code>--resident</code></td><td>make's arguments</td><td>One command served by a zygote it starts and reaps itself</td></tr>
+<tr><td><code>--ape-unpack NAME</code>, <code>-x NAME</code>, <code>--ape-unpack=NAME [DEST]</code></td><td>A payload member, an optional destination</td><td>Copies the member out and prints its <a href="#payloads">path</a></td></tr>
+<tr><td><code>--force</code></td><td></td><td>With <code>--ape-unpack</code>, overwrites a destination that exists</td></tr>
+<tr><td><code>--ape-list</code></td><td></td><td>Prints every payload member, one per line, sorted, as <code>--ape-unpack</code> names them</td></tr>
+<tr><td><code>--bundle FILES... --out DEST</code></td><td>Makefiles and directories, the output path</td><td>Writes a copy of amk whose default entry is that <a href="#bundles">program</a></td></tr>
+<tr><td><code>--bundle-main FILE FILES... --out DEST</code></td><td>An entry file, more files and directories, the output path</td><td>Writes a copy of amk whose <a href="docs/payloads.md#entry-script">entry</a> is that file, run by the engine that claims its extension</td></tr>
+<tr><td><code>--bundle-ls</code></td><td></td><td>Prints every payload member by its path under <code>/zip</code>, one per line</td></tr>
+<tr><td><code>--bundle-cp SRC... DEST</code></td><td>Files and directories, with the payload's side written under <code>/zip</code></td><td><a href="docs/payloads.md#copy">Copies</a> into the payload or out of it</td></tr>
+<tr><td><code>--bundle-rm NAMES...</code></td><td>Payload members and directories</td><td><a href="docs/payloads.md#remove">Removes</a> those members; a directory takes everything under it</td></tr>
+<tr><td><code>--out DEST</code>, <code>--in-place</code></td><td>The output path, or nothing</td><td>Where a flag that changes the payload <a href="docs/payloads.md#verbs">writes</a>: a new copy, or the binary itself; one of the two is required</td></tr>
+<tr><td><code>--bundle-strip --out DEST</code></td><td>The output path</td><td>Writes a copy of amk whose payload is <a href="docs/payloads.md#strip">stripped</a> to the program's own members and the tools under <code>bin/</code></td></tr>
+<tr><td><code>--preprocessor [FILE]</code></td><td>A makefile, or stdin</td><td>Prints the makefile with its <a href="#extended-grammar">decorators</a> rewritten and does nothing else, exiting 76 on a refused decorator line; <code>AMK_DISABLE_PREPROCESS=1</code> skips that rewrite inside amk</td></tr>
+<tr><td><code>--profile</code>, <code>--profile=FILE</code></td><td>An optional output file</td><td>Sets <code>AMK_PROFILE</code> to FILE, or to stderr without one, from anywhere on the line</td></tr>
+</tbody>
+</table>
 
-<a id="environment"></a><br/>
+<a id="environment"></a>
 
 ### Environment
 
 Variables `amk` reads, grouped by what they steer.  The last group is set by `amk` itself for the recipes and children of a run, and read back by them.
 
-| Variable | Does | See |
-| --- | --- | --- |
-| `AMK_<ENGINE>_INIT` | a chunk the language engine runs in `main` before the parse, as text or as `@path`; without it, the payload's `__init__.<engine>` | [init](docs/FFI.md#init) |
-| `AMKPATH`, `AMK_PATH` | colon-separated library roots searched ahead of the payload's `lib/`; `AMK_PATH` is read when `AMKPATH` is unset | [modules](#modules) |
-| `AMK_MODE` | selects a mode for the run, as `$(amk.mode ...)` would; `AMK_MODE=dataflow` | [dataflow](docs/dataflow.md#dataflow) |
-| `AMK_SHELL`, `AMK_SHELLFLAGS`, `AMK_GOAL` | the prelude's defaults for `SHELL`, `.SHELLFLAGS` and `.DEFAULT_GOAL`, each overridable by a later assignment | [payloads](docs/payloads.md) |
-| `AMK_NO_PRELUDE` | skips the payload's prelude | [payloads](docs/payloads.md) |
-| `AMK_NO_PATH` | leaves `PATH` as found and unpacks no bundled tool | [tools](docs/payloads.md#tools) |
-| `XDG_CACHE_HOME`, `HOME` | where unpacked tools are cached: `$XDG_CACHE_HOME`, else `$HOME/.cache` | [tools](docs/payloads.md#tools) |
-| `AMK_DISABLE_PREPROCESS` | `1` skips the decorator rewrite inside amk | [extended grammar](#extended-grammar) |
-| `AMK_PROFILE` | a file, or `-` for stderr, that takes the timing table when the process dies; `--profile` sets it | [profiling](docs/dev.md#profiling) |
-| `AMK_DEBUG` | set to anything, adds diagnostics on stderr: a workspace loaded from its backing, a request the zygote refused | |
-| `AMK_ZYGOTE` | the pid of a zygote still starting; a client waits a bounded time for its socket instead of running cold | [zygote](#zygote) |
-| `AMK_COLD` | the command a client runs when no zygote answers and the line has no `-- <cold command>` | [zygote](#zygote) |
-| `AMK_REARM` | variables a served request recomputes, for parse-time values a shared parse would freeze | [zygote](#zygote) |
-| `AMK_WATCH` | set and not `0`, arms a serving zygote's check of the modification times of the makefiles it parsed | [zygote](#zygote) |
-| `TMPDIR` | where the ape loader installs itself on first run, and where `--resident` keeps its socket | [payloads](docs/payloads.md) |
-| `NO_COLOR`, `NOCOLOR` | either one set turns color off in amk's own messages | |
-| `AMK_BIN` | the binary the test suite runs, for a build somewhere other than `out/bin/amk` | [testing](docs/dev.md#testing) |
-| `AMK_ASK`, `AMK_REPLY` | set by amk: the request and reply descriptors of the ask channel, one pair per recipe child and per spawned job | [asks](docs/FFI.md#calls-from-a-recipe) |
-| `AMK_MAIL` | set by amk: the descriptor a job's recipe writes to reach its parent's mail | [host handle](docs/FFI.md#host-handle) |
-| `AMK_DATAFLOW_DIR` | set by amk: the value directory of a dataflow run, shared by every sub-make | [dataflow](docs/dataflow.md#dataflow) |
-| `AMK_BOOTED` | set by amk: a child of a run is told the payload is booted, so recursion does not boot it again | |
+<table>
+<thead>
+<tr><th>Variable</th><th>Does</th><th>See</th></tr>
+</thead>
+<tbody>
+<tr><td><code>AMK_&lt;ENGINE&gt;_INIT</code></td><td>A chunk the language engine runs in <code>main</code> before the parse, as text or as <code>@path</code>; without it, the payload's <code>__init__.&lt;engine&gt;</code></td><td><a href="docs/FFI.md#init">init</a></td></tr>
+<tr><td><code>AMKPATH</code>, <code>AMK_PATH</code></td><td>Colon-separated library roots searched ahead of the payload's <code>lib/</code>; <code>AMK_PATH</code> is read when <code>AMKPATH</code> is unset</td><td><a href="#modules">modules</a></td></tr>
+<tr><td><code>AMK_MODE</code></td><td>Selects a mode for the run, as <code>$(amk.mode ...)</code> would; <code>AMK_MODE=dataflow</code></td><td><a href="docs/dataflow.md#dataflow">dataflow</a></td></tr>
+<tr><td><code>AMK_SHELL</code>, <code>AMK_SHELLFLAGS</code>, <code>AMK_GOAL</code></td><td>The prelude's defaults for <code>SHELL</code>, <code>.SHELLFLAGS</code> and <code>.DEFAULT_GOAL</code>, each overridable by a later assignment</td><td><a href="docs/payloads.md">payloads</a></td></tr>
+<tr><td><code>AMK_NO_PRELUDE</code></td><td>Skips the payload's prelude</td><td><a href="docs/payloads.md">payloads</a></td></tr>
+<tr><td><code>AMK_NO_PATH</code></td><td>Leaves <code>PATH</code> as found and unpacks no bundled tool</td><td><a href="docs/payloads.md#tools">tools</a></td></tr>
+<tr><td><code>COSMOPOLITAN_INIT_ZIPOS</code></td><td>Set by amk to its own path and exported, so a payload tool reads amk's payload at <code>/zip</code></td><td><a href="docs/payloads.md#reading-the-payload-from-a-tool">payloads</a></td></tr>
+<tr><td><code>XDG_CACHE_HOME</code>, <code>HOME</code></td><td>Where unpacked tools are cached: <code>$XDG_CACHE_HOME</code>, else <code>$HOME/.cache</code></td><td><a href="docs/payloads.md#tools">tools</a></td></tr>
+<tr><td><code>AMK_DISABLE_PREPROCESS</code></td><td><code>1</code> skips the decorator rewrite inside amk</td><td><a href="#extended-grammar">extended grammar</a></td></tr>
+<tr><td><code>AMK_PROFILE</code></td><td>A file, or <code>-</code> for stderr, that takes the timing table when the process dies; <code>--profile</code> sets it</td><td><a href="docs/dev.md#profiling">profiling</a></td></tr>
+<tr><td><code>AMK_DEBUG</code></td><td>Set to anything, adds diagnostics on stderr: a workspace loaded from its backing, a request the zygote refused</td><td></td></tr>
+<tr><td><code>AMK_ZYGOTE</code></td><td>The pid of a zygote still starting; a client waits a bounded time for its socket instead of running cold</td><td><a href="#zygote">zygote</a></td></tr>
+<tr><td><code>AMK_COLD</code></td><td>The command a client runs when no zygote answers and the line has no <code>-- &lt;cold command&gt;</code></td><td><a href="#zygote">zygote</a></td></tr>
+<tr><td><code>AMK_REARM</code></td><td>Variables a served request recomputes, for parse-time values a shared parse would freeze</td><td><a href="#zygote">zygote</a></td></tr>
+<tr><td><code>AMK_WATCH</code></td><td>Set and not <code>0</code>, arms a serving zygote's check of the modification times of the makefiles it parsed</td><td><a href="#zygote">zygote</a></td></tr>
+<tr><td><code>TMPDIR</code></td><td>Where the ape loader installs itself on first run, and where <code>--resident</code> keeps its socket</td><td><a href="docs/payloads.md">payloads</a></td></tr>
+<tr><td><code>NO_COLOR</code>, <code>NOCOLOR</code></td><td>Either one set turns color off in amk's own messages</td><td></td></tr>
+<tr><td><code>AMK_BIN</code></td><td>The binary the test suite runs, for a build somewhere other than <code>out/bin/amk</code></td><td><a href="docs/dev.md#testing">testing</a></td></tr>
+<tr><td><code>AMK_ASK</code>, <code>AMK_REPLY</code></td><td>Set by amk: the request and reply descriptors of the ask channel, one pair per recipe child and per spawned job</td><td><a href="docs/FFI.md#calls-from-a-recipe">asks</a></td></tr>
+<tr><td><code>AMK_MAIL</code></td><td>Set by amk: the descriptor a job's recipe writes to reach its parent's mail</td><td><a href="docs/FFI.md#host-handle">host handle</a></td></tr>
+<tr><td><code>AMK_DATAFLOW_DIR</code></td><td>Set by amk: the value directory of a dataflow run, shared by every sub-make</td><td><a href="docs/dataflow.md#dataflow">dataflow</a></td></tr>
+<tr><td><code>AMK_BOOTED</code></td><td>Set by amk: a child of a run is told the payload is booted, so recursion does not boot it again</td><td></td></tr>
+</tbody>
+</table>
 
 <a id="dev"></a><br/>
 
@@ -1086,5 +1208,5 @@ Further reading:
 
 - [Make](https://en.wikipedia.org/wiki/Make_(software)), [polyglot programming](https://en.wikipedia.org/wiki/Polyglot_(computing)) and [foreign function interfaces](https://en.wikipedia.org/wiki/Foreign_function_interface), on Wikipedia.
 
-[^cosmo-gotchas]: Cosmopolitan, the cosmocc toolchain's README, "Gotchas", [github.com/jart/cosmopolitan](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas).
+[^cosmo-gotchas]: Cosmopolitan, the cosmocc toolchain's README, "Gotchas", [gh://jart/cosmopolitan](https://github.com/jart/cosmopolitan/blob/master/tool/cosmocc/README.md#gotchas).
 [^make-load]: The GNU make manual, "The load Directive", [gnu.org](https://www.gnu.org/software/make/manual/html_node/load-Directive.html).

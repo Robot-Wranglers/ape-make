@@ -1,0 +1,131 @@
+#!/usr/bin/env -S amk --silent -f
+#
+# demos/tcc-statusbar.amk:
+#  a native extension compiled in memory by tcc: it hears make's events
+#  and keeps a status bar on the terminal's last row while recipe output
+#  scrolls above it. Off a terminal it does nothing.
+#
+
+MAKEFLAGS += -j4
+
+# A scroll region keeps recipe output off the reserved last row.
+@tcc.import
+define statusbar.c
+  #define MAX_RUNNING 8
+
+  static int rows, cols, running, done, failed;
+  static long started;
+  static char *names[MAX_RUNNING];
+
+  static void out (const char *s) { write (1, s, strlen (s)); }
+
+  static void draw (void)
+  {
+    char line[512], bar[1024];
+    long secs = (amk_now_ms () - started) / 1000;
+    int i, n, width = cols - 7;
+    n = snprintf (line, sizeof line,
+                  " amk | %d running | %d done | %d failed |",
+                  running, done, failed);
+    for (i = 0; i < MAX_RUNNING && n < (int) sizeof line - 1; ++i)
+      if (names[i])
+        n += snprintf (line + n, sizeof line - n, " %s", names[i]);
+    snprintf (bar, sizeof bar,
+              "\0337\033[%d;1H\033[2K\033[7m%-*.*s %2ld:%02ld \033[0m\0338",
+              rows, width, width, line, secs / 60, secs % 60);
+    out (bar);
+  }
+
+  static void reserve (void)
+  {
+    char seq[64];
+    snprintf (seq, sizeof seq, "\n\0337\033[1;%dr\0338\033[1A", rows - 1);
+    out (seq);
+  }
+
+  static void track (const char *target)
+  {
+    int i;
+    for (i = 0; i < MAX_RUNNING; ++i)
+      if (names[i] == NULL)
+        {
+          names[i] = malloc (strlen (target) + 1);
+          strcpy (names[i], target);
+          return;
+        }
+  }
+
+  static void untrack (const char *target)
+  {
+    int i;
+    for (i = 0; i < MAX_RUNNING; ++i)
+      if (names[i] && strcmp (names[i], target) == 0)
+        {
+          free (names[i]);
+          names[i] = NULL;
+          return;
+        }
+  }
+
+  static void on_event (const char *event, const char *target,
+                        const char *status, int code, int sig, long pid)
+  {
+    if (strcmp (event, "recipe_start") == 0)
+      {
+        running++;
+        track (target);
+      }
+    else if (strcmp (event, "recipe_end") == 0)
+      {
+        running--;
+        untrack (target);
+        if (strcmp (status, "failed") == 0)
+          failed++;
+        else
+          done++;
+      }
+    else
+      return;
+    draw ();
+  }
+
+  static void restore (void)
+  {
+    char seq[64];
+    snprintf (seq, sizeof seq, "\0337\033[r\033[%d;1H\033[2K\0338", rows);
+    out (seq);
+  }
+
+  static void resize (void)
+  {
+    if (amk_term_size (1, &rows, &cols) != 0)
+      return;
+    reserve ();
+    draw ();
+  }
+
+  int statusbar_gmk_setup (void)
+  {
+    if (!isatty (1) || getenv ("AMK_STATUSBAR_OWNER"))
+      return 1;
+    if (amk_term_size (1, &rows, &cols) != 0 || rows < 3 || cols < 40)
+      return 1;
+    setenv ("AMK_STATUSBAR_OWNER", "1", 1);
+    started = amk_now_ms ();
+    reserve ();
+    amk_on_event (on_event);
+    amk_on_exit (restore);
+    amk_on_winch (resize);
+    draw ();
+    return 1;
+  }
+endef
+
+parts := lexer parser checker optimizer emitter linker manual bundle
+
+__main__: $(parts)
+	echo "tcc-statusbar: built $(words $(parts)) parts"
+
+$(parts):
+	echo "building $@"
+	sleep 1
