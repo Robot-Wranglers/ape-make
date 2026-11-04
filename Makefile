@@ -40,8 +40,9 @@ s7.sha256  := bdf49850444252e7ffada4b6497278697b335580d5611cb1f336a6084828b8fb
 
 # Trilog tags no releases, so its version is the commit it pins.
 trilog.commit  := c3f7dcbd506bbf8bf073ebf6976aae7e855ce8ea
-trilog.version := $(shell printf %.7s $(trilog.commit))
-trilog.tarball := trilog-$(trilog.version).tar.gz
+trilog.short   := $(shell printf %.7s $(trilog.commit))
+trilog.version := 0.2.0
+trilog.tarball := trilog-$(trilog.short).tar.gz
 trilog.url     := https://github.com/mattvonrocketstein/trilog/archive/$(trilog.commit).tar.gz
 trilog.sha256  := 8bebc1530c7613770730f52406c97b25ce8e8f4386db6cc16c5d1c53a1bafdf3
 
@@ -247,7 +248,7 @@ gawk.src := src/gawk-$(gawk.version)
 jq.src   := src/jq-$(jq.version)
 lua.src  := src/lua-$(lua.version)
 s7.src   := src/s7-$(s7.version)
-trilog.src := src/trilog-$(trilog.version)
+trilog.src := src/trilog-$(trilog.short)
 micropython.src := src/micropython-$(micropython.version)
 wasm3.src := src/wasm3-$(wasm3.version)
 quickjs.src := src/quickjs-$(quickjs.version)
@@ -513,7 +514,7 @@ $(trilog.src): $(trilog.tarball) $(trilog.patches)
 	$(call log, patch, unpacking $(trilog.tarball) into $@)
 	rm -rf $@ && mkdir -p $@ && tar xzf $(trilog.tarball) -C $@ --strip-components=1 \
 	  $(addprefix trilog-$(trilog.commit)/,src include boot lib LICENSE)
-	$(call apply.series,$@,$(trilog.patches),trilog $(trilog.version))
+	$(call apply.series,$@,$(trilog.patches),trilog $(trilog.short))
 	touch $@
 # The release tarball carries every port and vendored library; amk's port needs the core, the modules, the shared helpers, six in-tree libraries with mbedtls for ssl, and what it borrows from unix.
 micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c ports/unix/modsocket.c ports/unix/mbedtls lib/mbedtls lib/mbedtls_errors lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs $(filter-out extmod/%,$(foreach p,$(micropython.pylib),$(lastword $(subst :, ,$(p))))) LICENSE
@@ -564,7 +565,7 @@ s7.compile = for c in $(HERE)$(s7.src)/s7.c $(HERE)guest/s7_main.c; do \
              done
 
 # Trilog's library sources and our entry point; its version header names the pinned commit.
-trilog.compile = printf "\#define TRILOG_BUILD_VERSION \"$(trilog.version)\"\n" >version.h && \
+trilog.compile = printf "\#define TRILOG_BUILD_VERSION \"$(trilog.version) ($(trilog.short))\"\n" >version.h && \
                  for c in $(addprefix $(HERE)$(trilog.src)/,$(trilog.sources)) $(HERE)guest/trilog_main.c; do \
                    $(1) $(call guest.cflags,trilog) $(trilog.cflags) -I. $(addprefix -I$(HERE)$(trilog.src)/,$(trilog.includes)) -I$(HERE)guest \
                      -c "$$c" -o "$$(basename $$c .c).o" || exit 1; \

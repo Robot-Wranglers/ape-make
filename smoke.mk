@@ -126,8 +126,8 @@ libs:
 	echo "libs: $(or $(libs),none)"
 
 # The build passes its selected engines; each must be present, the rest absent.
-engines ?= awk jq lua s7 micropy wasm js sqlite
-engines.all = awk jq lua s7 micropy wasm js sqlite
+engines ?= awk jq lua s7 trilog micropy wasm js sqlite
+engines.all = awk jq lua s7 trilog micropy wasm js sqlite
 sum.input = alpha 1$(nl)beta 2$(nl)gamma 3
 awk.sum = { s += $$2 } END { print "sum=" s }
 awk.mul = { s += $$2 * mul } END { print s }
