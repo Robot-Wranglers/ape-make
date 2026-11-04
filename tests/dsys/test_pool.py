@@ -347,7 +347,37 @@ def test_the_size_after_a_resize_is_the_openers(amk, tmp_path):
   assert "the size is kept only by the process that opened it" in out, out
 
 
+def test_a_closed_pool_opens_again_and_its_bound_verbs_follow(amk, tmp_path):
+  out = shown(amk, tmp_path, "\n".join([
+    "$(amk.pool place, 1)",
+    "$(amk.pool.produce place)",
+    "$(amk.pool.close place)",
+    "$(info [$(amk.pool place)] [$(amk.pool )])",
+    "$(amk.pool place, labels=a)",
+    "$(info [$(amk.pool.place.size )] [$(amk.pool.acquire place)])",
+  ]))
+  assert out == ["", "goals", "1", "a"]
+
+
+@pytest.mark.engines("lua")
+def test_a_fork_that_closes_and_opens_a_pool_owns_its_copy(amk, tmp_path):
+  body = "\n".join([
+    "$(amk.pool place, 1)",
+    "child:",
+    "\t$(amk.pool.close place)$(amk.pool place, 0)$(amk.pool.produce place)$(amk.pool.produce place)",
+    "\t@echo '[child $(amk.pool.size place)]'",
+    "probe:",
+    "\t$(info $(amk.goal child))@echo '[parent $(amk.pool.size place)]'",
+  ])
+  r = run(amk, tmp_path, body, goal="probe")
+  out = r.stdout + r.stderr
+  assert r.returncode == 0, out
+  assert "[child 2]" in out and "[parent 1]" in out, out
+
+
 @pytest.mark.parametrize("body,want", [
+  ("$(amk.pool p, 1)\n$(amk.pool.close p)\n$(info [$(amk.pool.p.size )])", "p is closed in this process"),
+  ("$(amk.pool.close goals)", "goals is the jobserver, sized by -j"),
   ("$(amk.pool workers, 2)\n$(amk.pool workers, 3)", "workers is already open"),
   ("$(amk.pool goals, 3)", "goals is the jobserver, sized by -j"),
   ("$(amk.pool odd, size=two)", "odd: size two is not a number"),

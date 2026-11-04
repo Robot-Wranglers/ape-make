@@ -37,6 +37,16 @@ static const struct amk_state_ops s7_state = {
   .kept = { .create = s7_create }, .exec = s7_exec, .import = s7_import, .hook = s7_hook,
 };
 #endif
+#ifdef AMK_ENGINE_TRILOG
+static const struct amk_cli_ops trilog_cli = { .main = trilog_run_main };
+static const struct amk_state_ops trilog_state = {
+  .kept = { .create = trilog_create }, .exec = trilog_exec, .import = trilog_import,
+};
+static const struct amk_workspace_ops trilog_workspace = {
+  .kept = { .create = trilog_create },
+  .get = trilog_get, .update = trilog_update, .load = trilog_load, .dump = trilog_dump,
+};
+#endif
 #ifdef AMK_ENGINE_MICROPY
 static const struct amk_cli_ops micropy_cli = { .main = micropy_run_main };
 static const struct amk_state_ops micropy_state = {
@@ -86,6 +96,11 @@ const struct amk_engine amk_engines[] =
     { .name = "s7", .aliases = "lisp", .language = "Scheme", .implementation = "s7",
       .version = AMK_STR (AMK_ENGINE_S7), .cli = &s7_cli, .state = &s7_state, .deadline = "handle" },
 #endif
+#ifdef AMK_ENGINE_TRILOG
+    { .name = "trilog", .aliases = "prolog pl", .language = "Prolog", .implementation = "trilog",
+      .version = AMK_STR (AMK_ENGINE_TRILOG), .cli = &trilog_cli, .state = &trilog_state,
+      .workspace = &trilog_workspace },
+#endif
 #ifdef AMK_ENGINE_MICROPY
     { .name = "micropy", .language = "Python", .implementation = "MicroPython",
       .version = AMK_STR (AMK_ENGINE_MICROPY), .cli = &micropy_cli, .state = &micropy_state, .deadline = "handle" },
@@ -107,7 +122,7 @@ const struct amk_engine amk_engines[] =
 
 static int amk_engine_spelling_taken (const struct amk_engine *e);
 
-/* A row is refused unless it has a command line, at most one kept-state interface, and every member of that interface but the optional hook and filter.  */
+/* A row is refused unless it has a command line and every member of each kept-state interface it has but the optional hook and filter; a row with both shares one create, so a namespace holds one state that both answer.  */
 void
 amk_engines_check (void)
 {
@@ -121,8 +136,9 @@ amk_engines_check (void)
         missing = "a language, an implementation, and a version";
       else if (amk_engine_spelling_taken (e))
         missing = "names that no other engine has";
-      else if (e->state != NULL && e->workspace != NULL)
-        missing = "only one of the state and workspace interfaces";
+      else if (e->state != NULL && e->workspace != NULL
+               && (e->state->kept.create != e->workspace->kept.create || e->state->kept.single != e->workspace->kept.single))
+        missing = "one create shared by its state and workspace interfaces";
       else if (e->state != NULL && (e->state->kept.create == NULL || e->state->exec == NULL || e->state->import == NULL))
         missing = "every member of its state interface";
       else if (e->workspace != NULL
@@ -217,6 +233,8 @@ amk_engines_json (FILE *out)
       fprintf (out, "],\n      \"language\": \"%s\",\n      \"implementation\": \"%s\",\n      \"version\": \"%s\",\n",
                e->language, e->implementation, e->version);
       fprintf (out, "      \"interface\": %s,\n", s != NULL ? "\"state\"" : w != NULL ? "\"workspace\"" : "null");
+      fprintf (out, "      \"interfaces\": [%s%s%s],\n", s != NULL ? "\"state\"" : "", s != NULL && w != NULL ? ", " : "",
+               w != NULL ? "\"workspace\"" : "");
       fprintf (out, "      \"namespaces\": %s,\n", kept == NULL ? "null" : kept->single ? "\"main\"" : "\"many\"");
       if (e->deadline != NULL)
         fprintf (out, "      \"deadline\": \"%s\",\n", e->deadline);
@@ -250,6 +268,8 @@ amk_engine_ops (const struct amk_engine *e)
 {
   if (e == NULL)
     return NULL;
+  if (e->state != NULL && e->workspace != NULL)
+    return "exec import get update load";
   return e->state != NULL ? "exec import" : e->workspace != NULL ? "get update load" : NULL;
 }
 
@@ -270,6 +290,13 @@ int
 amk_engine_is_workspace (const struct amk_engine *e)
 {
   return e != NULL && e->workspace != NULL;
+}
+
+/* Whether an op goes up the ask channel to the workspaces' owner: a workspace op does, and a state op on a row with both stays in this process as it would on a state row.  */
+int
+amk_engine_forwards (const struct amk_engine *e, const char *op)
+{
+  return amk_engine_is_workspace (e) && !(e->state != NULL && (streq (op, "exec") || streq (op, "import")));
 }
 
 /* Whether the first len bytes of word are the row's name or one of its aliases.  */

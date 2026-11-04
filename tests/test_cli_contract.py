@@ -8,7 +8,7 @@ engine without the state interface. Every engine the build lists has a dialect.
 
 import pytest
 
-from conformance import AMK_OPS_ALL, CLI, OPS, STATE, WORKSPACE, list_engines, parametrize, run
+from conformance import AMK_OPS_ALL, CLI, STATE, WORKSPACE, interfaces, list_engines, own_ops, parametrize, run
 from conftest import sh
 
 
@@ -18,9 +18,9 @@ def pytest_generate_tests(metafunc):
 
 def test_every_engine_has_a_dialect(engine):
   assert engine["name"] in CLI, f"no command-line dialect for {engine['name']}"
-  if engine["interface"] == "state":
+  if "state" in interfaces(engine):
     assert engine["name"] in STATE, f"no state dialect for {engine['name']}"
-  if engine["interface"] == "workspace":
+  if "workspace" in interfaces(engine):
     assert engine["name"] in WORKSPACE, f"no workspace dialect for {engine['name']}"
 
 
@@ -78,7 +78,7 @@ def test_an_imported_target_runs_its_program(amk, tmp_path, engine, spelling):
 
 
 def test_every_operation_outside_the_interface_refuses(amk, tmp_path, engine, spelling):
-  e, own = engine["name"], OPS[engine["interface"]]
+  e, own = engine["name"], own_ops(engine)
   for op in [o for o in AMK_OPS_ALL if o not in own and o != "import"]:
     r = run(amk, tmp_path, [f"x := $({spelling}.{op} 1)"])
     assert r.returncode != 0, f"{e}.{op}: " + r.stdout + r.stderr
@@ -96,7 +96,7 @@ def test_an_engine_without_kept_state_refuses_ns_and_import(amk, tmp_path, engin
 
 
 def test_a_handle_outside_the_interface_is_not_made(amk, tmp_path, engine):
-  e, own = engine["name"], OPS[engine["interface"]]
+  e, own = engine["name"], own_ops(engine)
   if engine["namespaces"] != "many":
     return
   for op in [o for o in AMK_OPS_ALL if o not in own]:
@@ -110,7 +110,7 @@ def test_a_handle_outside_the_interface_is_not_made(amk, tmp_path, engine):
 
 def test_an_init_chunk_without_the_state_interface_refuses(amk, tmp_path, engine):
   e = engine["name"]
-  if engine["interface"] == "state":
+  if "state" in interfaces(engine):
     return
   r = run(amk, tmp_path, [], env={f"AMK_{e.upper()}_INIT": "1"})
   assert r.returncode != 0, r.stdout + r.stderr
@@ -143,8 +143,9 @@ def test_the_list_names_every_built_engine(engines):
 
 
 def test_the_list_matches_the_interface(engine):
-  caps, iface = engine["capabilities"], engine["interface"]
-  assert caps["exec"] == caps["import_lift"] == caps["guest_handle"] == (iface == "state"), engine
-  assert caps["get"] == caps["update"] == caps["load"] == caps["dump"] == caps["channel"] == (iface == "workspace"), engine
-  assert (engine["namespaces"] is None) == (iface is None), engine
+  caps, ifaces = engine["capabilities"], interfaces(engine)
+  assert caps["exec"] == caps["import_lift"] == caps["guest_handle"] == ("state" in ifaces), engine
+  assert caps["get"] == caps["update"] == caps["load"] == caps["dump"] == caps["channel"] == ("workspace" in ifaces), engine
+  assert (engine["namespaces"] is None) == (not ifaces), engine
+  assert engine["interface"] == (ifaces[0] if ifaces else None), engine
   assert engine["language"] and engine["implementation"] and engine["version"], engine

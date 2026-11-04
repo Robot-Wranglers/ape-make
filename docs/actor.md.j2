@@ -1,6 +1,5 @@
-{% set name = "actor" %}
 {% set root = ".." %}
-<!-- header # actor-model "`mod :: amk.{{ name }}`" |Concepts #concepts | Syntax #syntax | API #api | Kinds #kinds | Backends #backends | Strategy #strategy | Restarts #restart-kinds | Errors #errors | Refs #references | Schema #schema -->
+<!-- header # actor-model "`mod :: amk.actor`" |Concepts #concepts | Syntax #syntax | API #api | Kinds #kinds | Backends #backends | Strategy #strategy | Restarts #restart-kinds | Errors #errors | Refs #references | Schema #schema -->
 <!-- /header -->
 
 <a id="overview"></a>
@@ -25,13 +24,13 @@ See also the [runtime section](runtime.md#actor-model), [amk.plex](plex.md).
 
 | Term | Meaning |
 | --- | --- |
-| Group | a set of actors under a charter, run by `<group>.__main__` |
-| Charter | the group's json: every key but `children` |
-| Member | one entry in `children`, or a define joined by `@<group>.actor/<engine>` |
-| Backend | the supervisor that enforces the charter, `effection` or `s7`, see [backends](#backends) |
-| Kind | how the backend runs a member, see [kinds](#kinds) |
-| Restart | what happens at a member's exit, see [restart kinds](#restart-kinds) |
-| Giving Up | a group's exit after a member restarts more than `intensity` times; its parent sees it as one exit |
+| Group | A set of actors under a charter, run by `<group>.__main__` |
+| Charter | The group's json: every key but `children` |
+| Member | One entry in `children`, or a define joined by `@<group>.actor/<engine>` |
+| Backend | The supervisor that enforces the charter, `effection` or `s7`, see [backends](#backends) |
+| Kind | How the backend runs a member, see [kinds](#kinds) |
+| Restart | What happens at a member's exit, see [restart kinds](#restart-kinds) |
+| Giving Up | A group's exit after a member restarts more than `intensity` times; its parent sees it as one exit |
 
 <a id="syntax"></a>
 <a id="declaring-a-group"></a>
@@ -50,8 +49,8 @@ group's target, in the backend's engine; typically `__main__: g1.__main__`.
 
 | Form | Declares |
 | --- | --- |
-| `@actor.group` above a define of json | a group of the define's name, its charter and its `children` |
-| `@<group>.actor/<engine> {kind=.. restart=..}` above a define | a member of the group, run in the engine, its options as its entry |
+| `@actor.group` above a define of json | A group of the define's name, its charter and its `children` |
+| `@<group>.actor/<engine> {kind=.. restart=..}` above a define | A member of the group, run in the engine, its options as its entry |
 
 The `/<engine>` is the first positional, so `@g1.actor lua` is the same member; see
 [decorator arguments](grammar.md#decorator-arguments).
@@ -74,10 +73,10 @@ member itself:
 
 | Call | Does |
 | --- | --- |
-| `g1.cast(member, msg)`, `(g1 'cast member msg)` | adds `msg` to the member's inbox |
-| `g1.recv()`, `(g1 'recv)` | waits for the next message in this member's own inbox |
-| `g1.ask(member, msg)`, `(g1 'ask member msg)` | asks the member as this one, and waits for the answer |
-| `g1.reply(request, answer)`, `(g1 'reply request answer)` | answers a request taken by `recv` |
+| `g1.cast(member, msg)`, `(g1 'cast member msg)` | Adds `msg` to the member's inbox |
+| `g1.recv()`, `(g1 'recv)` | Waits for the next message in this member's own inbox |
+| `g1.ask(member, msg)`, `(g1 'ask member msg)` | Asks the member as this one, and waits for the answer |
+| `g1.reply(request, answer)`, `(g1 'reply request answer)` | Answers a request taken by `recv` |
 
 A member of kind `goal` is a target in its own process and has no handle; it calls the
 same verbs as make functions, `amk.g1.cast(member, msg)`.
@@ -93,11 +92,11 @@ member a `call`.
 
 | Name | Description |
 | --- | --- |
-| `goal` | a target in its own process, spawned and awaited to its exit, so a body that blocks never holds the plex |
-| `call` | a function the engine's import lifted, or a body joined by at line, called once per start through make; a raise or an empty answer is a crash |
-| `block` | a plain define run whole by its engine's star builtin, `micropy*` by default |
-| `scoped` | a body run by the backend's own plex with no process: a generator over the handle in js, an s7 body that yields on the plex |
-| `group` | another group, run as a member; its giving up is its exit |
+| `goal` | A target in its own process, spawned and awaited to its exit, so a body that blocks never holds the plex |
+| `call` | A function the engine's import lifted, or a body joined by at line, called once per start through make; a raise or an empty answer is a crash |
+| `block` | A plain define run whole by its engine's star builtin, `micropy*` by default |
+| `scoped` | A body run by the backend's own plex with no process: a generator over the handle in js, an s7 body that yields on the plex |
+| `group` | Another group, run as a member; its giving up is its exit |
 
 <a id="backends"></a>
 
@@ -105,8 +104,8 @@ member a `call`.
 
 | Name | Flavor | Description | Model |
 | --- | --- | --- | --- |
-| `effection` | Actors | Effection[^effection] in quickjs: members as tasks with timers and processes, restarts windowed by `intensity` over `period` milliseconds; members interleave across nested groups | structured concurrency on an event loop; tasks are asymmetric coroutines, so scheduling is cooperative but timing is the loop's and a run can differ |
-| `s7` | Actors | one cooperative plex per group: every member a task, a scoped body yielding at its waits, no timers, so a run without goals is the same every time; a goal's exit is polled between yields, and the plex blocks for any job once every ready task waits on one; `intensity` is a restart budget; a nested group runs on a plex of its own inside its parent's task | a multiplexer over first-class continuations; deterministic cooperative scheduling, a ready list with no clock |
+| `effection` | Actors | Effection[^effection] in quickjs: members as tasks with timers and processes, restarts windowed by `intensity` over `period` milliseconds; members interleave across nested groups | Structured concurrency on an event loop; tasks are asymmetric coroutines, so scheduling is cooperative but timing is the loop's and a run can differ |
+| `s7` | Actors | One cooperative plex per group: every member a task, a scoped body yielding at its waits, no timers, so a run without goals is the same every time; a goal's exit is polled between yields, and the plex blocks for any job once every ready task waits on one; `intensity` is a restart budget; a nested group runs on a plex of its own inside its parent's task | A multiplexer over first-class continuations; deterministic cooperative scheduling, a ready list with no clock |
 
 The actor rows are the values `backend` takes in a charter. The baseline of each is
 a JSON file of the backend's name, [`effection.json`]({{ root }}/payload/lib/actor/effection.json) or [`s7.json`]({{ root }}/payload/lib/actor/s7.json): the charter's defaults, the kinds
@@ -136,10 +135,10 @@ guest.
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `$(g1.cast member, msg)` | adds `msg` to the member's inbox, without waiting | empty |
-| `$(g1.recv member)` | waits for the next message in the member's inbox and takes it | the message |
-| `$(g1.ask asker, member, msg)` | adds `asker:msg` to the member's inbox, then waits on the asker's reply pool | the answer |
-| `$(g1.reply request, answer)` | adds `answer` to the reply pool of the request's asker, the part before its colon | empty |
+| `$(g1.cast member, msg)` | Adds `msg` to the member's inbox, without waiting | empty |
+| `$(g1.recv member)` | Waits for the next message in the member's inbox and takes it | The message |
+| `$(g1.ask asker, member, msg)` | Adds `asker:msg` to the member's inbox, then waits on the asker's reply pool | The answer |
+| `$(g1.reply request, answer)` | Adds `answer` to the reply pool of the request's asker, the part before its colon | empty |
 
 A member that asks gets a second pool, `<group>.<member>.reply`, and an ask from any
 other member is refused. The charter's `"ask": true` gives one to every member; a
@@ -158,42 +157,39 @@ receive by pattern, keeps its mailboxes in a [tuple space](tspace.md) instead.
 
 ## Strategy
 
-The policy keys of a group's charter:
+The policy keys of a group's charter set how its members restart and share resources. A
+charter that restarts crashed members only, at most five times a minute:
 
-```json
-{
-  "strategy": {
-    "enum": ["one_for_one"],
-    "default": "one_for_one",
-    "description": "which members restart when one exits: only that one"
-  },
-  "restart": {
-    "enum": ["always", "on-failure", "never"],
-    "default": "always",
-    "description": "whether a member's exit restarts it; see restart kinds"
-  },
-  "intensity": {
-    "type": "integer",
-    "default": 3,
-    "description": "how many restarts the group allows before it gives up"
-  },
-  "period": {
-    "type": "integer",
-    "default": 10000,
-    "description": "milliseconds intensity counts over, under effection only; s7 counts over the whole run and refuses it"
-  },
-  "pool": {
-    "type": "string",
-    "default": "actors",
-    "description": "an open pool whose tokens leaf members take to start; see pools"
-  },
-  "mailbox": {
-    "enum": ["none", "pool"],
-    "default": "none",
-    "description": "how members message each other; see mailboxes"
+```Makefile
+@actor.group
+define g1
+  {
+    "restart": "on-failure",
+    "intensity": 5,
+    "period": 60000,
+    "children": { "echo": { "kind": "block", "engine": "micropy" } },
   }
-}
+endef
 ```
+
+<dl>
+<dt><code>strategy</code>: <code>one_for_one</code>, the default and only value</dt>
+<dd>Which members restart when one exits: only that one.</dd>
+<dt><code>restart</code>: <code>always</code> (default), <code>on-failure</code> or <code>never</code></dt>
+<dd>Whether a member's exit restarts it. See <a href="#restart-kinds">restart kinds</a>.</dd>
+<dt><code>intensity</code>: integer, default <code>3</code></dt>
+<dd>How many restarts the group allows before it gives up.</dd>
+<dt><code>period</code>: integer, default <code>10000</code></dt>
+<dd>Milliseconds that <code>intensity</code> counts over, under effection only. The s7 backend counts over the whole run and refuses this key.</dd>
+<dt><code>pool</code>: string, default <code>actors</code></dt>
+<dd>An open pool whose tokens leaf members take to start. See <a href="#actor-pools">pools</a>.</dd>
+<dt><code>mailbox</code>: <code>none</code> (default) or <code>pool</code></dt>
+<dd>How members message each other. See <a href="#mailboxes">mailboxes</a>.</dd>
+</dl>
+
+These keys and their defaults are defined in the group schema,
+[`schema/group.json`]({{ root }}/payload/lib/actor/schema/group.json); the full form is under
+[Schema](#schema).
 
 `restart`, `intensity` and `period` may also be set on one member, overriding the charter.
 Each backend's defaults are its [baseline](#backends). See
@@ -205,9 +201,9 @@ Each backend's defaults are its [baseline](#backends). See
 
 | Name | Description |
 | --- | --- |
-| `always` | restarted on any exit, the baseline default |
-| `on-failure` | restarted on a crash, left alone after a clean exit |
-| `never` | never restarted, whatever its exit |
+| `always` | Restarted on any exit, the baseline default |
+| `on-failure` | Restarted on a crash, left alone after a clean exit |
+| `never` | Never restarted, whatever its exit |
 
 A member restarted more than `intensity` times makes its group give up, which its parent
 sees as one exit.
@@ -243,7 +239,7 @@ g1: exited noisy 1
 | Inboxes and replies past the pool cap | `g1: 3 inboxes and replies do not fit; 62 of 64 pools are open` |
 | An ask from a member without `ask` | `g1: a does not ask; give it ask=true` |
 | `cast` or `recv` on a group with no mailboxes | `g1: no mailboxes; the charter's mailbox is none` |
-| A member restarted more than `intensity` times | the event `g1: gave_up g1, delta: too many restarts` |
+| A member restarted more than `intensity` times | The event `g1: gave_up g1, delta: too many restarts` |
 | An s7 call member that yields | `actor: delta is a call member and cannot yield; give it kind=scoped` |
 | An s7 handle verb it lacks | `actor: no verb spawn` |
 
@@ -253,11 +249,11 @@ g1: exited noisy 1
 
 | Demo | Shows |
 | --- | --- |
-| [`supervise-3.amk`]({{ root }}/demos/supervise-3.amk) | the charter as data under `"backend": "effection"`, every kind, a nested group giving up |
-| [`actors-1.amk`]({{ root }}/demos/actors-1.amk) | the same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded under [syntax](#syntax) |
-| [`actors-2.amk`]({{ root }}/demos/actors-2.amk) | goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
+| [`supervise-3.amk`]({{ root }}/demos/supervise-3.amk) | The charter as data under `"backend": "effection"`, every kind, a nested group giving up |
+| [`actors-1.amk`]({{ root }}/demos/actors-1.amk) | The same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded under [syntax](#syntax) |
+| [`actors-2.amk`]({{ root }}/demos/actors-2.amk) | Goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
 | [`actors-mailbox.amk`]({{ root }}/demos/actors-mailbox.amk) | `"mailbox": "pool"`: a micropy goal asking a lua goal for squares, then casting it a goodbye; embedded under [mailboxes](#mailboxes) |
-| [`tuplespace-actors.amk`]({{ root }}/demos/tuplespace-actors.amk) | actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
+| [`tuplespace-actors.amk`]({{ root }}/demos/tuplespace-actors.amk) | Actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
 
 <a id="references"></a>
 

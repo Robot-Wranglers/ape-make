@@ -130,6 +130,33 @@ def test_namespaces_are_separate(amk, tmp_path, engine):
   assert f"a={d['before']} b={d['after']}" in r.stdout, r.stdout
 
 
+def test_a_namespace_hook_reaches_every_namespace(amk, tmp_path, engine):
+  e, d = _d(engine)
+  r = run(amk, tmp_path, [
+    "cf.mine = own:$1:$2",
+    "cf.hook = $(amk.fxn! $1.mine, cf.mine, $1)",
+    f"$({e}.ns.create Early)",
+    f"$({e}.ns.hook cf.hook)",
+    f"$({e}.ns.create Late)",
+    f"$({e}.import Seeded, {d['seed']})",
+    "$(info $(Early.mine x) $(Late.mine y) $(Seeded.mine z))",
+  ])
+  assert r.returncode == 0, r.stdout + r.stderr
+  assert "own:Early:x own:Late:y own:Seeded:z" in r.stdout, r.stdout + r.stderr
+
+
+def test_a_namespace_hook_cannot_take_a_verb(amk, tmp_path, engine):
+  e, _ = _d(engine)
+  r = run(amk, tmp_path, [
+    "cf.mine = own:$1",
+    "cf.hook = $(amk.fxn! $1.get, cf.mine, $1)",
+    f"$({e}.ns.hook cf.hook)",
+    f"$({e}.ns.create W)",
+  ])
+  assert r.returncode != 0, r.stdout + r.stderr
+  assert "W.get" in r.stderr, r.stderr
+
+
 def test_a_listed_filter_runs_the_plain_form(amk, tmp_path, engine):
   e, d = _d(engine)
   if not engine["capabilities"]["filter"]:

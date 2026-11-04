@@ -290,6 +290,7 @@ char *func_op (char *o, char **argv, const char *funcname);
 char *func_handle (char *o, char **argv, const char *funcname);
 char *func_ns (char *o, char **argv, const char *funcname);
 char *func_ns_create (char *o, char **argv, const char *funcname);
+char *func_ns_hook (char *o, char **argv, const char *funcname);
 char *func_workspace_import (char *o, char **argv, const char *funcname);
 /* Engine builtins outside the kept states: an import target, and any builtin the row's interface lacks, a fatal error naming the engine and what it has.  */
 char *func_import_target (char *o, char **argv, const char *funcname);
@@ -345,7 +346,7 @@ struct amk_workspace_ops
     void *(*open) (void *state, const char *path, int shared);
   };
 
-/* An engine is its command line and at most one of the two kept-state interfaces; amk_engines_check refuses any other row at startup. language is what its programs are written in, implementation the guest linked in, and version that guest's release. */
+/* An engine is its command line and either kept-state interface or both, both sharing one create; amk_engines_check refuses any other row at startup. language is what its programs are written in, implementation the guest linked in, and version that guest's release. */
 struct amk_engine
   {
     const char *name;
@@ -384,6 +385,7 @@ const char *amk_engine_ops (const struct amk_engine *e);
 int amk_engine_has_op (const struct amk_engine *e, const char *word, size_t len);
 /* Whether a row is a workspace row, and the workspace row a namespace name reaches: its owner, else the first workspace row in the build, else null. */
 int amk_engine_is_workspace (const struct amk_engine *e);
+int amk_engine_forwards (const struct amk_engine *e, const char *op);
 const struct amk_engine *amk_workspace_engine (const char *ns);
 /* A load line: every row claims its name and aliases as file extensions, the first row in the table wins a contested one, and the file goes to that row's import or workspace load in main.  */
 const struct amk_engine *amk_engine_by_extension (const char *ext);
@@ -438,6 +440,14 @@ extern void *s7_create (void);
 extern int s7_exec (void *state, struct amk_sink *out, const char *prog);
 extern int s7_import (void *state, struct amk_sink *out, const char *prog);
 extern void s7_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
+extern int trilog_run_main (int argc, char **argv);
+extern void *trilog_create (void);
+extern int trilog_exec (void *state, struct amk_sink *out, const char *prog);
+extern int trilog_import (void *state, struct amk_sink *out, const char *prog);
+extern int trilog_get (void *state, struct amk_sink *out, const char *prog);
+extern int trilog_update (void *state, struct amk_sink *out, const char *prog);
+extern int trilog_load (void *state, const char *text);
+extern int trilog_dump (void *state, struct amk_sink *out);
 extern int micropy_run_main (int argc, char **argv);
 extern void *micropy_create (void);
 extern int micropy_exec (void *state, struct amk_sink *out, const char *prog);

@@ -261,7 +261,7 @@ assignment's whole value is armed with that variable's name once its arguments a
    max_args = saved_args;
 
    v->exp_count = 0;
-@@ -2838,8 +2986,107 @@
+@@ -2838,8 +2986,108 @@
 
    ent = hash_insert (&function_table, ent);
    free (ent);
@@ -310,12 +310,13 @@ assignment's whole value is armed with that variable's name once its arguments a
 +      f = amk_entry_add (f, amk_entry_name (spelling, w, wlen), amk_engine_has_op (e, w, wlen) ? func_op : func_refuse, 1, 1);
 +  f = amk_entry_add (f, amk_entry_name (spelling, "ns", 2), amk_engine_kept (e) != NULL ? func_ns : func_refuse, 2, 3);
 +  f = amk_entry_add (f, amk_entry_name (spelling, "ns.create", 9), amk_engine_kept (e) != NULL ? func_ns_create : func_refuse, 1, 2);
++  f = amk_entry_add (f, amk_entry_name (spelling, "ns.hook", 7), amk_engine_kept (e) != NULL ? func_ns_hook : func_refuse, 1, 1);
 +  f = amk_entry_add (f, amk_entry_name (spelling, "import.target", 13), func_import_target, 1, 3);
 +  f = amk_entry_add (f, amk_entry_name (spelling, "target", 6), func_import_target, 1, 3);
-+  /* A state's import lifts the guest's names into make; a workspace's makes a namespace from a name and its whole value, so the at line above a define gives that define's name a workspace.  */
++  /* A workspace's import makes a namespace from a name and its whole value, so the at line above a define gives that define's name a workspace, and a row with both interfaces takes this one; a state-only row's import lifts the guest's names into make.  */
 +  f = amk_entry_add (f, amk_entry_name (spelling, "import", 6),
-+                     e->state != NULL ? func_op : e->workspace != NULL ? func_workspace_import : func_refuse,
-+                     1, e->state != NULL ? 1 : 2);
++                     e->workspace != NULL ? func_workspace_import : e->state != NULL ? func_op : func_refuse,
++                     1, e->workspace != NULL ? 2 : 1);
 +  return f;
 +}
 +
@@ -369,7 +370,7 @@ assignment's whole value is armed with that variable's name once its arguments a
  void
  hash_init_function_table (void)
  {
-@@ -2848,4 +3090,116 @@
+@@ -2848,4 +3091,116 @@
               function_table_entry_hash_cmp);
    hash_load (&function_table, function_table_init,
               FUNCTION_TABLE_ENTRIES, sizeof (struct function_table_entry));

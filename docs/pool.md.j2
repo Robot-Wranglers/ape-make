@@ -1,6 +1,5 @@
-{% set name = "pool" %}
 {% set root = ".." %}
-<!-- header # pool "`concept :: {{ name }}`" | ^ ../README.md#references | Overview #overview | Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
+<!-- header # pool "`concept :: pool`" | ^ ../README.md#references | Overview #overview | Concepts #concepts | Syntax #syntax | API #api | Errors #errors | Demos #demos | Refs #references -->
 <!-- /header -->
 
 <a id="overview"></a>
@@ -24,17 +23,26 @@ An open place is a named, ordered store of tokens, counted or labeled, that any 
 
 ## Concepts
 
-| Term | Meaning |
-| --- | --- |
-| Pool | Ledger of tokens under a name: counted, or labeled, with a strategy |
-| Token | One unit of a pool, held by whoever acquired it until it is released, or consumed for good |
-| Labeled Pool | A pool whose every token is its label, 1 to 31 bytes with no whitespace |
-| Strategy | `default`, also `strict`: only the opener resizes, and keeps the size; `open`: any process resizes, and the size is the kernel's count |
-| `goals` | the pool make already had, sized by `-j` |
-| `__jobs__` | the default [job](job.md) pool, opened by `load dsys/jobman`, with its jobman, as [jobman](jobman.md#concepts) describes |
-| A Job's Pools | a [job](job.md) keeps the pools of the image it forked from, so jobs contend for the same tokens |
-| Held Tokens at Exit | a process gives back every token it holds when it ends, a recipe child included |
+<dl>
+<dt>Pool</dt>
+<dd>A ledger of tokens under a name: counted, or labeled, with a strategy.</dd>
+<dt>Token</dt>
+<dd>One unit of a pool, held by whoever acquired it until it is released, or consumed for good.</dd>
+<dt>Labeled pool</dt>
+<dd>A pool whose every token is its label, 1 to 31 bytes with no whitespace.</dd>
+<dt>Strategy</dt>
+<dd><code>default</code>, also spelled <code>strict</code>: only the opener resizes, and keeps the size. <code>open</code>: any process resizes, and the size is the kernel's count.</dd>
+<dt><code>goals</code></dt>
+<dd>The pool make already had, sized by <code>-j</code>.</dd>
+<dt><code>__jobs__</code></dt>
+<dd>The default <a href="job.md">job</a> pool, opened by <code>load dsys/jobman</code>, with its jobman, as <a href="jobman.md#concepts">jobman</a> describes.</dd>
+<dt>A job's pools</dt>
+<dd>A <a href="job.md">job</a> keeps the pools of the image it forked from, so jobs contend for the same tokens.</dd>
+<dt>Held tokens at exit</dt>
+<dd>A process gives back every token it holds when it ends, a recipe child included.</dd>
+</dl>
 
+<a id="usage"></a>
 
 ## Usage (Basic)
 
@@ -59,10 +67,10 @@ endef
 
 | Form | Declares |
 | --- | --- |
-| `$(amk.pool name, size)`, `$(amk.pool name, size=3)` | a pool of `size` tokens, with no library needed; size 0 opens it empty, to fill by produce |
-| `$(amk.pool name, labels=g0 g1)` | a labeled pool: one token per label, so the labels set the size |
-| `$(amk.pool name, labeled=true)` | a labeled pool that starts empty, to fill by produce |
-| `$(amk.pool name, ..., strategy=open)` | any of the above, resized by any process and sized by the kernel's count |
+| `$(amk.pool name, size)`, `$(amk.pool name, size=3)` | A pool of `size` tokens, with no library needed; size 0 opens it empty, to fill by produce |
+| `$(amk.pool name, labels=g0 g1)` | A labeled pool: one token per label, so the labels set the size |
+| `$(amk.pool name, labeled=true)` | A labeled pool that starts empty, to fill by produce |
+| `$(amk.pool name, ..., strategy=open)` | Any of the above, resized by any process and sized by the kernel's count |
 
 A key given an empty value counts as not given, so the first line below opens a labeled
 pool of two. `strategy=` is `default`, also spelled `strict`, or `open`. A strict pool is
@@ -97,17 +105,18 @@ see [the FFI](FFI.md#guest-handle). A guest's answer is the make function's text
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `$(amk.pool name)` | reads a pool's size | the size, or empty for no such pool; on a strict pool exact in the opener and fatal in a fork once produce or consume ran before it, on an open pool the kernel's count of tokens waiting |
-| `$(amk.pool )` | lists the open pools | their names |
-| `$(amk.pool.size name)`, `$(amk.pool.held name)` | reads one member | the number; size as `$(amk.pool name)` |
-| `$(amk.pool.auth name)` | reads the value `--jobserver-auth` takes | the value, or empty for `goals` without a jobserver; fatal on a labeled pool |
-| `$(amk.pool.acquire name)` | takes a token, waiting, and serves the ask channel meanwhile | `1`, or the label on a labeled pool |
-| `$(amk.pool.acquire name, ms)` | takes a token if one comes within `ms`; `0` answers at once | `1` or the label with a token held, or empty |
-| `$(amk.pool.release name)` | gives one token back | empty; fatal when none is held, and on a labeled pool unless exactly one is held |
-| `$(amk.pool.release name, label)` | on a labeled pool, gives back `label`, which this process must hold | empty |
-| `$(amk.pool.produce name)`, `$(amk.pool.produce name, label)` | adds one token with none held, a label on a labeled pool, which may be new; on a strict pool only the process that opened it, on an open pool any process; never `goals` | empty |
-| `$(amk.pool.consume name)`, `$(amk.pool.consume name, ms)` | takes a token for good, waiting as acquire does; the same processes as produce, and only while this one holds none of the pool | `1` or the label, or empty |
-| `$(amk.pool.<name>.<verb> ...)` | any verb above, bound under the pool's own name | as the verb |
+| `$(amk.pool name)` | Reads a pool's size | The size, or empty for no such pool; on a strict pool exact in the opener and fatal in a fork once produce or consume ran before it, on an open pool the kernel's count of tokens waiting |
+| `$(amk.pool )` | Lists the open pools | Their names |
+| `$(amk.pool.size name)`, `$(amk.pool.held name)` | Reads one member | The number; size as `$(amk.pool name)` |
+| `$(amk.pool.auth name)` | Reads the value `--jobserver-auth` takes | The value, or empty for `goals` without a jobserver; fatal on a labeled pool |
+| `$(amk.pool.acquire name)` | Takes a token, waiting, and serves the ask channel meanwhile | `1`, or the label on a labeled pool |
+| `$(amk.pool.acquire name, ms)` | Takes a token if one comes within `ms`; `0` answers at once | `1` or the label with a token held, or empty |
+| `$(amk.pool.release name)` | Gives one token back | empty; fatal when none is held, and on a labeled pool unless exactly one is held |
+| `$(amk.pool.release name, label)` | On a labeled pool, gives back `label`, which this process must hold | empty |
+| `$(amk.pool.produce name)`, `$(amk.pool.produce name, label)` | Adds one token with none held, a label on a labeled pool, which may be new; on a strict pool only the process that opened it, on an open pool any process; never `goals` | empty |
+| `$(amk.pool.consume name)`, `$(amk.pool.consume name, ms)` | Takes a token for good, waiting as acquire does; the same processes as produce, and only while this one holds none of the pool | `1` or the label, or empty |
+| `$(amk.pool.close name)` | Drops this process's copy of the pool: its pipe closed here, what it held forgotten, every other process's copy untouched; the name may then be opened again, and this process is that pool's opener; never `goals` | empty |
+| `$(amk.pool.<name>.<verb> ...)` | Any verb above, bound under the pool's own name | As the verb |
 
 What a process holds goes back when it exits, labels as they were taken, and a fork's
 child starts holding none. A process killed outright leaks what it holds, as with make's
@@ -123,7 +132,7 @@ own jobserver.
 | `amk.pool.door.release()`, `amk.pool.door.release(label)` | `$(amk.pool.door.release ...)` | `""` |
 | `amk.pool.door.produce()`, `amk.pool.door.produce(label)` | `$(amk.pool.door.produce ...)` | `""` |
 | `amk.pool.door.consume()`, `amk.pool.door.consume("0")` | `$(amk.pool.door.consume ...)` | `"1"` or the label, or `""` |
-| `amk.pool.door.size()`, `.held()`, `.auth()` | the members | the text |
+| `amk.pool.door.size()`, `.held()`, `.auth()` | The members | The text |
 
 <a id="api-micropy"></a>
 
@@ -135,7 +144,7 @@ own jobserver.
 | `amk.pool.door.release()`, `amk.pool.door.release(label)` | `$(amk.pool.door.release ...)` | `""` |
 | `amk.pool.door.produce()`, `amk.pool.door.produce(label)` | `$(amk.pool.door.produce ...)` | `""` |
 | `amk.pool.door.consume()`, `amk.pool.door.consume("0")` | `$(amk.pool.door.consume ...)` | `"1"` or the label, or `""` |
-| `amk.pool.door.size()`, `.held()`, `.auth()` | the members | the text |
+| `amk.pool.door.size()`, `.held()`, `.auth()` | The members | The text |
 
 <a id="api-js"></a>
 
@@ -147,7 +156,7 @@ own jobserver.
 | `amk.pool.door.release()`, `amk.pool.door.release(label)` | `$(amk.pool.door.release ...)` | `""` |
 | `amk.pool.door.produce()`, `amk.pool.door.produce(label)` | `$(amk.pool.door.produce ...)` | `""` |
 | `amk.pool.door.consume()`, `amk.pool.door.consume("0")` | `$(amk.pool.door.consume ...)` | `"1"` or the label, or `""` |
-| `amk.pool.door.size()`, `.held()`, `.auth()` | the members | the text |
+| `amk.pool.door.size()`, `.held()`, `.auth()` | The members | The text |
 
 A waiting acquire holds the event loop and every [plex](plex.md) task on it, so a
 task polls with `acquire("0")` between sleeps instead.
@@ -162,7 +171,7 @@ task polls with `acquire("0")` between sleeps instead.
 | `(amk-pool-door-release)`, `(amk-pool-door-release label)` | `$(amk.pool.door.release ...)` | `""` |
 | `(amk-pool-door-produce)`, `(amk-pool-door-produce label)` | `$(amk.pool.door.produce ...)` | `""` |
 | `(amk-pool-door-consume)`, `(amk-pool-door-consume "0")` | `$(amk.pool.door.consume ...)` | `"1"` or the label, or `""` |
-| `(amk-pool-door-size)`, `(amk-pool-door-held)`, `(amk-pool-door-auth)` | the members | the text |
+| `(amk-pool-door-size)`, `(amk-pool-door-held)`, `(amk-pool-door-auth)` | The members | The text |
 
 <a id="errors"></a>
 
@@ -181,6 +190,7 @@ Every refusal is fatal and names the pool.
 | A name that is a verb | `amk.pool: held is a verb, not a name a pool may take` |
 | More than 64 pools | `amk.pool: 64 pools are open, no room for name` |
 | A verb on a pool not open | `amk.pool.held: no pool named nothing` |
+| A bound verb on a pool this process closed | `amk.pool: p is closed in this process` |
 | A release with no token held | `amk.pool: one: nothing held to release` |
 | A key `amk.pool` lacks | `amk.pool: p: no key colour` |
 | A size and labels that disagree | `amk.pool: p: size 3 disagrees with the labels` |
@@ -191,10 +201,10 @@ Every refusal is fatal and names the pool.
 | A label that is empty or longer than 31 bytes | `amk.pool: p: label 'x' is not 1 to 31 bytes` |
 | A label with whitespace | `amk.pool: p: label 'a b' has whitespace` |
 | `size` of a strict pool in a fork once produce or consume ran before it | `amk.pool: p: the size is kept only by the process that opened it once produce or consume ran` |
-| produce or consume on a strict pool outside the opener | `amk.pool: p: only the process that opened it may produce` |
+| Produce or consume on a strict pool outside the opener | `amk.pool: p: only the process that opened it may produce` |
 | An acquired token that is not a whole label | `amk.pool: p: a token that is no label` |
 | An open pool whose pipe cannot be counted | `amk.pool: p: cannot count the pipe` |
-| consume while holding a token of the pool | `amk.pool: p: consume takes a fresh token, and this process holds one` |
+| Consume while holding a token of the pool | `amk.pool: p: consume takes a fresh token, and this process holds one` |
 | produce with a label on an unlabeled pool | `amk.pool: p: produce takes a label only on a labeled pool` |
 | `auth` on a labeled pool | `amk.pool: p: a labeled pool gives no auth` |
 | A bare release with more than one label held | `amk.pool: p: release names a label unless exactly one is held` |
@@ -213,7 +223,7 @@ Three [jobs](job.md) serialize through a pool of one from micropy, on the pool's
 
 | Demo | Shows |
 | --- | --- |
-| [`pool-basic.amk`]({{ root }}/demos/pool-basic.amk) | a pool of one token as a mutex: three spawned [jobs](job.md), each a micropy worker taking and giving back the token through `amk.pool.door`; embedded above |
+| [`pool-basic.amk`]({{ root }}/demos/pool-basic.amk) | A pool of one token as a mutex: three spawned [jobs](job.md), each a micropy worker taking and giving back the token through `amk.pool.door`; embedded above |
 
 
 The structures built on pools have their demos in [dsys](dsys.md#demos).

@@ -174,7 +174,7 @@ with no extension reaches this directory's `init.amk` through `amk.include`.
 | lua | `/zip/lib/<name>/init.lua` | `nil` |
 | micropy | `/zip/lib/<name>/__init__.py`, as the module `amk.<name>` | `AttributeError` |
 | js | `/zip/lib/<name>/init.js` | `undefined` |
-| s7 | `/zip/lib/<name>/init.scm`, for `amk-<name>-...` | unbound variable |
+| s7 | `/zip/lib/<name>/init.scm`, for `amk-<name>-...` | Unbound variable |
 
 A name the handle lacks is looked up in this order in every guest: a module directory of
 that name, then what `amk.call` resolves it to, the name itself or the name under `amk.`,

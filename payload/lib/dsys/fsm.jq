@@ -52,9 +52,9 @@ def handlers($parent; $self; $s):
     + (if $s.always != null then {"": $s.always} else {} end)
     + (if $s.onDone != null then {("done.state.\($self | under)"): $s.onDone} else {} end));
 
-# An invoke as the definition writes it, its done and error events as transitions.
+# An invoke as the definition writes it, its id by default xstate's, and its done and error events as transitions.
 def invoked($parent; $self; $inv):
-  ($inv.id // $inv.src) as $iid
+  ($inv.id // "0.\($self)") as $iid
   | { invoke: [{type: "xstate.invoke", id: $iid, src: $inv.src}],
       on: ({} + (if $inv.onDone then {("done.invoke.\($iid)"): $inv.onDone} else {} end)
              + (if $inv.onError then {("error.platform.\($iid)"): $inv.onError} else {} end)
@@ -76,7 +76,7 @@ def node($parent; $key; $i; $s):
     (select(($s | kind) == "compound" and ($s.initial | named | not))
       | refuse($self; "initial names no state")),
     ({ id: $self, key: $key, order: $i, type: ($s | kind) }
-     + (if ($s | kind) == "final" then {}
+     + (if ($s | kind) == "final" then { entry: ($s.entry | actions) }
         else { on: handlers($parent; $self; $s), entry: ($s.entry | actions), exit: ($s.exit | actions) }
           + (if $s.invoke then (invoked($parent; $self; $s.invoke) as $v
                | {invoke: $v.invoke, on: (handlers($parent; $self; $s) + $v.on)}) else {} end)
@@ -94,7 +94,7 @@ def children($self; $states):
 
 # The config as the definition: ids under the machine, every node typed and ordered.
 def normalize:
-  . as $m | ($m.id // "machine") as $id
+  . as $m | ($m.id // $ARGS.named.name // "machine") as $id
   | ((refused + ["always"])[] as $r | select($m | has($r)) | refuse($id; "\($r) is outside the subset")),
     (select(($m.states | type) != "object") | refuse($id; "states is not an object")),
     (select($m.initial | named | not) | refuse($id; "initial names no state")),
@@ -243,12 +243,14 @@ def takes($id; $by; $root; $leaf; $event; $src; $guard; $h; $arc):
        | .from = ["\($base).choice"] | .arc = false | .guard = {label: "\($c)"})
     end;
 
-# An invoke's step: the service into a labeled place holding its outcome, fatal unless an error handler takes it.
+# An invoke's step: the service into a labeled place holding its outcome, a job inside a parallel state.
 def invoker($id; $by; $root; $leaf; $inv):
   ($leaf | key($id)) as $k
   | handler($by; chain($by; $root; $leaf); "error.platform.\($inv.id)") as $err
+  | (if par($by; $root; $leaf) != null then "agoal" else "goal" end) as $g
   | { name: "\($k).invoke", from: [$k], event: "", arc: false, tos: [], to: ["\($k).invoked"],
-      run: [$inv.src], kind: (if $err then "goal.maybe" else "goal" end), label: "outcome", place: "\($k).invoked" };
+      run: [$inv.src], kind: (if $err then "\($g).maybe" else $g end), instance: $inv.id,
+      label: "outcome", place: "\($k).invoked" };
 
 # An invoke on a leaf outside any parallel state: its step, and its done and error handlers from the outcome.
 def invokes($id; $by; $root; $leaf; $inv):
@@ -358,7 +360,7 @@ def compile($def):
       amk: ({ backend: "petri", open: [$events[] | select(startswith("done.state.") | not) | "ev.\(.)"] }
         + ([$finals[] | {(.key | key($id)): 1}]
            | if length == 0 then {} elif length == 1 then {final: .[0]} else {final: .} end)
-        + ([$arcs[] | select(.run) | {(.name): ({run: .run} + (if .bind then {bind: .bind} else {} end) + (if .kind then {kind: .kind} else {} end))}]
+        + ([$arcs[] | select(.run) | {(.name): ({run: .run} + (if .bind then {bind: .bind} else {} end) + (if .kind then {kind: .kind} else {} end) + (if .instance then {instance: .instance} else {} end))}]
            | if length == 0 then {} else {steps: add} end)
         + ([$arcs[] | select(.guard) | {(.name): .guard}] | if length == 0 then {} else {guard: add} end)
         + ([$arcs[] | select(.label) | {(.name): .label}] | if length == 0 then {} else {label: add} end)),

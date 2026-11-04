@@ -231,10 +231,10 @@ and verifies it, so a digest that moved upstream surfaces before it breaks a rel
 
 | Path | What It Is |
 | --- | --- |
-| `./amk` | the deliverable, the copy `make amk` lands for a caller |
-| `out/bin/amk` | the artifact: make with its guests, both architectures, one file |
-| `out/bin/{awk,jq,wasm3}` | symlinks to `amk` beside them, the names its argv[0] dispatch answers to |
-| `build/.engines` | the engine list the artifacts were built from, so a change to it relinks |
+| `./amk` | The deliverable, the copy `make amk` lands for a caller |
+| `out/bin/amk` | The artifact: make with its guests, both architectures, one file |
+| `out/bin/{awk,jq,wasm3}` | Symlinks to `amk` beside them, the names its argv[0] dispatch answers to |
+| `build/.engines` | The engine list the artifacts were built from, so a change to it relinks |
 
 `build/guests/ape/` holds each guest partial-linked into one
 relocatable, the inputs the final link consumes. They are the expensive half of a build,

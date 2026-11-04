@@ -1,4 +1,4 @@
-<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | Refs #references -->
+<!-- header # data-engines "Data Engines" | ^ ../README.md#engines | Workspaces #creating-a-workspace | CRUD #workspace-CRUD | Failures #failures | Deadlines #deadlines | Backings #backings | jq #jq-workspaces | sqlite #sqlite-workspaces | trilog #trilog-workspaces | Refs #references -->
 <!-- /header -->
 
 **Language Engines vs Data Engines.** Both involve wrapping and running a guest language, but whereas language-engines involve [namespaces](FFI.md#namespaces), data-engines get that plus [workspaces](#creating-a-workspace), and some differences with [import mode](#import-mode). 
@@ -7,7 +7,7 @@ Data-engines are interesting because besides the [simple stuff](#creating-a-work
 
 The core data-engines are `jq` and `sqlite`, both embedded/linked into the `amk` binary with no need for external prerequisites.  Derived datastructures might *just* be datastructures, but might also be a [stacked engine](FFI.md#stacked-engines) in their own right.  For example the tuplespace *does* support it's own concept of [workspace](#creating-a-workspace) and despite having an [instruction set](tspace.md#operations) of its own, it supports raw SQL like the [sqlite engine](#sqlite-workspaces) that it extends.
 
-<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: petri under jq, with fsm, kahn and workflow under petri, and tuple spaces under sqlite"></p>
+<p align="center"><img src="img/data-engines.png" width="444" alt="The data engines as a tree: petri under jq, with fsm, kahn and workflow under petri, tuple spaces under sqlite, and trilog"></p>
 
 <!--Engines derived from these  their state is a workspace, a jq value or a sqlite
 database, that programs read and change through a fixed set of verbs. The verbs and the
@@ -101,8 +101,8 @@ Beside the engine's verbs, the ask channel answers two ops on every workspace. E
 
 | Op | From a recipe | Answers |
 | --- | --- | --- |
-| `version` | `amk.ns version jobs` | the workspace's version |
-| `wait` | `amk.ns wait jobs -- 7` | the version, once it is past 7; status 3 when the owner exits first |
+| `version` | `amk.ns version jobs` | The workspace's version |
+| `wait` | `amk.ns wait jobs -- 7` | The version, once it is past 7; status 3 when the owner exits first |
 
 `wait` blocks, so it runs from a recipe, a target or a spawned job; from the makefile
 itself, the owner would wait on itself and make stops.
@@ -173,17 +173,17 @@ one, declared at `create`; a repeat must match.
 
 | Backing         | Does |
 | ---             | --- |
-| `run`           | default, in-memory, workspace lives in the host process |
-| `owned=<path>`  | file-system backed workspace, loaded at use, flushed after write |
-| `shared=<path>` | like owned, but auto reloads on version changes, picking up peer edits |
+| `run`           | Default, in-memory, workspace lives in the host process |
+| `owned=<path>`  | File-system backed workspace, loaded at use, flushed after write |
+| `shared=<path>` | Like owned, but auto reloads on version changes, picking up peer edits |
 
 An engine with `open` uses the file as its store directly, held alone when owned. Each
 engine reads a backing its own way:
 
 | Backing         | jq | sqlite |
 | ---             | --- | --- |
-| `owned=<path>`  | loads the file at first use, writes it after every `update` and `load` | file *is* the database, held by this process alone |
-| `shared=<path>` | file-backed, automatically reloading when version moves | the file is the database, and owners on one host take turns, each `update` one transaction |
+| `owned=<path>`  | Loads the file at first use, writes it after every `update` and `load` | File *is* the database, held by this process alone |
+| `shared=<path>` | File-backed, automatically reloading when version moves | The file is the database, and owners on one host take turns, each `update` one transaction |
 
 ```Makefile
 $(sqlite.ns.create edges, owned=edges.db)
@@ -198,10 +198,10 @@ The workspace is one JSON value.
 
 | Verb | Runs | Stores | Prints |
 | --- | --- | --- | --- |
-| `get prog` | `prog` over the value | nothing | every output |
-| `update prog` | `prog` over the value | the first output | the rest |
-| `load text` | | the one JSON text, once it parses | nothing |
-| `dump` | `.` | nothing | the value |
+| `get prog` | `prog` over the value | nothing | Every output |
+| `update prog` | `prog` over the value | The first output | The rest |
+| `load text` | | The one JSON text, once it parses | nothing |
+| `dump` | `.` | nothing | The value |
 
 ```Makefile
 # a stack in a workspace: push, then pop the top and keep the rest
@@ -226,10 +226,10 @@ result row prints as a JSON object on a line. `--arg name value` binds `:name` a
 
 | Verb | Runs | Prints |
 | ---           | --- | --- |
-| `get prog`    | the statements; one that writes is refused | each row |
-| `update prog` | the statements, writes included | each row |
-| `load text`   | drops every table, view and trigger, then replays the text, in one transaction | nothing |
-| `dump`        | | schema and rows, as statements |
+| `get prog`    | The statements; one that writes is refused | Each row |
+| `update prog` | The statements, writes included | Each row |
+| `load text`   | Drops every table, view and trigger, then replays the text, in one transaction | nothing |
+| `dump`        | | Schema and rows, as statements |
 
 ```Makefile
 @sqlite.import
@@ -241,6 +241,67 @@ endef
 seen := $(edges.get WITH RECURSIVE r(x) AS (SELECT 1 UNION SELECT b FROM e, r WHERE a = x) SELECT json_group_array(x) AS seen FROM r)
 $(edges.update --arg a 3 INSERT INTO e VALUES(:a, 4))
 ```
+
+<a id="trilog-workspaces"></a>
+
+## trilog
+
+trilog is a Prolog engine. It answers to `prolog` and `pl` as well. The workspace is one clause database. A program is a goal,
+and each solution prints as one JSON object on a line, mapping each named variable to its
+value. A variable whose name starts with `_` is left out.
+
+| Verb | Runs | Stores | Prints |
+| --- | --- | --- | --- |
+| `get goal` | The goal | nothing; clauses it asserts or retracts are rolled back | Each solution |
+| `update goal` | The goal | Every clause it asserts or retracts | Each solution |
+| `load text` | | The clauses, replacing the ones a previous load made; nothing if a clause fails to parse | nothing |
+| `dump` | | nothing | Every clause, quoted, one per line |
+
+Terms map to JSON this way:
+
+| Term | JSON |
+| --- | --- |
+| integer, float | number |
+| atom, double-quoted string | string |
+| proper list | array |
+| compound, such as `f(1, a)` | `{"functor":"f","args":[1,"a"]}` |
+| unbound variable | `null` |
+
+`load trilog`, or `load prolog`, adds three handles to every namespace the engine makes.
+Each takes a predicate and its leading arguments.
+
+| Handle | Does | Prints |
+| --- | --- | --- |
+| `findall pred, a1, ...` | Collects every last argument that `pred(a1, ..., X)` allows | One JSON list |
+| `assertz clause` | Adds the clause after the others | nothing |
+| `retract clause` | Removes the first clause that matches | nothing |
+
+```Makefile
+load trilog
+
+@trilog.import
+define family
+  parent(tom, bob).
+  parent(bob, ann).
+  parent(bob, pat).
+  grandparent(G, C) :- parent(G, P), parent(P, C).
+endef
+
+# ["ann","pat"]
+kids  := $(family.findall grandparent, tom)
+$(family.assertz parent(pat, jim))
+# one line per solution, such as {"G":"tom","C":"ann"}
+pairs := $(family.get grandparent(G, C))
+# the same helpers under the engine's names take the namespace first
+kids  := $(prolog.findall family, grandparent, tom)
+```
+
+Limits of the engine:
+
+- Integers are 32 bits. There is no `inf`, no exponent syntax, and no `**`.
+- `catch/3` commits to the first solution of its goal.
+- A retracted clause's memory is not reclaimed for the life of the process.
+- `get` rolls back clauses, but not `dynamic` declarations.
 
 <a id="references"></a>
 

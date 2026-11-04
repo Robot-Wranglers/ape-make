@@ -1,7 +1,6 @@
-{% set name = "kahn" %}
 {% set topic = "Kahn networks" %}
 {% set root = ".." %}
-<!-- header # kahn "`mod :: dsys/{{ name }}`" |Syntax #syntax | Reduction #reduction | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
+<!-- header # kahn "`mod :: dsys/kahn`" |Syntax #syntax | Reduction #reduction | API #api | Errors #errors | Demos #demos | Refs #references | Schema #schema -->
 <!-- /header -->
 
 <a id="overview"></a>
@@ -9,9 +8,9 @@
 Part of the [dsys toolkit](dsys.md), the `@kahn` syntax declares a Kahn process network[^kahn] as data and compiles it to an open [Petri net](petri.md):
 
 ```Makefile
-load dsys/{{ name }}
+load dsys/kahn
 
-@{{ name }}.target
+@kahn.target
 define parity
   {"channels": {"numbers": ["1", "2", "3"], "evens": [], "odds": []}}
 endef
@@ -25,7 +24,8 @@ endef
 `make parity` runs the network: each number in `numbers` fires `split` once.
 
 * every channel is a labeled [pool](pool.md),
-* a process fires once it can read one token from each channel it reads, and
+* a process fires once it can read one token from each channel it reads,
+* processes run concurrently, each as a job, and each one firing at a time, and
 * its step writes to its channels itself, so what it writes may depend on what it read.
 
 One reader and one writer per channel keep the result fixed, whatever order the processes fire in.
@@ -36,14 +36,14 @@ One reader and one writer per channel keep the result fixed, whatever order the 
 
 | Form | Declares |
 | --- | --- |
-| `@{{ name }}` above a define | a network of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
-| `@<name>.proc/<engine> (<reads...> > <writes...>)` above a define | a process joining the network late: the define its body, a target of the engine, the channels before `>` those it reads and those after it those it writes; the net is compiled and loaded again |
-| `$(kahn.compile name)` | the compiled net's JSON, without loading it |
+| `@kahn` above a define | A network of the define's name, compiled to a net of the same name, `<name>.__main__` its target |
+| `@<name>.proc/<engine> (<reads...> > <writes...>)` above a define | A process joining the network late: the define its body, a target of the engine, the channels before `>` those it reads and those after it those it writes; the net is compiled and loaded again |
+| `$(kahn.compile name)` | The compiled net's JSON, without loading it |
 
 A network may declare only its channels and take every process by at line:
 
 ```Makefile
-@{{ name }}
+@kahn
 define fb
   { channels: { next: ["1"], numbers: [] } }
 endef
@@ -61,15 +61,15 @@ process; see [decorator arguments](grammar.md#decorator-arguments).
 
 | Key | Value |
 | --- | --- |
-| `channels` | each channel's name and its initial tokens, a list of labels |
-| `processes` | each process's name, `[a-z0-9_-]+`, and its keys below |
-| `final` | optional; the final marking, as for a [net](petri.md#endings) |
+| `channels` | Each channel's name and its initial tokens, a list of labels |
+| `processes` | Each process's name, `[a-z0-9_-]+`, and its keys below |
+| `final` | Optional; the final marking, as for a [net](petri.md#endings) |
 
 | Process key | Value |
 | --- | --- |
-| `run` | the target the process runs per firing |
-| `reads` | the channels it reads one token from; at least one |
-| `writes` | the channels its step may produce into |
+| `run` | The target the process runs per firing |
+| `reads` | The channels it reads one token from; at least one |
+| `writes` | The channels its step may produce into |
 
 A step reads the token it took as `<name>.<process>.token` and writes with `amk.pool.produce("<name>.<channel>", value)`.
 
@@ -81,10 +81,11 @@ A step reads the token it took as `<name>.<process>.token` and writes with `amk.
 
 | Network part | Becomes |
 | --- | --- |
-| A channel | a labeled place of the same name |
-| A process | a transition with an arc from each channel it reads |
-| `writes` | no arcs: the step produces into its channels |
-| The network | an open net, strategy `open`, with a final marking only when `final` is given |
+| A channel | A labeled place of the same name |
+| A process | A transition with an arc from each channel it reads, its step of kind [`agoal`](petri.md#amk-block) |
+| Its sequence | A place `<process>.idle` holding one token, with an arc into the process and one back, so the process has one firing in flight at most and writes each channel in order |
+| `writes` | No arcs: the step produces into its channels |
+| The network | An open net, strategy `open`, with a final marking only when `final` is given |
 
 Without `final`, a network that loops ends holding tokens and waits as an open net does, under `petri.patience`.
 
@@ -94,11 +95,11 @@ Without `final`, a network that loops ends holding tokens and waits as an open n
 
 | Call | Does | Answers |
 | --- | --- | --- |
-| `<name>.__main__` | runs the network as its net; typically `__main__: <name>.__main__` | a target |
-| `$(<name>.net )` | reads back the compiled net | the net's JSON |
-| `$(<name>.marking )`, `$(<name>.trace)`, `$(<name>.step )` | as for [any net](petri.md#api) | words |
-| `$(<name>.exec prog)` | a jq program over the net, the network's JSON as `$source` and the library as `kahn::` | what it prints |
-| `$(<name>.version )` | the network's workspace version, which a `.proc` joining moves | a number |
+| `<name>.__main__` | Runs the network as its net; typically `__main__: <name>.__main__` | A target |
+| `$(<name>.net )` | Reads back the compiled net | The net's JSON |
+| `$(<name>.marking )`, `$(<name>.trace)`, `$(<name>.step )` | As for [any net](petri.md#api) | words |
+| `$(<name>.exec prog)` | A jq program over the net, the network's JSON as `$source` and the library as `kahn::` | What it prints |
+| `$(<name>.version )` | The network's workspace version, which a `.proc` joining moves | A number |
 
 `kahn` is a [stacked engine](FFI.md#stacked-engines) on jq, so `@kahn.target`,
 `@kahn.import` and `@kahn.exec (name)` are its at lines and [`load ./parity.kahn`](petri.md#loading) reads a
@@ -118,6 +119,7 @@ then refuses what a schema cannot say, before any net exists:
 | A read or write that is no channel | `p: names c, which is no channel` |
 | A channel with two readers | `c: has 2 readers, not 1` |
 | A channel with two writers | `c: has 2 writers, not 1` |
+| A channel named like a process's control place | `p.idle: is a channel and the control place of process p` |
 
 The `kahn.compile` function runs the compiler alone, without the schema, so a malformed body
 given to it directly fails as a jq error.
@@ -137,9 +139,9 @@ line is refused for:
 
 | Demo | Shows |
 | --- | --- |
-| [`kahn-parity.amk`]({{ root }}/demos/kahn-parity.amk) | a step writing by its value |
-| [`kahn-fizzbuzz.amk`]({{ root }}/demos/kahn-fizzbuzz.amk) | a generator process feeding a network read by four guests |
-| [`kahn-fibonacci.amk`]({{ root }}/demos/kahn-fibonacci.amk) | a feedback loop holding state in its tokens |
+| [`kahn-parity.amk`]({{ root }}/demos/kahn-parity.amk) | A step writing by its value |
+| [`kahn-fizzbuzz.amk`]({{ root }}/demos/kahn-fizzbuzz.amk) | A generator process feeding a network read by four guests |
+| [`kahn-fibonacci.amk`]({{ root }}/demos/kahn-fibonacci.amk) | A feedback loop holding state in its tokens |
 | [`kahn-proc.amk`]({{ root }}/demos/kahn-proc.amk) | kahn-fizzbuzz with every process joined late by `@fb.proc/<engine>` |
 
 <a id="references"></a>

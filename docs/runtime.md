@@ -51,18 +51,18 @@ As with [engine kinds](../README.md#engines), concurrency breaks down into flavo
 <dd>
 <p><strong>Unit:</strong> an event: a transition's firing, whose step is a target, a job, or a body in any guest.</p>
 <p><strong>Scheduler:</strong> the model's run, <code>&lt;name&gt;.__main__</code>, which steps until nothing can fire.</p>
-<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow</code> or <code>@kahn</code> above a JSON define.</p>
+<p><strong>Model:</strong> discrete-event dynamic systems, where state changes only at events and automata are the models. The state is held in <a href="#pools">pools</a>. A model is lowered to a backend, today a <a href="petri.md">Petri net</a>. Written as <code>@petri</code>, <code>@workflow.dag</code> or <code>@kahn</code> above a JSON define.</p>
 <p><strong>Parameters:</strong> the model and its form; see <a href="dsys.md">dsys</a>.</p>
 </dd>
 </dl>
 
 | Flavor | Unit | Scheduler | Coordination | Model | Notation | Where |
 | --- | --- | --- | --- | --- | --- | --- |
-| Task-Graph | a target | make's graph under `-j` and the jobserver | prerequisites; in dataflow mode, a value that changed | task-graph parallelism, fork-join; incremental dataflow | rules, `target: prereqs`; `@<engine>.target` above a define; `$(amk.mode dataflow)` | `demos/dataflow-1.amk` |
-| Multiprocessing | A process forked from the [zygote](zygote.md#fork-and-the-fresh-copy) | OS kernel, driven by a guest | signals, exit status, and mail | Preemptive multiprocessing; Message passing over pipes; Futures (`amk.acall`, `amk.exited`) | None; calls on the guest handle, and `$$AMK_MAIL` in a recipe | [the host handle](FFI.md#host-handle), [the zygote](zygote.md) |
-| Actor Model | a program in a guest runtime | a backend, under a group's charter | the group handle, events, and restarts | actor model with supervision trees; cooperative multitasking; structured concurrency | `@actor.group` above a JSON charter; `@<group>.actor (<engine>) {opts}` above a define; `<group>.run` | this page |
-| Workspaces | a tuple or row held by a data engine | the engine's owner: blocking verbs, versions, and triggers | the data itself | generative communication (Linda), blackboard; bound handlers make it a programmable tuple centre; `wait` is a condition variable on a version | `$(<space>.<verb> ...)` callforms; `@<space>.reflex <engine> (pattern)` above a define; `${tspace.sh}` verbs in a recipe | [version and wait](data-engines.md#version-and-wait), [the tuple space](tspace.md) |
-| Automata & DEDS | an event, a transition's firing | the model's run, `<name>.__main__` | tokens in pools | discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
+| Task-Graph | A target | make's graph under `-j` and the jobserver | Prerequisites; in dataflow mode, a value that changed | Task-graph parallelism, fork-join; incremental dataflow | Rules, `target: prereqs`; `@<engine>.target` above a define; `$(amk.mode dataflow)` | `demos/dataflow-1.amk` |
+| Multiprocessing | A process forked from the [zygote](zygote.md#fork-and-the-fresh-copy) | OS kernel, driven by a guest | Signals, exit status, and mail | Preemptive multiprocessing; Message passing over pipes; Futures (`amk.acall`, `amk.exited`) | None; calls on the guest handle, and `$$AMK_MAIL` in a recipe | [the host handle](FFI.md#host-handle), [the zygote](zygote.md) |
+| Actor Model | A program in a guest runtime | A backend, under a group's charter | The group handle, events, and restarts | Actor model with supervision trees; cooperative multitasking; structured concurrency | `@actor.group` above a JSON charter; `@<group>.actor (<engine>) {opts}` above a define; `<group>.run` | This page |
+| Workspaces | A tuple or row held by a data engine | The engine's owner: blocking verbs, versions, and triggers | The data itself | Generative communication (Linda), blackboard; bound handlers make it a programmable tuple centre; `wait` is a condition variable on a version | `$(<space>.<verb> ...)` callforms; `@<space>.reflex <engine> (pattern)` above a define; `${tspace.sh}` verbs in a recipe | [version and wait](data-engines.md#version-and-wait), [the tuple space](tspace.md) |
+| Automata & DEDS | An event, a transition's firing | The model's run, `<name>.__main__` | Tokens in pools | Discrete-event dynamic systems; automata lowered to a backend, today Petri nets | `@petri`, `@workflow.dag`, `@kahn` or `@fsm` above a JSON define | [dsys](dsys.md), [petri](petri.md) |
 
 Targets are make's own concurrency and need nothing from a guest. Jobs are the host handle's
 `amk.spawn`, `amk.wait` and the rest of job control, and a guest's `amk.acall` is one job
@@ -79,10 +79,10 @@ The rest of this page: the concurrency models available to guests, the [pools](#
 
 | Layer | js | s7 | Model |
 | --- | --- | --- | --- |
-| Control the engine has | generators | `call/cc` | asymmetric coroutines; undelimited first-class continuations |
-| Delimited control | not needed, a generator is already delimited | [`load amb`](amb.md): `reset`, `shift`, `amb` | delimited continuations; `amb` is nondeterministic choice by backtracking |
-| Plex, `amk.plex` | Effection, bundled and republished as `amk.plex` | a cooperative ready list of continuations | a multiplexer of control: many tasks on one thread of the engine, handed over at the yield; on js, a coroutine scheduler with effects and scopes over the engine's loop |
-| Backend, `amk.actor` | `"backend": "effection"` | `"backend": "s7"` | a supervisor: restart policy over the plex's tasks |
+| Control the engine has | Generators | `call/cc` | Asymmetric coroutines; undelimited first-class continuations |
+| Delimited control | Not needed, a generator is already delimited | [`load amb`](amb.md): `reset`, `shift`, `amb` | Delimited continuations; `amb` is nondeterministic choice by backtracking |
+| Plex, `amk.plex` | Effection, bundled and republished as `amk.plex` | A cooperative ready list of continuations | A multiplexer of control: many tasks on one thread of the engine, handed over at the yield; on js, a coroutine scheduler with effects and scopes over the engine's loop |
+| Backend, `amk.actor` | `"backend": "effection"` | `"backend": "s7"` | A supervisor: restart policy over the plex's tasks |
 
 lua and micropy host no backend; their part is a member's body, bound by a decorator.
 
@@ -183,8 +183,8 @@ The owner dispatches a reaction in two steps:
 
 | Step | Where | Does |
 | --- | --- | --- |
-| `amk_route(name, tuple)` | SQL, in the space's trigger | queues the call; it runs once the request commits |
-| `<name>(field1, field2, ...)` | make | calls the handler with each field as text and a nested field as its JSON; the answer is dropped and an error goes to stderr |
+| `amk_route(name, tuple)` | SQL, in the space's trigger | Queues the call; it runs once the request commits |
+| `<name>(field1, field2, ...)` | make | Calls the handler with each field as text and a nested field as its JSON; the answer is dropped and an error goes to stderr |
 
 Where the lineage differs: a ReSpecT reaction is atomic with the operation and rolls back on
 failure, and this one runs after commit and does not, so a handler that cannot afford to
@@ -294,10 +294,10 @@ The [dsys module](dsys.md) provides:
 
 | Form | Model |
 | --- | --- |
-| [`@petri`](petri.md) | a Petri net, written by hand |
-| [`@workflow`](workflow.md) | a task graph, each task's outcome a token's label |
-| [`@kahn`](kahn.md) | a Kahn network, its channels labeled places |
-| [`@fsm`](fsm.md) | a state machine, xstate config or scxml, its states places holding one token and its events open places |
+| [`@petri`](petri.md) | A Petri net, written by hand |
+| [`@workflow.dag`](workflow.md) | A task graph, each task's outcome a token's label |
+| [`@kahn`](kahn.md) | A Kahn network, its channels labeled places |
+| [`@fsm`](fsm.md) | A state machine, xstate config or scxml, its states places holding one token and its events open places |
 
 Every model's run is the target `<name>.__main__`, so the other flavors run one as they run
 any goal: a prerequisite, a spawned job, an awaited goal.
@@ -338,15 +338,15 @@ The table lists every backend once, with the page that covers it in full.
 
 | # | Backend | Flavor | Description | Model | Docs |
 | --- | --- | --- | --- | --- | --- |
-| K1 | the jobserver | [Task Graph](dataflow.md) | make's own: `-j` slots handed down a pipe, recipes as child shells, recursion sharing the slots | fork-join over a dependency graph; a counting semaphore for the slots | [dataflow modes](dataflow.md#modes), [pools](#pools) |
-| K2 | the host | [Multiprocessing](#multiprocessing) | a fork of the parsed image per spawn, the zygote per served request; the kernel schedules, the guest reaps | preemptive multiprocessing; process groups and signals | [jobs](#jobs), [the zygote](zygote.md#fork-and-the-fresh-copy), [the multiprocessing module](multiprocessing.md#api) |
-| K3 | Effection, js | [Control Multiplexer](#control-multiplexer) | `amk.plex` over the vendored Effection: tasks with scopes, cancellation and timers on the engine's loop | structured concurrency; asymmetric coroutines | [plex js](plex.md#api-js), [layers](#layers) |
-| K4 | ready list, s7 | [Control Multiplexer](#control-multiplexer) | `amk.plex` as a cooperative ready list of continuations, no clock | deterministic cooperative scheduling over first-class continuations | [plex s7](plex.md#api-s7), [layers](#layers) |
-| K5 | `effection` | [Actor Model](#actor-model) | a supervisor over K3, restarts windowed by `intensity` over `period` | structured concurrency with supervision trees | [actor backends](actor.md#backends) |
-| K6 | `s7` | [Actor Model](#actor-model) | a supervisor over K4, one plex per group, `intensity` as a restart budget | deterministic supervision trees | [actor backends](actor.md#backends) |
-| K7 | `sqlite` | [Tuplespace Reactor](#tuplespace-reactor) | one owner holds the database and answers every ask; `wait` is held until the version moves; triggers queue bound handlers to run on the owner after commit | serialized transactions; handlers as commit-time [reactions](#reactions) | [sqlite workspaces](data-engines.md#sqlite-workspaces), [the tuple space](tspace.md#operations) |
-| K8 | `jq` | [Tuplespace Reactor](#tuplespace-reactor) | one owner holds the value, replaced whole by each program; `version` and `wait` as for any workspace | a single-writer register with a version counter | [jq workspaces](data-engines.md#jq-workspaces), [version and wait](data-engines.md#version-and-wait) |
-| K9 | Petri net | [Automata & DEDS](#automata) | places as pools; an enabled transition fires in `transitions` order, consuming its inputs when it starts and producing its outputs when it lands | place/transition nets over a marking | [petri](petri.md), [strategy](petri.md#strategy) |
+| K1 | The jobserver | [Task Graph](dataflow.md) | make's own: `-j` slots handed down a pipe, recipes as child shells, recursion sharing the slots | Fork-join over a dependency graph; a counting semaphore for the slots | [dataflow modes](dataflow.md#modes), [pools](#pools) |
+| K2 | The host | [Multiprocessing](#multiprocessing) | A fork of the parsed image per spawn, the zygote per served request; the kernel schedules, the guest reaps | Preemptive multiprocessing; process groups and signals | [jobs](#jobs), [the zygote](zygote.md#fork-and-the-fresh-copy), [the multiprocessing module](multiprocessing.md#api) |
+| K3 | Effection, js | [Control Multiplexer](#control-multiplexer) | `amk.plex` over the vendored Effection: tasks with scopes, cancellation and timers on the engine's loop | Structured concurrency; asymmetric coroutines | [plex js](plex.md#api-js), [layers](#layers) |
+| K4 | Ready list, s7 | [Control Multiplexer](#control-multiplexer) | `amk.plex` as a cooperative ready list of continuations, no clock | Deterministic cooperative scheduling over first-class continuations | [plex s7](plex.md#api-s7), [layers](#layers) |
+| K5 | `effection` | [Actor Model](#actor-model) | A supervisor over K3, restarts windowed by `intensity` over `period` | Structured concurrency with supervision trees | [actor backends](actor.md#backends) |
+| K6 | `s7` | [Actor Model](#actor-model) | A supervisor over K4, one plex per group, `intensity` as a restart budget | Deterministic supervision trees | [actor backends](actor.md#backends) |
+| K7 | `sqlite` | [Tuplespace Reactor](#tuplespace-reactor) | One owner holds the database and answers every ask; `wait` is held until the version moves; triggers queue bound handlers to run on the owner after commit | Serialized transactions; handlers as commit-time [reactions](#reactions) | [sqlite workspaces](data-engines.md#sqlite-workspaces), [the tuple space](tspace.md#operations) |
+| K8 | `jq` | [Tuplespace Reactor](#tuplespace-reactor) | One owner holds the value, replaced whole by each program; `version` and `wait` as for any workspace | A single-writer register with a version counter | [jq workspaces](data-engines.md#jq-workspaces), [version and wait](data-engines.md#version-and-wait) |
+| K9 | Petri net | [Automata & DEDS](#automata) | Places as pools; an enabled transition fires in `transitions` order, consuming its inputs when it starts and producing its outputs when it lands | Place/transition nets over a marking | [petri](petri.md), [strategy](petri.md#strategy) |
 
 K5 and K6 are the values `backend` takes in a charter; K7 and K8 are the backings a
 workspace or `@tspace` body names.
@@ -396,19 +396,19 @@ slow := $(wasm.exec deadline 100 fib 45)
 
 | Demo | Shows |
 | --- | --- |
-| [`pool-basic.amk`](../demos/pool-basic.amk) | a pool of one token as a mutex: three spawned jobs, each a micropy worker taking and giving back the token through `amk.pool.door`; embedded in [the pool module](pool.md#demos) |
-| [`pool-locking.amk`](../demos/pool-locking.amk) | the same through the lock factories of [dsys](dsys.md#locks): workers on `amk.mutex.door`, readers sharing `amk.horcrux.book` while a writer waits for every piece |
-| [`tuplespace-1.amk`](../demos/tuplespace-1.amk) | a tuple space shared by workers in four guests under `-j4`, each taking typed candidates through one atomic match; embedded above |
-| [`supervise-3.amk`](../demos/supervise-3.amk) | the charter as data under `"backend": "effection"`, every kind, a nested group giving up |
-| [`actors-1.amk`](../demos/actors-1.amk) | the same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded in [the actor module](actor.md#syntax) |
-| [`actors-2.amk`](../demos/actors-2.amk) | goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | choice on the plex: counters interleaving, `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` |
-| [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
-| [`supervise-1.amk`](../demos/supervise-1.amk) | the plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
-| [`petri-csp.amk`](../demos/petri-csp.amk) | a rendezvous as a Petri net: two micropy senders and a slow js receiver, each send returning once its value is received |
-| [`workflow-release.amk`](../demos/workflow-release.amk) | a release task graph under `@workflow`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
-| [`kahn-parity.amk`](../demos/kahn-parity.amk) | a Kahn network: open labeled pools as channels, produced to from a step's fork |
-| [`race-1.amk`](../demos/race-1.amk) | fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
+| [`pool-basic.amk`](../demos/pool-basic.amk) | A pool of one token as a mutex: three spawned jobs, each a micropy worker taking and giving back the token through `amk.pool.door`; embedded in [the pool module](pool.md#demos) |
+| [`pool-locking.amk`](../demos/pool-locking.amk) | The same through the lock factories of [dsys](dsys.md#locks): workers on `amk.mutex.door`, readers sharing `amk.horcrux.book` while a writer waits for every piece |
+| [`tuplespace-1.amk`](../demos/tuplespace-1.amk) | A tuple space shared by workers in four guests under `-j4`, each taking typed candidates through one atomic match; embedded above |
+| [`supervise-3.amk`](../demos/supervise-3.amk) | The charter as data under `"backend": "effection"`, every kind, a nested group giving up |
+| [`actors-1.amk`](../demos/actors-1.amk) | The same charter under `"backend": "s7"`, two scoped s7 bodies interleaving at their yields; embedded in [the actor module](actor.md#syntax) |
+| [`actors-2.amk`](../demos/actors-2.amk) | Goals under `"backend": "s7"`: a micropy goal asleep in its own process while an s7 body ticks, and a goal restarted on failure |
+| [`plex-choice.amk`](../demos/plex-choice.amk) | Choice on the plex: `amb-fork` breadth-first on a fifo plex, and depth-first on a lifo plex agreeing with `amb` on a graph search; embedded in [the plex module](plex.md#choice) |
+| [`tuplespace-actors.amk`](../demos/tuplespace-actors.amk) | Actors whose mailboxes are a tuple space: python goals where send is `out`, receive a blocking `in_` on the actor's address, a pattern over the sender a selective receive, and unread mail left in the space |
+| [`supervise-1.amk`](../demos/supervise-1.amk) | The plex without a charter: a one-for-one supervisor written by hand in js over the tuple space |
+| [`petri-csp.amk`](../demos/petri-csp.amk) | A rendezvous as a Petri net: two micropy senders and a slow js receiver, each send returning once its value is received |
+| [`workflow-release.amk`](../demos/workflow-release.amk) | A release task graph under `@workflow.dag`: a test per guest with at most two holding a runner, package once every test succeeds, and a notify skipped since no need failed |
+| [`kahn-parity.amk`](../demos/kahn-parity.amk) | A Kahn network: open labeled pools as channels, produced to from a step's fork |
+| [`race-1.amk`](../demos/race-1.amk) | Fork-join over goals through `amk.agoal`: `race` takes the first goal to finish, `all` joins them, and `all` over a failing one ends at the failure |
 
 <a id="references"></a>
 

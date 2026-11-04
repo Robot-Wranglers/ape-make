@@ -13,7 +13,7 @@ fsm.__schema__ := dsys/schema/fsm.json
 fsm._xstate := dsys/schema/xstate.machine.json
 
 # The config, a workspace beside the net, normalized or compiled in one call.
-fsm._run = $(jq.argv -c -L $(fsm._lib),include "fsm"; $(2), \
+fsm._run = $(jq.argv -c -L $(fsm._lib) --arg name $(1),include "fsm"; $(2), \
   $(jq.ns $(1).fsm, get, -c .))
 fsm.definition = $(call fsm._run,$(1),normalize)
 fsm.compile = $(call fsm._run,$(1),compile)
@@ -76,8 +76,9 @@ fsm.route = $(or $(filter ev.$(2),$($(1).places)), \
   $(lastword $(foreach p,$(call fsm._under,$(1)), \
     $(if $(filter $(p).%,$(2)),ev.$(p)._))), \
   $(filter ev._,$($(1).places)))
-fsm.send = $(foreach p,$(call fsm.route,$(1),$(2)), \
-  $(amk.pool.produce $(1).$(p)))
+# A send: the event routed on the machine, its token put by dsys/petri.
+fsm.send = $(foreach p,$(call fsm.route,$(call petri._net,$(1)),$(2)), \
+  $(call petri.put,$(1),$(p)))
 $(amk.fxn! fsm.send)
 fsm.scxml = $(lua.exec io.write(amk.dsys.scxml.import("$(1)")))
 $(amk.fxn! fsm.scxml)

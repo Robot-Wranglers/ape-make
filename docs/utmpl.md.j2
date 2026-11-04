@@ -1,13 +1,12 @@
-{% set name = "utmpl" %}
 {% set root = ".." %}
-<!-- header # utemplate "`mod :: amk.{{ name }}`" |Concepts #concepts | Syntax #syntax | API #api | Usage #usage | Errors #errors | Demos #demos | Refs #references -->
+<!-- header # utemplate "`mod :: amk.utmpl`" |Concepts #concepts | Syntax #syntax | API #api | Usage #usage | Errors #errors | Demos #demos | Refs #references -->
 <!-- /header -->
 
 <a id="overview"></a>
 Built-in, jinja-style templating is supported with the `utmpl.amk` module.  Besides being a module, `utmpl` is a *stacked engine*, i.e. it partially implements the interface for [amk's language-engine API](FFI.md#stacked-engines), which allows it to contribute new [decorator grammar](FFI.md#decorators).
 
 ```Makefile
-load {{ name }}
+load utmpl
 ```
 
 <a id="see-also"></a>
@@ -24,12 +23,12 @@ It builds on:
 
 | Term | Meaning |
 | --- | --- |
-| Template | a define's body, or inline text, rendered by utemplate with jinja-style statements and expressions |
-| Data Variable | a make variable holding json, named on a decorator line or passed to a render form |
-| Merge | the data variables on one line combine left to right, a target's `name/var` after them |
-| `name=value` word | one name set as a string, on top of the merged data |
+| Template | A define's body, or inline text, rendered by utemplate with jinja-style statements and expressions |
+| Data Variable | A make variable holding json, named on a decorator line or passed to a render form |
+| Merge | The data variables on one line combine left to right, a target's `name/var` after them |
+| `name=value` word | One name set as a string, on top of the merged data |
 | Goal Word | `name=>>goal<<`, a name whose value is a goal's, on `@utmpl.target` only |
-| In Place | rendered once at parse time, the result held under the define's name |
+| In Place | Rendered once at parse time, the result held under the define's name |
 
 <a id="syntax"></a>
 <a id="forms"></a>
@@ -51,9 +50,9 @@ $(info $(greeting))     # Hello, world!
 
 | Form | Renders | When |
 | --- | --- | --- |
-| `@utmpl.target var... name=value...`, also `@utmpl.import.target` | the define as a target: `name/var` adds the json in `var`, and `name` with no words reads stdin | when the target runs |
-| `@utmpl var... name=value...` | the define, in place; its name then holds the result | at parse time, once |
-| `@utmpl.import` | nothing yet: `$(name var)` becomes a make function that renders the define | each call |
+| `@utmpl.target var... name=value...`, also `@utmpl.import.target` | The define as a target: `name/var` adds the json in `var`, and `name` with no words reads stdin | When the target runs |
+| `@utmpl var... name=value...` | The define, in place; its name then holds the result | At parse time, once |
+| `@utmpl.import` | Nothing yet: `$(name var)` becomes a make function that renders the define | Each call |
 
 The words on an `@utmpl` or `@utmpl.target` line build the data. Each data variable holds
 a json object, and they merge left to right; a target's `name/var` merges after them. Each
@@ -86,9 +85,9 @@ any make function.
 
 | Form | Renders | When |
 | --- | --- | --- |
-| `$(utmpl.render name, var)` | a target's template, with the json in `var` | at parse time |
-| `$(utmpl text, var)` | inline text, with the json in `var` | at parse time |
-| `$(name var)`, after `@utmpl.import` | the define, with the json in `var` | each call |
+| `$(utmpl.render name, var)` | A target's template, with the json in `var` | At parse time |
+| `$(utmpl text, var)` | Inline text, with the json in `var` | At parse time |
+| `$(name var)`, after `@utmpl.import` | The define, with the json in `var` | Each call |
 
 <a id="usage"></a>
 <a id="examples"></a>
@@ -165,10 +164,10 @@ One per use case; each section of [usage](#usage) embeds one of them.
 
 | Demo | Shows |
 | --- | --- |
-| [`utmpl-inplace.amk`]({{ root }}/demos/utmpl-inplace.amk) | the forms that render at parse time; under [render in place](#in-place) |
-| [`utmpl-functions.amk`]({{ root }}/demos/utmpl-functions.amk) | a define as a make function, one template over many data sets; under [functions](#functions) |
-| [`utmpl-targets.amk`]({{ root }}/demos/utmpl-targets.amk) | a define as a target, its data from a stem, stdin or a command; under [targets](#targets) |
-| [`utmpl-docflow.amk`]({{ root }}/demos/utmpl-docflow.amk) | templates over dataflow goals, by goal words; under [doc flow](#doc-flow) |
+| [`utmpl-inplace.amk`]({{ root }}/demos/utmpl-inplace.amk) | The forms that render at parse time; under [render in place](#in-place) |
+| [`utmpl-functions.amk`]({{ root }}/demos/utmpl-functions.amk) | A define as a make function, one template over many data sets; under [functions](#functions) |
+| [`utmpl-targets.amk`]({{ root }}/demos/utmpl-targets.amk) | A define as a target, its data from a stem, stdin or a command; under [targets](#targets) |
+| [`utmpl-docflow.amk`]({{ root }}/demos/utmpl-docflow.amk) | Templates over dataflow goals, by goal words; under [doc flow](#doc-flow) |
 
 <a id="references"></a>
 
@@ -179,4 +178,4 @@ One per use case; each section of [usage](#usage) embeds one of them.
 - [Grammar](grammar.md#goal-substitution), for goal substitution in a target's name.
 - [Template processors](https://en.wikipedia.org/wiki/Template_processor) and [Jinja](https://en.wikipedia.org/wiki/Jinja_(template_engine)), whose syntax utemplate follows, on Wikipedia.
 
-[^utemplate]: utemplate, a micro template engine for MicroPython, [pypi.org/project/utemplate](https://pypi.org/project/utemplate/), with source at [github.com/pfalcon/utemplate](https://github.com/pfalcon/utemplate).
+[^utemplate]: utemplate, a micro template engine for MicroPython, [pypi.org/project/utemplate](https://pypi.org/project/utemplate/), with source at [gh://pfalcon/utemplate](https://github.com/pfalcon/utemplate).

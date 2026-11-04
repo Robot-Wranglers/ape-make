@@ -1,0 +1,31 @@
+#
+# payload/lib/amk/trilog.amk:
+#  make's side of the trilog engine; queries and changes go through
+#  the workspace verbs, $(trilog.get goal) and $(trilog.update goal),
+#  and every namespace gains findall, assertz and retract handles.
+#
+$(amk.require trilog)
+
+# Every answer of a predicate, given its leading arguments, as one json list.
+trilog.findall = $(trilog.ns $(strip $1), exec, \
+  :- findall(_X, $(strip $2)($(trilog.findall.lead)_X), _L), json_write(_L).)
+trilog.findall.lead = $(foreach i,3 4 5 6 7 8 9, \
+  $(if $(filter undefined,$(origin $i)),,$(strip $($i))$(comma) ))
+$(amk.fxn! trilog.findall)
+
+# One clause added last, or the first match taken out; commas rejoined.
+trilog.assertz = $(trilog.ns $(strip $1), exec, :- assertz($(trilog.clause)).)
+trilog.retract = $(trilog.ns $(strip $1), exec, :- retract($(trilog.clause)).)
+trilog.clause = $(strip $2)$(foreach i,3 4 5 6 7 8 9, \
+  $(if $(filter undefined,$(origin $i)),,$(comma)$($i)))
+$(amk.fxn! trilog.assertz)
+$(amk.fxn! trilog.retract)
+
+# The helpers answer under the engine's aliases too, as its builtins do.
+$(foreach s,prolog pl,$(foreach h,findall assertz retract, \
+  $(amk.fxn! $s.$h, trilog.$h)))
+
+# Each namespace's handles are the helpers with that namespace bound first.
+trilog.ns.handles = $(foreach h,findall assertz retract, \
+  $(amk.fxn! $1.$h, trilog.$h, $1))
+$(trilog.ns.hook trilog.ns.handles)

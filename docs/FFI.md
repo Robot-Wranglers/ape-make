@@ -9,7 +9,7 @@ The several engines for `amk` come in a few primary flavors:
 | [Language Engines](#language-engines)  | namespaces | Guest program functions & declared variables | [lua](../README.md#lua), [s7](../README.md#s7), [micropy](../README.md#micropy), [js](../README.md#js), [wasm](../README.md#wasm) |
 | [Data Engines](#data-engines)         | workspaces | Backend store (in-memory or disk); programs that filter or mutate it | jq, sqlite |
 | Stateless Engines                     | none | Simple program I/O | [awk](../README.md#awk) |
-| [Stacked Engines](#stacked-engines)   | none, or a guest's workspaces for the [data variety](#data-variety) | targets and functions its decorators write | amk, bash, [utmpl](docs/utmpl.md), [tspace](tspace.md) |
+| [Stacked Engines](#stacked-engines)   | None, or a guest's workspaces for the [data variety](#data-variety) | Targets and functions its decorators write | amk, bash, [utmpl](docs/utmpl.md), [tspace](tspace.md) |
 
 Each engine describes one guest.  Thus each engine *kind* must perform at least wrap-and-run services for some language (that's exactly the *minimum* description for a new guest), and each engine can also contribute new [decorator syntax](#decorators).  Past that, the major engine-variants, where some engines may have some *awareness* of what they are wrapping, or some ability to operate *on* it as well as *with* it.  Some kinds have a concept of saved-state, and some have a concept multiple scratchpads for that state, etc.
 
@@ -31,9 +31,9 @@ Stacked Engines are unique in that they are **not** linked or embedded, thus the
 | [js](../README.md#js) | | yes | - | namespaces | `amk.deadline` |
 | [jq](../README.md#jq) | | yes | yes | workspaces | unsupported |
 | [sqlite](../README.md#sqlite) | `sqlite3` | yes, sqlite's own shell | yes | workspaces | `--deadline ms` on `get` and `update` |
+| [trilog](data-engines.md#trilog-workspaces) | `prolog`, `pl` | yes | - | namespaces and workspaces | unsupported |
 
-The rows live in `src/amk/amk_engine.c`. `amk --list-engines` reports the deadline column as `"deadline"`: `"handle"`, `"option"`, or `null`. At startup `amk_engines_check` refuses a row without a command line, with both kinds of state, or missing a required verb.
-
+The rows live in `src/amk/amk_engine.c`. `amk --list-engines` reports the deadline column as `"deadline"`: `"handle"`, `"option"`, or `null`.
 ```Makefile
 # each of these stops make, naming the engine and what it has
 $(awk.ns.create w)           # awk has no namespaces or workspaces
@@ -55,10 +55,10 @@ multi-call names. -->
 
 | Form | Engines |
 | --- | --- |
-| `$(eng prog[, input])` | every engine; wasm takes a module and its arguments |
+| `$(eng prog[, input])` | Every engine; wasm takes a module and its arguments |
 | `$(eng.argv argv, prog[, input])` | awk, wasm, jq, sqlite |
-| `$(eng.target target, prog[, flags[: prereqs]])` | every engine but wasm |
-| `@eng.target [flags][: prereqs]` above `define target` | every engine but wasm |
+| `$(eng.target target, prog[, flags[: prereqs]])` | Every engine but wasm |
+| `@eng.target [flags][: prereqs]` above `define target` | Every engine but wasm |
 | `$(wasm.build toolchain, source)`, `@wasm.build(toolchain)` above `define source` | wasm, from the wasm library |
 
 `eng.target` is short for `eng.import.target`, and every form takes either name. In
@@ -118,11 +118,11 @@ Every builtin has a star form whose arguments may name variables.
 
 | Form | Engines |
 | --- | --- |
-| `$(eng* program_var[, input_var])` | every engine |
+| `$(eng* program_var[, input_var])` | Every engine |
 | `$(eng.argv* argv, program_var[, input_var])` | awk, wasm, jq, sqlite |
-| `$(eng.target* program_var[, flags])` | every engine but wasm |
-| `$(eng.ns* name, op, program_var)` | language and data engines |
-| `$(name.op* program_var)` | language and data engines |
+| `$(eng.target* program_var[, flags])` | Every engine but wasm |
+| `$(eng.ns* name, op, program_var)` | Language and data engines |
+| `$(name.op* program_var)` | Language and data engines |
 
 <a id="load"></a>
 
@@ -155,9 +155,9 @@ Where the file is looked for follows the path's first characters, the way `inclu
 
 | Path | Looked for |
 | --- | --- |
-| `./x.lua`, `../x.lua` | at that path under the working directory |
-| `/opt/x.lua` | at that absolute path; `/zip/...` reaches the payload by hand |
-| `x.lua`, `sub/x.lua` | under each library root's folder for the engine in turn, `<root>/lua/`; the roots are the entries of `AMKPATH`, colon separated, then the payload's `/zip/lib` |
+| `./x.lua`, `../x.lua` | At that path under the working directory |
+| `/opt/x.lua` | At that absolute path; `/zip/...` reaches the payload by hand |
+| `x.lua`, `sub/x.lua` | Under each library root's folder for the engine in turn, `<root>/lua/`; the roots are the entries of `AMKPATH`, colon separated, then the payload's `/zip/lib` |
 
 `AMKPATH` works as python's path does: each entry is laid out like `lib/`, with `<eng>/`,
 `amk/` and `<name>/` folders, is searched ahead of the payload, and so shadows it; the
@@ -214,10 +214,10 @@ file, two `...` components, and a file whose stem is `init`, since a module's in
 
 | Form | Does |
 | --- | --- |
-| `amk --eng args...`, or the binary under an engine's name | runs that engine's command line |
-| an alias, such as `lisp` for s7 | every form under that name too: `$(lisp ...)`, `$(lisp.exec ...)`, `@lisp.import`, `amk --lisp`, and the binary named `lisp`, all in the same engine and state |
-| `amk --eng -` | reads the program from standard input |
-| `amk --list-engines` | every engine as JSON, with its capabilities read from the build |
+| `amk --eng args...`, or the binary under an engine's name | Runs that engine's command line |
+| An alias, such as `lisp` for s7 | Every form under that name too: `$(lisp ...)`, `$(lisp.exec ...)`, `@lisp.import`, `amk --lisp`, and the binary named `lisp`, all in the same engine and state |
+| `amk --eng -` | Reads the program from standard input |
+| `amk --list-engines` | Every engine as JSON, with its capabilities read from the build |
 
 `amk --sqlite` is sqlite's own shell. After `--`, its database is in memory unless one
 was named before it, and each argument may mix statements with dot commands.
@@ -233,10 +233,11 @@ operation.
 
 | Form | Does |
 | --- | --- |
-| `$(eng.ns.create name)`, `$(eng.ns name, create)` | makes `name` and its handles |
-| `$(eng.ns name, op, prog)` | runs the operation in `name` |
-| `$(name.op prog)` | the same, through the handle |
-| `$(eng.op prog)` | the operation in `main` |
+| `$(eng.ns.create name)`, `$(eng.ns name, create)` | Makes `name` and its handles |
+| `$(eng.ns name, op, prog)` | Runs the operation in `name` |
+| `$(name.op prog)` | The same, through the handle |
+| `$(eng.op prog)` | The operation in `main` |
+| `$(eng.ns.hook macro)` | Runs `$(call macro,name)` for every namespace the engine has made or will make, never `main` |
 
 A handle exists for each operation of the engine's type, and no other: a name outside the
 interface, such as `w.exec` on a jq workspace, stays free for a library to define with
@@ -264,10 +265,10 @@ the same one:
 
 | Caller | How |
 | --- | --- |
-| a makefile | the handles, `$(name.op prog)`, or `$(eng.ns name, op, prog)` |
-| a language engine's guest | its handle's [ask](#guest-handle), such as `amk.ask("update", "w", prog)` in lua |
-| a recipe | a request on `AMK_ASK`, or `amk.ns` from `amk.sh`; see [asks from a recipe](#calls-from-a-recipe) |
-| a sub-make | forwards its workspace ops to its caller, so a run has one set of workspaces; its namespaces are its own |
+| A makefile | The handles, `$(name.op prog)`, or `$(eng.ns name, op, prog)` |
+| A language engine's guest | Its handle's [ask](#guest-handle), such as `amk.ask("update", "w", prog)` in lua |
+| A recipe | A request on `AMK_ASK`, or `amk.ns` from `amk.sh`; see [asks from a recipe](#calls-from-a-recipe) |
+| A sub-make | Forwards its workspace ops to its caller, so a run has one set of workspaces; its namespaces are its own |
 
 A guest of one engine can keep its data in another engine's workspace, and two guests that
 share one talk without the host in the middle.
@@ -303,10 +304,10 @@ and `import` lifts them into make, one make function per guest function.
 
 | Verb | Does |
 | --- | --- |
-| `create` | a fresh namespace |
-| `exec` | runs code in the namespace, its output at the call's place |
-| `import` | runs code, then lifts the functions and variables it defined into make; [`load`](#load) does the same from a [module](../README.md#modules) file |
-| `hook`, optional | hears every [event](#hooks) in `main` |
+| `create` | A fresh namespace |
+| `exec` | Runs code in the namespace, its output at the call's place |
+| `import` | Runs code, then lifts the functions and variables it defined into make; [`load`](#load) does the same from a [module](../README.md#modules) file |
+| `hook`, optional | Hears every [event](#hooks) in `main` |
 
 `$(eng.import prog)` and `@eng.import` above a define both run in `main`; the define's
 name is only a carrier for its body. micropython has one heap, so it has `main` only.
@@ -433,13 +434,13 @@ answers text, the same from every caller. A guest that wants native values uses 
 
 | Function | Does |
 | --- | --- |
-| `$(amk.spawn goals[, foreground=1][, stdout=path])` | forks this parsed image to run the goals, a word list of one to sixty-three, as its own process group; answers the pid |
-| `$(amk.spawn.argv argv[, foreground=1][, stdout=path])` | the same, with the list split as a shell would, as `eng.argv` splits, so `'NAME=a b'` reaches the job as one command-line assignment |
-| `$(amk.wait [pids[, block]])` | collects the next finished or stopped job, or the first of the pids named, as a json object, and never reaps a job outside the pids named; with `block` empty, `0` or `false`, empty when none has; with `block` `peek`, the same without blocking and the record left for the next wait; empty when no job it could wait for is live |
-| `$(amk.kill pid[, sig])` | sends `sig`, by default terminate, to the job and every shell under it; `1`, or empty for a pid that is not a live job of this process |
-| `$(amk.stop pid)` | stops the job; `1`, or empty as for kill |
-| `$(amk.resume pid)` | continues the job and leaves the terminal where it is; `1`, or empty as for kill |
-| `$(amk.foreground pid)` | hands the job the terminal, then continues it; `1`, or empty as for kill |
+| `$(amk.spawn goals[, foreground=1][, stdout=path])` | Forks this parsed image to run the goals, a word list of one to sixty-three, as its own process group; answers the pid |
+| `$(amk.spawn.argv argv[, foreground=1][, stdout=path])` | The same, with the list split as a shell would, as `eng.argv` splits, so `'NAME=a b'` reaches the job as one command-line assignment |
+| `$(amk.wait [pids[, block]])` | Collects the next finished or stopped job, or the first of the pids named, as a json object, and never reaps a job outside the pids named; with `block` empty, `0` or `false`, empty when none has; with `block` `peek`, the same without blocking and the record left for the next wait; empty when no job it could wait for is live |
+| `$(amk.kill pid[, sig])` | Sends `sig`, by default terminate, to the job and every shell under it; `1`, or empty for a pid that is not a live job of this process |
+| `$(amk.stop pid)` | Stops the job; `1`, or empty as for kill |
+| `$(amk.resume pid)` | Continues the job and leaves the terminal where it is; `1`, or empty as for kill |
+| `$(amk.foreground pid)` | Hands the job the terminal, then continues it; `1`, or empty as for kill |
 
 A pid or signal that is not a number, or a spawn of no goals, fails naming the function: a
 guest catches it through `amk.call`, and at a plain expansion it is fatal. These act on
@@ -451,10 +452,10 @@ The guests keep three calls of their own:
 
 | Call | Does |
 | --- | --- |
-| `amk.send(text)` | from inside a job, writes text to the parent's mail for that job; false outside a job |
+| `amk.send(text)` | From inside a job, writes text to the parent's mail for that job; false outside a job |
 | `amk.exit_code(n)` | lua only: the status this process leaves with, whatever make's own turns out to be |
 | `amk.exited(pid)` | js only: a promise for the job's `amk.wait` result once it finishes |
-| `amk.goal(name)` | the make function `goal` under the handle's name: the goal brought up to date by a fork, its value answered; every guest, through the handle's fallback to make functions. A goal that fails raises in the caller, so a guest may try another; at a plain expansion it is fatal. Name a target after its rule or define, since an earlier call sees no target |
+| `amk.goal(name)` | The make function `goal` under the handle's name: the goal brought up to date by a fork, its value answered; every guest, through the handle's fallback to make functions. A goal that fails raises in the caller, so a guest may try another; at a plain expansion it is fatal. Name a target after its rule or define, since an earlier call sees no target |
 | `amk.agoal(name)` | `amk.acall` of the same, so the goal runs while the caller goes on: a handle in lua, an awaitable in micropy, a promise in js, `(pid fd)` from `(amk-agoal name)` in s7 |
 
 `foreground=1` hands the new job the terminal as it starts, and `stdout=path` names a file
@@ -571,13 +572,13 @@ and change it through a fixed set of verbs, and nothing in it becomes a make fun
 
 | Verb | Does |
 | --- | --- |
-| `create` | a fresh, empty workspace |
-| `get` | runs a program over the workspace and prints its output; the workspace is left as it was |
-| `update` | runs a program that may change the workspace |
-| `load` | replaces the whole workspace with a text, all or nothing |
-| `dump` | prints the whole workspace as the text `load` takes back |
-| `filter`, optional | runs a program over an input text, with no workspace |
-| `open`, optional | makes a backing file the store itself, instead of loading and writing it |
+| `create` | A fresh, empty workspace |
+| `get` | Runs a program over the workspace and prints its output; the workspace is left as it was |
+| `update` | Runs a program that may change the workspace |
+| `load` | Replaces the whole workspace with a text, all or nothing |
+| `dump` | Prints the whole workspace as the text `load` takes back |
+| `filter`, optional | Runs a program over an input text, with no workspace |
+| `open`, optional | Makes a backing file the store itself, instead of loading and writing it |
 
 Every output is a sequence of lines, which the ask channel counts. The verbs are a
 contract on the engine row, `struct amk_workspace_ops` in `src/amk/amk.h`.
@@ -595,21 +596,21 @@ forwards its workspace ops to its caller's pair, so a run has one set of workspa
 
 | Request | Does |
 | --- | --- |
-| `get name prog`, `update name prog` | the op in a workspace, made on first use |
-| `exec name prog`, `import name prog` | the op in a namespace, in the owner's state |
-| `create name run`, `create name owned path`, `create name shared path` | declares the workspace's backing |
-| `load name path` | loads the file's text |
-| `dump name` | prints the whole workspace |
-| `filter engine count prog` | the engine's `filter`, over the `count` lines after the request; an engine without one is refused by name |
-| `halt` | no more recipe lines or goals; make exits 112 |
+| `get name prog`, `update name prog` | The op in a workspace, made on first use |
+| `exec name prog`, `import name prog` | The op in a namespace, in the owner's state |
+| `create name run`, `create name owned path`, `create name shared path` | Declares the workspace's backing |
+| `load name path` | Loads the file's text |
+| `dump name` | Prints the whole workspace |
+| `filter engine count prog` | The engine's `filter`, over the `count` lines after the request; an engine without one is refused by name |
+| `halt` | No more recipe lines or goals; make exits 112 |
 
 `source amk.sh` in a recipe gives shell helpers over the pair:
 
 | Helper | Does |
 | --- | --- |
-| `amk.ask 'line' [input...]` | one request; prints the output, returns the status |
-| `amk.ns op name [options] -- prog` | one operation, a bound value quoted for the line |
-| `amk.words args...` | quotes words for a request line |
+| `amk.ask 'line' [input...]` | One request; prints the output, returns the status |
+| `amk.ns op name [options] -- prog` | One operation, a bound value quoted for the line |
+| `amk.words args...` | Quotes words for a request line |
 | `amk.filter engine [options] prog` | `filter` over standard input, in the named engine |
 | `jq.pipe [options] prog` | `amk.filter jq` |
 
@@ -642,9 +643,9 @@ macro reads the pieces from variables set just before it is called:
 | Variable | Holds |
 | --- | --- |
 | `amk.decorator` | `file:line: @name args`, the line as written |
-| `amk.decorator.argc`, `amk.decorator.<n>`, `amk.decorator.<n>.key` | the positional elements, numbered from 1, and the key when one is written `name=value`, as a tuple space's fields are |
-| `amk.decorator.kws`, `amk.decorator.kw.<key>` | the options' keys, and each key's value |
-| `amk.decorator.deps` | the text after the colon |
+| `amk.decorator.argc`, `amk.decorator.<n>`, `amk.decorator.<n>.key` | The positional elements, numbered from 1, and the key when one is written `name=value`, as a tuple space's fields are |
+| `amk.decorator.kws`, `amk.decorator.kw.<key>` | The options' keys, and each key's value |
+| `amk.decorator.deps` | The text after the colon |
 
 A macro reads `<n>` up to `argc` and `kw.<key>` for keys in `kws`; the others may hold an
 earlier decorator's values. `--preprocessor` prints the calls.
@@ -729,10 +730,10 @@ $(amk.engine zig, guest=wasm, aliases=zig, jit.env=Dockerfile.zig, jit.build=zig
 
 | Key | Field |
 | --- | --- |
-| `guest` | required; the row the engine runs on, or `amk` for make itself; its namespace semantics are the guest's |
-| `aliases` | the other names it answers to; with the name, the extensions `load` routes to it, refused when a row or another engine holds one |
-| `language`, `implementation`, `version`, `deadline` | the row's fields, the guest's by default; `version` becomes `name.__version__` unless the library set it |
-| `jit.env`, `jit.build` | for a guest that imports modules, wasm: the Dockerfile define, optional, and the compile command define over `$<` and `$@`; `Dockerfile.name` and `name.build` by default when those exist |
+| `guest` | Required; the row the engine runs on, or `amk` for make itself; its namespace semantics are the guest's |
+| `aliases` | The other names it answers to; with the name, the extensions `load` routes to it, refused when a row or another engine holds one |
+| `language`, `implementation`, `version`, `deadline` | The row's fields, the guest's by default; `version` becomes `name.__version__` unless the library set it |
+| `jit.env`, `jit.build` | For a guest that imports modules, wasm: the Dockerfile define, optional, and the compile command define over `$<` and `$@`; `Dockerfile.name` and `name.build` by default when those exist |
 
 The decorator form is the same registration over a define named after the engine whose
 body is the row as a json object, the keys the same, read by the jq engine; a value is a
@@ -777,8 +778,8 @@ their model in a jq workspace, so `<name>.version` moves when the model changes 
 | --- | --- |
 | `.FEATURES`, `.ENGINES` | amk's features, and the engines in this build |
 | `.AMK_VERSION`, `<engine>.__version__` | amk's version, and each engine's |
-| `<engine>.__fxns__`, `<engine>.__vars__` | the functions and variables that engine gave make |
-| `amk.__fxns__`, `amk.__vars__` | the same for every engine |
+| `<engine>.__fxns__`, `<engine>.__vars__` | The functions and variables that engine gave make |
+| `amk.__fxns__`, `amk.__vars__` | The same for every engine |
 
 ```Makefile
 # the functions lua and js gave make, either way
@@ -795,29 +796,29 @@ Where each part of the FFI lives. Modules are under `src/amk/`; a hook patch is 
 
 | Form | Module |
 | --- | --- |
-| the engine rows, `amk_engines_check`, `$(eng ...)`, `.argv`, init, hooks | `amk_engine.c` |
-| namespaces, workspaces, handles, workspace verbs, backings, `import`, the refusals | `amk_workspace.c` |
+| The engine rows, `amk_engines_check`, `$(eng ...)`, `.argv`, init, hooks | `amk_engine.c` |
+| Namespaces, workspaces, handles, workspace verbs, backings, `import`, the refusals | `amk_workspace.c` |
 | `$(eng.target ...)`, `$(eng.import.target ...)` | `amk_workspace.c`, with its rule in `0013-read.patch` and its job in `0007-job.patch` |
-| registering the builtins, the star forms | `0006-function.patch` |
+| Registering the builtins, the star forms | `0006-function.patch` |
 | `@builtin` above `define`, the prelude, `AMK_NO_PRELUDE` | `0013-read.patch` |
 | `>>name<<` in an imported body, the value policy, `.AMK_FILE`, `.AMK_NOCACHE`, a recipe value's output | `amk_goal.c`, with its job sites in `0007-job.patch` and `0002-commands.patch` |
 | `@amk.file`, `@amk.nocache`, the mark kind | `payload/lang/amk/comp/targetdecorators.awk`, `payload/__init__.mk` |
 | `$(amk.mode ...)`, the mode table, `amk.` settings | `amk_mode.c`, with its event sites in `0014-mode.patch` |
-| the `dataflow` mode, `amk.dataflow_dir` | `amk_dataflow.c` |
-| the guest handle, `$(amk.goal name)`, `$(amk.goal.maybe name)`, `$(amk.stdin text)` | `amk_guest.c` |
+| The `dataflow` mode, `amk.dataflow_dir` | `amk_dataflow.c` |
+| The guest handle, `$(amk.goal name)`, `$(amk.goal.maybe name)`, `$(amk.stdin text)` | `amk_guest.c` |
 | `AMK_ASK`, `AMK_REPLY`, forwarding, `halt` | `amk_chan.c` |
-| the host handle: `$(amk.spawn ...)`, `$(amk.wait ...)`, `$(amk.kill ...)`, `$(amk.stop ...)`, `$(amk.resume ...)`, `$(amk.foreground ...)`, `amk.send`, `amk.exit_code`, `AMK_MAIL` | `amk_spawn.c` for the job functions, registered by `amk_spawn_init`; `amk.send` and `amk.exit_code` in `guest/<engine>_main.c`, and js's `amk.exited` in its prelude there |
+| The host handle: `$(amk.spawn ...)`, `$(amk.wait ...)`, `$(amk.kill ...)`, `$(amk.stop ...)`, `$(amk.resume ...)`, `$(amk.foreground ...)`, `amk.send`, `amk.exit_code`, `AMK_MAIL` | `amk_spawn.c` for the job functions, registered by `amk_spawn_init`; `amk.send` and `amk.exit_code` in `guest/<engine>_main.c`, and js's `amk.exited` in its prelude there |
 | `--serve`, `--client` | `amk_serve.c` |
 | `--bundle`, `--ape-unpack`, `--ape-list` | `amk_payload.c` |
-| a decorator above a define, `--preprocessor`, `AMK_DISABLE_PREPROCESS`, the `_star` macro a decorator calls | `payload/lang/amk/comp/definedecorators.awk`, `amk_preprocess.c`, `amk_engine.c` |
-| the grammar symbols and the functions every amk awk program shares, `amk_die` and `joinlines` among them | `payload/lang/amk/awklib/globals.awk`, `payload/lang/amk/awklib/functions.awk` |
+| A decorator above a define, `--preprocessor`, `AMK_DISABLE_PREPROCESS`, the `_star` macro a decorator calls | `payload/lang/amk/comp/definedecorators.awk`, `amk_preprocess.c`, `amk_engine.c` |
+| The grammar symbols and the functions every amk awk program shares, `amk_die` and `joinlines` among them | `payload/lang/amk/awklib/globals.awk`, `payload/lang/amk/awklib/functions.awk` |
 | `@amk.target`, its join kinds, the docstring block | `payload/lang/amk/comp/definedecorators.awk`, `payload/lang/amk/awklib/joinbody.awk` |
-| multi-call names, `--list-engines`, `--version`, `--help`, `__main__` | `0010-main.patch`, `amk_engine.c` |
+| Multi-call names, `--list-engines`, `--version`, `--help`, `__main__` | `0010-main.patch`, `amk_engine.c` |
 | `$(amk.require ...)`, `$(amk.sys ...)`, `$(amk.dedent ...)`, `$(cksum ...)`, `$(re.match ...)`, `$(amk.kwarg ...)` | `amk_builtins.c` |
 | `$(amk.fxns? ...)`, `$(amk.vars? ...)` | `amk_engine.c` |
 | `load`, `-load`, the extensions the rows claim, `.LOADED`, `amk.loaded`, `AMKPATH` | `amk_ns.c`, `amk_engine.c`, with its hook in `0009-load.patch` and the shared lookup `amk.lib.path` over `amk.lib.roots` in `payload/__init__.mk` |
 | `$(amk.warning ...)`, the silent-honoring warning | `amk_builtins.c` |
-| each guest's verbs | `guest/<engine>_main.c` |
+| Each guest's verbs | `guest/<engine>_main.c` |
 
 <a id="references"></a>
 

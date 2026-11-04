@@ -673,7 +673,7 @@ amk_load_file (const floc *flocp, const char *name, int noerror)
     }
   if (amk_ns_state (e, "main", 1) == NULL)
     OS (fatal, flocp, _("load: cannot open a %s state"), e->name);
-  if (amk_engine_is_workspace (e) && amk_ask_forwarding ())
+  if (amk_engine_forwards (e, op) && amk_ask_forwarding ())
     rc = amk_workspace_forward (&sink.base, op, "main", prog, "load");
   else
     rc = amk_ns_apply (e, "main", &sink.base, op, prog);
@@ -704,7 +704,7 @@ amk_ns_run (char *o, const struct amk_engine *e, const char *ns, const char *op,
   sink.base.write = amk_expand_write;
   sink.o = o;
   amk_answered = 0;
-  if (amk_engine_is_workspace (e) && amk_ask_forwarding ())
+  if (amk_engine_forwards (e, op) && amk_ask_forwarding ())
     rc = amk_workspace_forward (&sink.base, op, ns, prog, funcname);
   else if (streq (op, "version"))
     {
@@ -770,6 +770,53 @@ func_handle (char *o, char **argv, const char *funcname)
   return o;
 }
 
+/* The namespace hooks so far: each a macro one engine calls with the name of every namespace it creates.  */
+struct amk_ns_hook
+  {
+    const struct amk_engine *engine;
+    char *macro;
+  };
+static struct amk_ns_hook *amk_hooks;
+static unsigned int amk_hooks_len;
+
+/* One hook called with one namespace's name; what it expands to is dropped, so it acts through what it defines.  */
+static void
+amk_ns_hook_call (const char *macro, const char *ns)
+{
+  char *text = xmalloc (strlen (macro) + strlen (ns) + 12);
+  sprintf (text, "$(call %s,%s)", macro, ns);
+  free (allocated_variable_expand (text));
+  free (text);
+}
+
+static void
+amk_ns_hooks_run (const struct amk_engine *e, const char *ns)
+{
+  unsigned int i;
+  for (i = 0; i < amk_hooks_len; ++i)
+    if (amk_hooks[i].engine == e)
+      amk_ns_hook_call (amk_hooks[i].macro, ns);
+}
+
+/* $(eng.ns.hook macro): every namespace the engine creates from here on calls the macro with its name, and so does each it created already.  */
+char *
+func_ns_hook (char *o, char **argv, const char *funcname)
+{
+  const struct amk_engine *e = amk_engine_by_name (funcname);
+  char *macro = amk_trim (argv[0]);
+  unsigned int i;
+  if (*macro == '\0')
+    OS (fatal, reading_file, _("%s: no macro"), funcname);
+  amk_hooks = xrealloc (amk_hooks, (amk_hooks_len + 1) * sizeof *amk_hooks);
+  amk_hooks[amk_hooks_len].engine = e;
+  amk_hooks[amk_hooks_len].macro = xstrdup (macro);
+  amk_hooks_len++;
+  for (i = 0; i < amk_nss_len; ++i)
+    if (amk_nss[i].engine == e && amk_nss[i].handles)
+      amk_ns_hook_call (macro, amk_nss[i].name);
+  return o;
+}
+
 void
 amk_ns_create (const struct amk_engine *e, const char *ns, const char *funcname)
 {
@@ -809,6 +856,7 @@ amk_ns_create (const struct amk_engine *e, const char *ns, const char *funcname)
       amk_handle_add (ns, w, wlen, 0);
       amk_handle_add (ns, w, wlen, 1);
     }
+  amk_ns_hooks_run (e, ns);
   /* The makefile side sees the namespaces that exist, so a library building on one knows its handles are there.  */
   do_variable_definition (reading_file, "amk.namespaces", ns, o_file, f_append_value, 0);
 }

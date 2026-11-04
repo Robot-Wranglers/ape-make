@@ -87,6 +87,11 @@
                 "description": "goal and goal.maybe run in place; agoal and agoal.maybe run as a job, in flight as a token of <t>.busy; a .maybe failure is an outcome, not fatal",
                 "enum": ["goal", "goal.maybe", "agoal", "agoal.maybe"],
                 "default": "goal"
+              },
+              "instance": {
+                "description": "when run is a net's __main__ and the net has open places, the name of the instance the step runs, its ports opened under it; by default <net>.<transition>",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+$"
               }
             }
           }

@@ -34,10 +34,10 @@ choices onto is [the plex module](plex.md#choice).
 
 | Term | Meaning |
 | --- | --- |
-| Metacontinuation | the one mutable cell `reset` and `shift` are built from, holding where the nearest `reset` returns |
-| The Rest of the Body | what `shift` captures: the computation up to the nearest `reset`, as a procedure |
-| Option | one value an `amb` tries; the rest of the body runs once per option |
-| Branch | the body between its first `amb` and its end |
+| Metacontinuation | The one mutable cell `reset` and `shift` are built from, holding where the nearest `reset` returns |
+| The Rest of the Body | What `shift` captures: the computation up to the nearest `reset`, as a procedure |
+| Option | One value an `amb` tries; the rest of the body runs once per option |
+| Branch | The body between its first `amb` and its end |
 
 <a id="syntax"></a>
 
@@ -58,7 +58,7 @@ amb is s7 only, so its one table set is s7's.
 
 | Form | Answers |
 | --- | --- |
-| `(reset thunk)` | the thunk's value, or what a `shift` inside it hands back |
+| `(reset thunk)` | The thunk's value, or what a `shift` inside it hands back |
 | `(shift f)` | `f` applied to the rest of the body up to the nearest `reset`, as a procedure; `f`'s value becomes the `reset`'s |
 
 The captured rest may be called any number of times, or not at all:
@@ -91,10 +91,10 @@ endef
 
 | Form | Does |
 | --- | --- |
-| `(amb options)` | runs the rest of the body once per option, in order, and answers that option each time |
-| `(amb options exhausted)` | the same, then calls `exhausted` once every option is spent |
-| `(fail)` | abandons the current option; the rest of the body does not run |
-| `(amb-collect thunk)` | every value the thunk reaches, one per branch that neither fails nor runs out, in search order |
+| `(amb options)` | Runs the rest of the body once per option, in order, and answers that option each time |
+| `(amb options exhausted)` | The same, then calls `exhausted` once every option is spent |
+| `(fail)` | Abandons the current option; the rest of the body does not run |
+| `(amb-collect thunk)` | Every value the thunk reaches, one per branch that neither fails nor runs out, in search order |
 
 ```scheme
 (amb-collect
@@ -113,74 +113,39 @@ endef
 depth first. A branch is the body between its first `amb` and its end, and a value is
 collected only when the body returns.
 
-Both choices above as a demo, `fail` pruning the even options, and two nested `amb`s in
-search order:
-
-```Makefile
-__main__: choice
-
-@s7.target
-define choice
-  (load "amb.scm" (rootlet))
-  (format #t "odd tens: ~A~%"
-    (amb-collect
-      (lambda ()
-        (let ((x (amb '(1 2 3 4))))
-          (if (even? x) (fail))
-          (* x 10)))))
-  (format #t "pairs: ~A~%"
-    (amb-collect
-      (lambda ()
-        (let* ((x (amb '(1 2))) (y (amb '(a b))))
-          (list x y)))))
-endef
-```
-
 <a id="example-search"></a>
 <a id="writing-a-search"></a>
 
 ## Example (Search)
 
-A search is a body under `amb-collect` that chooses, checks, and returns:
+A search is a body under `amb-collect` that chooses, checks, and returns. Every simple path
+through a graph is one `amb` per step and one `fail` per revisit; the recursion is the
+search, and the edge from `d` back to `b` is the cycle the `fail` cuts:
 
-```scheme
-(define (pythagorean n)
-  (amb-collect
-    (lambda ()
-      (let* ((range (let loop ((i n) (acc ())) (if (< i 1) acc (loop (- i 1) (cons i acc)))))
-             (a (amb range))
-             (b (amb range))
-             (c (amb range)))
-        (if (or (> a b) (not (= (+ (* a a) (* b b)) (* c c)))) (fail))
-        (list a b c)))))
+```Makefile
+__main__: graph
 
-(pythagorean 10)                        ; ((3 4 5) (6 8 10))
+@s7.target
+define graph
+  (load "amb.scm" (rootlet))
+  (define edges '((a b c) (b c d) (c d) (d b e) (e)))
+  (define (walk node goal seen)
+    (if (eq? node goal)
+      (reverse (cons node seen))
+      (let ((next (amb (cdr (assq node edges)))))
+        (if (memq next seen) (fail))
+        (walk next goal (cons node seen)))))
+  (format #t "paths: ~A~%" (amb-collect (lambda () (walk 'a 'e ()))))
+endef
+```
+
+```
+$ amk -f demos/stdlib-amb-graph.amk
+paths: ((a b c d e) (a b d e) (a c d e))
 ```
 
 The `exhausted` thunk is where a search undoes what a choice point set up, since it runs
 after the last option's branch and before the enclosing choice moves on.
-
-The same search as a demo, every right triangle with sides up to 20, from three choices and
-one check:
-
-```Makefile
-__main__: search
-
-@s7.target
-define search
-  (load "amb.scm" (rootlet))
-  (define (upto n)
-    (let loop ((i n) (acc ()))
-      (if (< i 1) acc (loop (- i 1) (cons i acc)))))
-  (define (triples n)
-    (amb-collect
-      (lambda ()
-        (let* ((a (amb (upto n))) (b (amb (upto n))) (c (amb (upto n))))
-          (if (or (> a b) (not (= (+ (* a a) (* b b)) (* c c)))) (fail))
-          (list a b c)))))
-  (format #t "triples: ~A~%" (triples 20))
-endef
-```
 
 <a id="errors"></a>
 
@@ -198,30 +163,17 @@ Each runs from the repository with `amk -f`, or any one target by name.
 
 | Demo | Targets | Shows |
 | --- | --- | --- |
-| [`stdlib-amb-control.amk`](../demos/stdlib-amb-control.amk), embedded under [delimited control](#delimited-control) | `control` | the three `reset` and `shift` forms above |
-| [`stdlib-amb-choice.amk`](../demos/stdlib-amb-choice.amk), embedded under [choice](#choice) | `choice` | `amb` with `fail`, and nested `amb` in search order |
-| [`stdlib-amb-search.amk`](../demos/stdlib-amb-search.amk), embedded under [the search](#example-search) | `search` | every right triangle with sides up to 20 |
-| [`stdlib-amb-yinyang.amk`](../demos/stdlib-amb-yinyang.amk), embedded below | `yinyang` | the yin-yang puzzle, `@*@**@***` and on, stopped by a counter after 20 characters |
-| [`stdlib-amb-2.amk`](../demos/stdlib-amb-2.amk) | `tasks` | cooperative multitasking: a ready list of continuations, `fork`, `yield`, three counters interleaving |
-| | `branches` | the same scheduler with `shift` as the forker, the rest of the body queued once per option |
+| [`stdlib-amb-control.amk`](../demos/stdlib-amb-control.amk), embedded under [delimited control](#delimited-control) | `control` | The three `reset` and `shift` forms above |
+| [`stdlib-amb-graph.amk`](../demos/stdlib-amb-graph.amk), embedded under [the search](#example-search) | `graph` | Every simple path from `a` to `e` in a graph with a cycle |
+| [`stdlib-amb-yinyang.amk`](../demos/stdlib-amb-yinyang.amk), embedded below | `yinyang` | The yin-yang puzzle, `@*@**@***` and on, stopped by a counter after 20 characters |
+
+The same graph walk run as tasks on a plex is [`plex-choice.amk`](../demos/plex-choice.amk),
+embedded under [plex choice](plex.md#choice).
 
 ```
 $ amk -f demos/stdlib-amb-yinyang.amk
 yin-yang: @*@**@***@****@*****
-$ amk -f demos/stdlib-amb-2.amk branches
-one starts
-two starts
-three starts
-one ends
-two ends
-three ends
 ```
-
-The yin-yang puzzle and the scheduler are adapted from the examples in
-Call-with-current-continuation[^callcc] on Wikipedia. Two things differ from the page. The page's overridden `exit` is a
-`finish` continuation, so the s7 process stays the engine's. And a task's end stays
-non-returning, as the page's `exit` is: a scheduler whose tasks return into its loop
-replays that loop's frame through every continuation it captured.
 
 The yin-yang puzzle, in which `yin` and `yang` each hold their own binding's continuation
 and a counter escapes after 20 characters, adapted from the
@@ -257,8 +209,8 @@ endef
 - [The runtime](runtime.md#control-multiplexer), the control layers `amb` sits on.
 - [Nondeterministic programming](https://en.wikipedia.org/wiki/Nondeterministic_programming) and [delimited continuations](https://en.wikipedia.org/wiki/Delimited_continuation), on Wikipedia.
 - Olivier Danvy and Andrzej Filinski, "Abstracting Control", LISP and Functional Programming, 1990: the paper that introduced `shift` and `reset`.
+- Racket's [`amb` package](https://docs.racket-lang.org/amb/index.html): `amb`, `for/amb` and `in-amb`, the same operator as a library, with depth-first and fair search as parameters.
 - Racket reference, [10.4.1 Additional Control Operators](https://docs.racket-lang.org/reference/cont.html#%28part._.Additional_.Control_.Operators%29): `shift` and `reset` as a library on Racket's prompts, with the same meaning as here; the parent section covers composable continuations and prompts.
 - Oleg Kiselyov, [Continuations and Delimited Control](https://okmij.org/ftp/continuations/): tutorials and papers, beginning with [an introduction to programming with shift and reset](https://okmij.org/ftp/continuations/#tutorial), and a section on [search with delimited control](https://okmij.org/ftp/continuations/#reify-search) that is the shape of `amb-collect`.
 
 [^filinski]: Andrzej Filinski, "Representing Monads", POPL 1994: `shift` and `reset` from `call/cc` and one mutable cell, which is this file's construction.
-[^callcc]: Wikipedia, [Call-with-current-continuation, Examples](https://en.wikipedia.org/wiki/Call-with-current-continuation#Examples).
