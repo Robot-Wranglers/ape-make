@@ -24,3 +24,5 @@ __pycache__
 effection*.tgz
 .amk
 lxsc-flat-0.14.lua
+/*.pem
+/amk-*
