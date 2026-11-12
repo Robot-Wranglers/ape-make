@@ -1,14 +1,22 @@
 # Build amk from a clean tree, smoke it and its image, and keep both as workflow artifacts; ci.yml and release.yml call this, then test.yml.
 name: Build
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      # A distribution the Makefile knows, such as omnibus; empty is the default one.
+      dist:
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
-  # One build of the default engine set; its artifacts keep the default name test.yml and release.yml download.
+  # One build of one distribution; its artifacts carry the distribution's name, default for the unnamed one, and test.yml and release.yml download them by it.
   build:
-    name: Build amk
+    name: Build amk ${{ inputs.dist }}
     runs-on: ubuntu-24.04
+    env:
+      DIST: ${{ inputs.dist }}
+      SUFFIX: ${{ inputs.dist && format('-{0}', inputs.dist) || '' }}
     steps:
       # The Makefile reads the version from the nearest v-tag, so the checkout needs the tags and the history behind them.
       - name: Checkout
@@ -16,7 +24,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-      # Every input is pinned by digest in the Makefile, so the Makefile is the cache key; the fallback shares the toolchain across Makefile edits.
+      # Every input is pinned by digest in the Makefile, so the Makefile is the cache key beside the distribution, whose inputs differ; the fallbacks share the toolchain across Makefile edits and distributions.
       - name: Cache downloads and toolchain
         uses: actions/cache@v6
         with:
@@ -26,38 +34,41 @@ jobs:
             *.zip
             !cosmos-*.zip
             *.ape
+            *.pem
             json.bash-*
             cosmocc
-          key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: deps-${{ runner.os }}-${{ inputs.dist && format('{0}-', inputs.dist) || '' }}${{ hashFiles('Makefile') }}
           restore-keys: |
+            deps-${{ runner.os }}-${{ inputs.dist && format('{0}-', inputs.dist) || '' }}
             deps-${{ runner.os }}-
       - name: Fetch and verify inputs
-        run: make deps
+        run: make deps dist="$DIST"
       - name: Unpack and patch
-        run: make patch
+        run: make patch dist="$DIST"
       - name: Build
-        run: make build
+        run: make build dist="$DIST"
       - name: Smoke
-        run: make smoke
+        run: make smoke dist="$DIST"
       # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.
       - name: Docker image
-        run: make build.docker
+        run: make build.docker dist="$DIST"
       - name: Smoke the image
-        run: make smoke.docker
+        run: make smoke.docker dist="$DIST"
       # A tarball, since upload-artifact drops the alias symlinks and the exec bits the context needs.
       - name: Pack the image context
-        run: tar -C build/docker -cf docker-context.tar amd64 arm64
+        run: tar -C "build/docker$SUFFIX" -cf docker-context.tar amd64 arm64
       - name: Upload the image context
         uses: actions/upload-artifact@v7
         with:
-          name: docker-context-default
+          name: docker-context-${{ inputs.dist || 'default' }}
           path: docker-context.tar
           if-no-files-found: error
           retention-days: 14
+      # The file is named amk in every distribution's artifact, so the test jobs run it the same way; release.yml names the published asset.
       - name: Land the deliverable
         run: |
           mkdir -p dist
-          install -m 0755 out/bin/amk dist/amk
+          install -m 0755 "out/bin$SUFFIX/amk" dist/amk
       # The portable job runs the wasm checks against the modules wasm3 ships, so they travel with the binary.
       - name: Add the wasm test modules
         run: |
@@ -66,7 +77,7 @@ jobs:
       - name: Upload amk
         uses: actions/upload-artifact@v7
         with:
-          name: amk-default
+          name: amk-${{ inputs.dist || 'default' }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14

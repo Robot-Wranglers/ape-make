@@ -1,0 +1,90 @@
+# The omnibus distribution, on demand only: a manual run builds amk with CPython and OpenSSL through build.yml and tests it through test.yml, so no push, pull request, or release waits on it or fails for it.
+name: Omnibus
+on:
+  workflow_dispatch:
+    inputs:
+      # Publishing needs the run to start from a v-prefixed tag that already has a release.
+      publish:
+        description: Add amk-omnibus to this tag's release and push its image
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      dist: omnibus
+
+  test:
+    needs: build
+    uses: ./.github/workflows/test.yml
+    with:
+      dist: omnibus
+
+  # The image for amd64 and arm64 from the context build.yml smoked, tagged with the distribution's name so the default tags stay as release.yml left them.
+  image:
+    name: Publish image
+    needs: test
+    if: inputs.publish && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download the image context
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-context-omnibus
+      - name: Unpack the image context
+        run: mkdir -p context && tar -C context -xf docker-context.tar
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to ghcr
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/amk"
+          version="${GITHUB_REF_NAME#v}"
+          docker buildx build --push \
+            --platform linux/amd64,linux/arm64 \
+            --target amk \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${version}" \
+            -t "${image}:${version}-omnibus" \
+            -t "${image}:omnibus" \
+            -f Dockerfile context
+
+  # The binary joins the release release.yml made for the tag, under the distribution's name beside its digest.
+  publish:
+    name: Publish to the release
+    needs: test
+    if: inputs.publish && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download amk
+        uses: actions/download-artifact@v8
+        with:
+          name: amk-omnibus
+      - name: Version matches the tag
+        run: sh ./amk --version | sed -n 2p | grep -E "\(amk ${GITHUB_REF_NAME#v}[ :]"
+      - name: Stage assets
+        run: |
+          mkdir -p dist
+          install -m 0755 amk dist/amk-omnibus
+          cd dist && sha256sum amk-omnibus > amk-omnibus.sha256
+          cat amk-omnibus.sha256
+      - name: Upload to the release
+        run: gh release upload "${GITHUB_REF_NAME}" dist/amk-omnibus dist/amk-omnibus.sha256

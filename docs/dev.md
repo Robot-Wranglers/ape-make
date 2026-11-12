@@ -38,8 +38,41 @@ build, and leaving out every engine stops it too. An engine left out is absent, 
 stubbed: its builtin does not exist, its name is not in `.FEATURES`, its multi-call alias
 is not created, and `make deps` does not download it. The engines, what each gives, and
 its size are in the table under [Special guests](../README.md#engines). Of the default build's
-20.1 MB, the two payload tools are about 4 MB. An engine's size is that build against the
+23.9 MB, the five payload tools are about 5 MB. An engine's size is that build against the
 same build without it, or with it for one that is off.
+
+<a id="distributions"></a>
+
+### Distributions
+
+A distribution is a named choice of what is linked in, built beside the default one.
+`dist=omnibus` adds every engine that is off by default and every library such an engine
+links against:
+
+```bash
+# out/bin-omnibus/amk, beside out/bin/amk
+make build dist=omnibus
+
+# lands ./amk-omnibus
+make amk dist=omnibus
+```
+
+| | Default | `dist=omnibus` |
+| --- | --- | --- |
+| Adds | | CPython 3.12 as the `cpython` engine, OpenSSL 3.5, and a certificate bundle |
+| Artifact | `out/bin/amk` | `out/bin-omnibus/amk` |
+| Size | 24 MB | 56 MB |
+| Image tag | `<version>` | `<version>-omnibus` |
+
+The two share the patched make tree and every engine's objects, so building the second
+after the first is a relink. `with` and `without` apply over a distribution as they do
+over the default: `make build dist=omnibus without=cpython` leaves CPython out.
+
+OpenSSL is a linked library, not an engine: an engine names the libraries it needs, and
+one is built when an engine in the build needs it or `with` names it, so
+`make build with=openssl` builds it alone. The certificate bundle ships in the payload at
+`/zip/usr/share/ssl/cert.pem`, the path OpenSSL reads by default, so `ssl` verifies with
+no setup; `SSL_CERT_FILE` names another bundle.
 
 Development flow:
 
@@ -221,6 +254,13 @@ workflow by hand on a branch is a dry run: it builds and checks, builds the imag
 platforms, and pushes nothing. Every push and pull request runs the same build through the `Build` workflow and
 keeps the result as a workflow artifact. A weekly `Pins` workflow fetches every input cold
 and verifies it, so a digest that moved upstream surfaces before it breaks a release.
+
+The [omnibus distribution](#distributions) is built on demand only. The `Omnibus` workflow
+runs by hand: it builds `dist=omnibus`, smokes it, and runs the unit suite and the same
+three hosts. No push, pull request, release, or weekly run builds it, so its pins are
+checked only when it runs. Started from a `v` tag that already has a release, with its
+publish input set, it adds `amk-omnibus` and `amk-omnibus.sha256` to that release and
+pushes the image as `<version>-omnibus` and `omnibus`.
 
 <a id="layout"></a>
 

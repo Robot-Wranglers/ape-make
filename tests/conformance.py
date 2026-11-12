@@ -119,6 +119,13 @@ STATE = {
     "read": "import amk\nprint(amk.var.cf_var)",
     "hook": "import amk\namk.on['goals'] = lambda e: print('hooked')",
   },
+  "cpython": {
+    "set": "x = 41",
+    "show": "print(x + 1)",
+    "lib": "def cf_echo(s):\n  return s + '!'\ncf_v = 'seven'",
+    "read": "import amk\nprint(amk.var.cf_var)",
+    "hook": "import amk\namk.on['goals'] = lambda e: print('hooked')",
+  },
   "js": {
     "set": "var x = 41;",
     "show": "print(x + 1);",
@@ -143,6 +150,7 @@ CLI = {
   "lua": {"prog": 'print("hi")', "args": ['print("hi")']},
   "s7": {"prog": '(display "hi")', "args": ['(display "hi")']},
   "micropy": {"prog": 'print("hi")', "args": ['print("hi")']},
+  "cpython": {"prog": 'print("hi")', "args": ['print("hi")']},
   "js": {"prog": 'print("hi")', "args": ['print("hi")']},
   "sqlite": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
   "cypher": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},

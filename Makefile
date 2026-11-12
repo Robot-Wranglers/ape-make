@@ -206,17 +206,43 @@ effection.dir     := js/effection/
 libs.all     := gmsl dkjson lxsc utemplate effection
 
 # The default set is linked in; with adds an opt-in engine to a build, and without leaves any engine out of one.
-engines.all   := gawk jq lua s7 trilog micropython wasm3 quickjs sqlite graphqlite tcc
-engines.optin :=
+engines.all   := gawk jq lua s7 trilog micropython wasm3 quickjs sqlite graphqlite tcc cpython
+engines.optin := cpython
 with          ?=
 without       ?=
-ifneq ($(filter-out $(engines.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))),)
-  $(error with or without names $(filter-out $(engines.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))), which is not an engine, library, or optional tool -- choose from $(engines.all), or leave out $(libs.all) $(tools.optout))
+# The linked libraries, and which of them each engine needs.
+clibs.all     := openssl
+gawk.needs    :=
+jq.needs      :=
+lua.needs     :=
+s7.needs      :=
+trilog.needs  :=
+micropython.needs :=
+wasm3.needs   :=
+quickjs.needs :=
+sqlite.needs  :=
+graphqlite.needs :=
+tcc.needs     :=
+cpython.needs := openssl
+# A distribution is a named choice of what is linked in, built beside the default one: omnibus has every opt-in engine and linked library, and with and without still apply over it.
+dists.all     := omnibus
+dist          ?=
+dist.omnibus.with := $(engines.optin) $(clibs.all)
+ifneq ($(filter-out $(dists.all),$(dist)),)
+  $(error dist names $(dist), which is not a distribution -- choose from $(dists.all), or leave it out for the default)
+endif
+ifneq ($(dist),)
+  override with := $(strip $(dist.$(dist).with) $(with))
+endif
+ifneq ($(filter-out $(engines.all) $(clibs.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))),)
+  $(error with or without names $(filter-out $(engines.all) $(clibs.all),$(with) $(filter-out $(libs.all) $(tools.optout),$(without))), which is not an engine, library, or optional tool -- choose from $(engines.all) $(clibs.all), or leave out $(libs.all) $(tools.optout))
 endif
 libs := $(filter-out $(without),$(libs.all))
 tools := $(filter-out $(filter $(tools.optout),$(without)),$(tools.all))
 engines.default := $(filter-out $(engines.optin),$(engines.all))
 engines         := $(filter-out $(without),$(filter $(engines.default) $(with),$(engines.all)))
+# A linked library is built when an engine in the build needs it or with names it; without leaves it out, and an engine that needs it builds without what it gave.
+clibs           := $(filter-out $(without),$(filter $(with) $(foreach e,$(engines),$($(e).needs)),$(clibs.all)))
 ifeq ($(engines),)
   $(error without leaves no engine -- amk is make with guests linked in, and without is not the way to build stock make)
 endif
@@ -257,15 +283,19 @@ engines.features = $(strip $(foreach e,$(engines),$($(e).feature)) $(tools.engin
 # The names the given binary answers to, every engine's own and its aliases, as its engine listing reports them.
 engines.names    = $(1) --list-engines | awk -F'"' '/"(name|aliases)":/ { for (i = 4; i < NF; i += 2) print $$i }'
 
+# Pinned inputs a linked library brings with it for the payload, by name.
+clibs.deps  := $(if $(filter openssl,$(clibs)),cacert)
 # Every pinned input by name; the file, urls, and digest of each come from its own variables, so a new input needs no line anywhere else.
-deps.names  := make $(engines) $(tools) $(libs) cosmocc
+deps.names  := make $(engines) $(clibs) $(clibs.deps) $(tools) $(libs) cosmocc
 dep.get      = $(if $(filter-out undefined,$(origin $(1))),$($(1)))
 dep.cosmos   = $(filter $(1),$(cosmos.tools))
 dep.file     = $(if $(call dep.cosmos,$(1)),$(1)-$(cosmos.version).ape,$(or $(call dep.get,$(1).tarball),$(call dep.get,$(1).file),$(call dep.get,$(1).zip)))
 dep.urls     = $(if $(call dep.cosmos,$(1)),$(cosmos.url)/$(1) $(cosmos.mirror)/$(1),$($(1).url) $(call dep.get,$(1).mirror))
 tools.files := $(foreach t,$(tools),$(call dep.file,$(t)))
 libs.tarballs := $(foreach l,$(libs),$($(l).tarball))
-deps.files  := $(foreach n,$(deps.names),$(call dep.file,$(n)))
+# These two are read late, since the optional build pins its inputs in a section of its own further down.
+clibs.files  = $(foreach n,$(clibs.deps),$(call dep.file,$(n)))
+deps.files   = $(foreach n,$(deps.names),$(call dep.file,$(n)))
 
 # The toolchain unpacks beside the downloads; name an installed copy here to skip that.
 cosmocc.dir ?= $(HERE)cosmocc
@@ -285,9 +315,11 @@ ifneq ($(filter-out patches,$(patch.dirs))$(flavor),)
     $(error patch.dirs adds $(filter-out patches,$(patch.dirs)) without a flavor -- name the build so it does not overwrite the plain one)
   endif
 endif
-suffix   := $(if $(flavor),-$(flavor))
+# A flavor has a patched tree of its own; a distribution shares the tree and differs from the link on, so only the flavor names the tree.
+flavor.suffix := $(if $(flavor),-$(flavor))
+suffix   := $(flavor.suffix)$(if $(dist),-$(dist))
 patches  := $(foreach d,$(patch.dirs),$(abspath $(wildcard $(d)/*.patch)))
-make.src := src/make-$(make.version)$(suffix)
+make.src := src/make-$(make.version)$(flavor.suffix)
 gawk.src := src/gawk-$(gawk.version)
 jq.src   := src/jq-$(jq.version)
 lua.src  := src/lua-$(lua.version)
@@ -299,6 +331,9 @@ quickjs.src := src/quickjs-$(quickjs.version)
 sqlite.src := src/sqlite-amalgamation-$(sqlite.release)
 graphqlite.src := src/graphqlite-$(graphqlite.version)
 tcc.src := src/tinycc-$(tcc.short)
+# The archives of the linked libraries an engine needs and the build has, for its partial link; each library installs under a root of its own.
+needs.built    = $(foreach n,$(filter $(clibs),$($(1).needs)),build/$(n)-ape/.built)
+needs.archives = $(foreach n,$(filter $(clibs),$($(1).needs)),$(addprefix $(HERE)$($(n).root)/,$($(n).archives)))
 gmsl.src  := src/gmsl-$(gmsl.version)
 dkjson.src := src/dkjson-$(dkjson.version)
 lxsc.src := src/lxsc-$(lxsc.version)
@@ -417,7 +452,7 @@ guests.ape    := build/guests/ape
 bin           := out/bin$(suffix)
 artifact.ape  := $(bin)/amk
 # The deliverable lands beside this Makefile, where a caller can find it without knowing the layout.
-deliverable   := amk
+deliverable   := amk$(if $(dist),-$(dist))
 
 # Where install lands: the user's own bin, or the system bin every login shell searches; either takes a bindir override on the command line.
 os := $(shell uname -s)
@@ -450,7 +485,108 @@ help:
 	@# List the targets.
 	$(call log, help, usage: make amk for the deliverable -- make stat says what is built)
 	$(call log, help, engines $(engines.default) are linked in by default$(if $(engines.optin), and $(engines.optin) on request -- with='$(firstword $(engines.optin))' adds one) -- without='$(firstword $(engines.all))' leaves one out)
+	$(call log, help, distributions: dist='$(firstword $(dists.all))' builds $(dist.omnibus.with) in as well and lands beside the default build -- choose from $(dists.all))
 	grep -hE '^[a-z][a-z. ]*:([^=]|$$)' $(HERE)Makefile $(HERE)docs/docs.amk | cut -d: -f1 | tr ' ' '\n' | sort | tr '\n' ' '; echo
+
+#░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+# The optional build, whole: everything the cpython engine and the openssl library need beyond their names in the engine and library lists above. The default build reads this section and uses none of it.
+
+# CPython is real Python with its standard library, at several times the size of the rest of amk.
+cpython.version := 3.12.15
+cpython.tarball := Python-$(cpython.version).tar.xz
+cpython.url     := https://www.python.org/ftp/python/$(cpython.version)/$(cpython.tarball)
+cpython.sha256  := c2c4321961fab0fb999d66e0cecf521c2ab3994c7992873ea99e306c1094fd5a
+cpython.define  := AMK_ENGINE_CPYTHON
+cpython.feature := cpython
+cpython.src     := src/Python-$(cpython.version)
+
+# OpenSSL is a linked library: C code an engine links against, built once under cosmocc; 3.5 is the long-term support line.
+openssl.version := 3.5.9
+openssl.tarball := openssl-$(openssl.version).tar.gz
+openssl.url     := https://github.com/openssl/openssl/releases/download/openssl-$(openssl.version)/$(openssl.tarball)
+openssl.sha256  := 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+openssl.src     := src/openssl-$(openssl.version)
+# Its headers and static archives install under this root, each archive with its aarch64 twin in .aarch64/ beside it.
+openssl.root     := build/openssl-ape/root
+openssl.archives := lib/libssl.a lib/libcrypto.a
+# Portable C with no loadable parts; the certificate directory is a payload path, so a bundle shipped there is found with no setup.
+openssl.configure := linux-generic64 no-shared no-asm no-tests no-apps no-docs no-module no-engine no-legacy no-dso \
+                     --prefix=$(HERE)$(openssl.root) --libdir=lib --openssldir=/zip/usr/share/ssl
+
+# The certificate authorities OpenSSL trusts by default: Mozilla's set as curl publishes it by date, shipped in the payload at the path the library reads.
+cacert.version := 2026-11-05
+cacert.file    := cacert-$(cacert.version).pem
+cacert.url     := https://curl.se/ca/$(cacert.file)
+cacert.sha256  := 427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285
+cacert.dest    := usr/share/ssl/cert.pem
+
+# CPython cross-configures for cosmocc against a build python of its own, with its extension modules built in.
+cpython.configure = --build=$$($(HERE)$(cpython.src)/config.guess) --host=x86_64-pc-linux-gnu \
+                    --with-build-python=$(HERE)$(cpython.hostpy) --disable-shared --disable-ipv6 \
+                    --without-ensurepip --disable-test-modules MODULE_BUILDTYPE=static \
+                    ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no $(cpython.zlib) \
+                    $(if $(filter openssl,$(clibs)),--with-openssl=$(HERE)$(openssl.root) --with-openssl-rpath=no)
+# cosmo's libc carries zlib under a header directory of its own, so configure is told where the header is and that no further library is needed.
+cpython.zlib    = ZLIB_CFLAGS=-I$(cosmocc.dir)/include/third_party/zlib ZLIB_LIBS=-lc
+cpython.hostpy  = build/cpython-host/python$(if $(filter Darwin,$(os)),.exe)
+# The standard library less its tests, its gui, and what installs packages, as excludes on the copy into lib/python3.12/.
+cpython.libskip := test idlelib tkinter turtledemo ensurepip lib2to3 __pycache__
+
+# The per-guest hooks every engine carries. CPython names struct members main and links no main of its own, so its compile flags are the shared ones less the rename.
+cpython.objdirs    := .
+cpython.objcheck   := libpython3.12.a
+cpython.ldflags    :=
+cpython.guestflags := -O2 -fno-common -fvisibility=hidden -Wno-implicit-function-declaration -Dexit=amk_exit
+# libpython marks its api visible, so everything but the entry point is localized by name.
+cpython.objrename  := $(addprefix --keep-global-symbol=cpython_,run_main create exec import hook)
+cpython.objskip    :=
+cpython.extra       =
+# Static libraries the partial link takes whole, beside the objects, since this guest's build ends in them; each has its aarch64 twin in .aarch64/ beside it.
+cpython.archive := libpython3.12.a Modules/expat/libexpat.a Modules/_decimal/libmpdec/libmpdec.a Modules/_hacl/libHacl_Hash_SHA2.a
+
+# What the artifact's payload gains: the standard library under lib/python3.12/ and the certificate bundle, with the top-level directories they land in.
+define optin.payload
+$(if $(filter cpython,$(engines)),mkdir -p $(call payload.dest,lib/python3.12) && tar cf - $(addprefix --exclude ,$(cpython.libskip)) -C $(cpython.src)/Lib . | tar xf - -C $(call payload.dest,lib/python3.12))
+$(if $(clibs.files),mkdir -p $(dir $(call payload.dest,$(cacert.dest))) && install -m 0644 $(cacert.file) $(call payload.dest,$(cacert.dest)))
+endef
+optin.payload.dirs = $(if $(filter cpython,$(engines)),lib) $(if $(clibs.files),usr)
+
+$(openssl.src): $(openssl.tarball)
+	$(call log, patch, unpacking $(openssl.tarball) into $@ unpatched)
+	mkdir -p src && tar xzf $(openssl.tarball) -C src && touch $@
+$(cpython.src): $(cpython.tarball)
+	$(call log, patch, unpacking $(cpython.tarball) into $@ unpatched)
+	mkdir -p src && tar xJf $(cpython.tarball) -C src && touch $@
+# The cross build freezes its bootstrap modules with a python of the same version, built here for the host with its native compiler.
+build/cpython-host/.built: $(cpython.src)
+	$(call log, guest, compiling the host python cpython's cross build needs -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && ( $(HERE)$(cpython.src)/configure --without-ensurepip --disable-test-modules && make -j$(jobs) ) >build.log 2>&1 \
+	  || $(call die, guest, the host python did not compile -- see the tail of $(@D)/build.log)
+	touch $@
+# OpenSSL's own configure and make under cosmocc, then its development install into the root, with the aarch64 archives copied beside the ones the install knows of.
+build/openssl-ape/.built: $(openssl.src) $(cosmocc.dir)/bin/cosmocc
+	$(call log, guest, compiling openssl $(openssl.version) for cosmocc -- log at $(@D)/build.log)
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && ( env $(cosmocc.env) $(HERE)$(openssl.src)/Configure $(openssl.configure) \
+	  && env $(cosmocc.env) make -j$(jobs) build_libs && env $(cosmocc.env) make install_dev ) >build.log 2>&1 \
+	  || $(call die, guest, openssl did not compile -- see the tail of $(@D)/build.log)
+	mkdir -p $(openssl.root)/lib/.aarch64 && cp $(addprefix $(@D)/.aarch64/,$(notdir $(openssl.archives))) $(openssl.root)/lib/.aarch64/
+	touch $@
+build/cpython-ape/Makefile: $(cpython.src) build/cpython-host/.built $(cosmocc.dir)/bin/cosmocc $(call needs.built,cpython)
+	$(call log, configure, cpython $(cpython.version) for cosmocc in $(@D))
+	rm -rf $(@D) && mkdir -p $(@D)
+	cd $(@D) && env $(cosmocc.env) CXX=cosmoc++ $(HERE)$(cpython.src)/configure $(cpython.configure)
+# libpython with every module built in, then the entry point against its headers; the archive is the partial link's input, whole.
+build/cpython-ape/.built: build/cpython-ape/Makefile guest/cpython_main.c guest/amk_guest.h
+	$(call log, guest, compiling cpython for cosmocc -- log at $(@D)/build.log)
+	cd $(@D) && env $(cosmocc.env) MAKEFLAGS=-s make -j$(jobs) EXTRA_CFLAGS='$(cpython.guestflags)' $(cpython.archive) >build.log 2>&1 \
+	  || $(call die, guest, cpython did not compile -- see the tail of $(@D)/build.log)
+	cd $(@D) && env $(cosmocc.env) cosmocc $(cpython.guestflags) -I. -I$(HERE)$(cpython.src)/Include -I$(HERE)guest \
+	  -c $(HERE)guest/cpython_main.c -o cpython_main.o >>build.log 2>&1 \
+	  || $(call die, guest, cpython's entry point did not compile -- see the tail of $(@D)/build.log)
+	touch $@
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -759,9 +895,12 @@ $(guests.ape)/%.o: build/%-ape/.built
 	mkdir -p $(@D)/.aarch64
 	cd build/$*-ape \
 	  && $(cosmocc.dir)/bin/x86_64-linux-cosmo-ld -r $($*.ldflags) \
-	       $$(ls $(foreach d,$($*.objdirs),$(d)/*.o) | grep -vE 'conftest$($*.objskip)') -o $(HERE)$@ \
+	       $$(ls $(foreach d,$($*.objdirs),$(d)/*.o) | grep -vE 'conftest$($*.objskip)') \
+	       $(if $($*.archive),--whole-archive $($*.archive) --no-whole-archive) $(call needs.archives,$*) -o $(HERE)$@ \
 	  && $(cosmocc.dir)/bin/aarch64-linux-cosmo-ld -r $($*.ldflags) \
-	       $$(ls $(foreach d,$($*.objdirs),$(d)/.aarch64/*.o) | grep -vE 'conftest$($*.objskip)') -o $(HERE)$(@D)/.aarch64/$*.o \
+	       $$(ls $(foreach d,$($*.objdirs),$(d)/.aarch64/*.o) | grep -vE 'conftest$($*.objskip)') \
+	       $(if $($*.archive),--whole-archive $(join $(dir $($*.archive)),$(addprefix .aarch64/,$(notdir $($*.archive)))) --no-whole-archive) \
+	       $(foreach a,$(call needs.archives,$*),$(dir $(a)).aarch64/$(notdir $(a))) -o $(HERE)$(@D)/.aarch64/$*.o \
 	  && $(cosmocc.dir)/bin/x86_64-linux-cosmo-objcopy $($*.objrename) --localize-hidden $(HERE)$@ \
 	  && $(cosmocc.dir)/bin/aarch64-linux-cosmo-objcopy $($*.objrename) --localize-hidden $(HERE)$(@D)/.aarch64/$*.o
 
@@ -792,7 +931,7 @@ repack:
 	[ -x $(compiled.ape) ] || { $(call log, repack, no compiled engine at $(compiled.ape) -- run make build first); exit 1; }
 	$(MAKE) $(artifact.ape)
 
-$(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.lib) guest/amk.sh
+$(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(clibs.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.lib) guest/amk.sh
 	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/ with the prelude)
 	mkdir -p $(bin)
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
@@ -804,11 +943,12 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 	$(if $(filter trilog,$(engines)),mkdir -p $(call payload.dest,lib/trilog/boot) $(call payload.dest,lib/trilog/lib) \
 	  && install -m 0644 $(trilog.src)/boot/core.pl $(trilog.src)/LICENSE $(call payload.dest,lib/trilog/boot/) \
 	  && install -m 0644 $(trilog.src)/lib/*.pl $(call payload.dest,lib/trilog/lib/))
+	$(optin.payload)
 	$(foreach f,$(payload.files),mkdir -p $(dir $(call payload.dest,$(f))) && install -m 0644 $(f) $(call payload.dest,$(f));)
 	$(foreach f,$(payload.lib),mkdir -p $(dir $(call payload.dest,$(f))) && install -m 0644 $(f) $(call payload.dest,$(f));)
 	@# zip names an archive without an extension by appending one, so the payload goes into an .ape copy.
 	cp build/ape$(suffix)/make build/payload$(suffix)/amk.ape
-	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython trilog,$(engines))$(strip $(payload.lib)),lib) $(patsubst payload/%,%,$(payload.files))
+	cd build/payload$(suffix) && zip -q -r amk.ape bin $(if $(libs)$(filter micropython trilog,$(engines))$(strip $(payload.lib))$(filter lib,$(optin.payload.dirs)),lib) $(filter-out lib,$(optin.payload.dirs)) $(patsubst payload/%,%,$(payload.files))
 	rm -f $@ && install -m 0755 build/payload$(suffix)/amk.ape $@
 	for n in $$($(call engines.names,$@)); do ln -sf amk $(bin)/$$n; done
 	$(call log, build, artifact $@ is ready -- $(bin) holds every engine name and alias for it)
@@ -917,12 +1057,12 @@ network ?= 1
 docker.dir    := build/docker$(suffix)
 docker.arches := amd64 arm64
 docker.image  ?= amk
-docker.tag    ?= $(amk.version)$(suffix)$(foreach e,$(filter $(engines.optin),$(engines)),-$(e))
+docker.tag    ?= $(amk.version)$(suffix)$(if $(dist),,$(foreach e,$(filter $(engines.optin),$(engines)),-$(e)))
 assimilate.amd64 := -x
 assimilate.arm64 := -a
 # Inside the image the artifact is the installed one; the wasm demos build their modules with docker, which the image does not carry.
 docker.smoke.args = -o /usr/local/bin/amk artifact.ape=/usr/local/bin/amk bin=/usr/local/bin demos.skip='$(demos.wasm)' \
-  $(foreach v,amk.version with without flavor patch.dirs,$(v)='$($(v))')
+  $(foreach v,amk.version with without dist flavor patch.dirs,$(v)='$($(v))')
 
 build.docker: $(docker.dir)/.context
 	@# The image from the artifact make build lands, for this platform, tagged $(docker.image):$(docker.tag).

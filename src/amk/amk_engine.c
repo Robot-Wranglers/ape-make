@@ -71,6 +71,12 @@ static const struct amk_state_ops tcc_state = {
   .kept = { .create = tcc_create }, .exec = tcc_exec, .import = tcc_import, .hook = tcc_hook,
 };
 #endif
+#ifdef AMK_ENGINE_CPYTHON
+static const struct amk_cli_ops cpython_cli = { .main = cpython_run_main };
+static const struct amk_state_ops cpython_state = {
+  .kept = { .create = cpython_create, .single = 1 }, .exec = cpython_exec, .import = cpython_import, .hook = cpython_hook,
+};
+#endif
 #ifdef AMK_ENGINE_SQLITE
 static const struct amk_cli_ops sqlite_cli = { .main = sqlite_main, .lead = "--", .argv = 1, .tool = 1 };
 static const struct amk_workspace_ops sqlite_workspace = {
@@ -182,6 +188,10 @@ const struct amk_engine amk_engines[] =
 #ifdef AMK_ENGINE_TCC
     { .name = "tcc", .aliases = "c", .language = "C", .implementation = "TinyCC",
       .version = AMK_STR (AMK_ENGINE_TCC), .cli = &tcc_cli, .state = &tcc_state },
+#endif
+#ifdef AMK_ENGINE_CPYTHON
+    { .name = "cpython", .language = "Python", .implementation = "CPython",
+      .version = AMK_STR (AMK_ENGINE_CPYTHON), .cli = &cpython_cli, .state = &cpython_state },
 #endif
 #ifdef AMK_ENGINE_BASH
     { .name = "bash", .aliases = "sh", .language = "Bash", .implementation = "GNU bash",

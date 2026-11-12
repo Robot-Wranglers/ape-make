@@ -1,13 +1,18 @@
 # Test the binaries build.yml kept, never a fresh build: the unit suite, the integration suite, and a run on hosts that never built them; ci.yml and release.yml call this after build.yml.
 name: Test
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      # The distribution build.yml kept; empty is the default one.
+      dist:
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
-  # The unit suite against the default build.
+  # The unit suite against the build; a test for an engine the build lacks skips itself.
   unit:
-    name: Unit tests
+    name: Unit tests ${{ inputs.dist }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -15,7 +20,7 @@ jobs:
       - name: Download amk
         uses: actions/download-artifact@v8
         with:
-          name: amk-default
+          name: amk-${{ inputs.dist || 'default' }}
       - name: Restore the exec bit
         run: chmod +x amk
       # The suite needs pytest and nothing else; the Makefile runs it as python3 -m pytest when no pytest is on PATH.
@@ -25,9 +30,10 @@ jobs:
       - name: Unit
         run: make -o "$PWD/amk" test artifact.ape="$PWD/amk"
 
-  # The tests that start servers, hold ports, and fetch from GitHub, one at a time.
+  # The tests that start servers, hold ports, and fetch from GitHub, one at a time; the default build covers them, since a distribution adds engines and changes none.
   integration:
     name: Integration tests
+    if: inputs.dist == ''
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -35,7 +41,7 @@ jobs:
       - name: Download amk
         uses: actions/download-artifact@v8
         with:
-          name: amk-default
+          name: amk-${{ inputs.dist || 'default' }}
       - name: Restore the exec bit
         run: chmod +x amk
       - name: Install pytest
@@ -45,7 +51,7 @@ jobs:
 
   # One file runs everywhere: prove it on hosts that never built it.
   portable:
-    name: Run on ${{ matrix.os }}
+    name: Run ${{ inputs.dist }} on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,7 +63,7 @@ jobs:
       - name: Download amk
         uses: actions/download-artifact@v8
         with:
-          name: amk-default
+          name: amk-${{ inputs.dist || 'default' }}
       # Artifacts drop the mode, and the bootstrap finds itself by command -v, which on macOS skips a file that is not executable.
       - name: Restore the exec bit
         run: chmod +x amk
@@ -75,3 +81,8 @@ jobs:
       - name: wasm3 by flag
         run: |
           sh ./amk --wasm --func fib fib32.wasm 20 2>&1 | grep -x 'Result: 6765'
+      # The standard library, zlib, and the certificate bundle all load from the payload, with nothing from the host.
+      - name: cpython by flag
+        if: inputs.dist == 'omnibus'
+        run: |
+          sh ./amk --cpython 'import ssl, zlib; print("cpython by flag:", len(ssl.create_default_context().get_ca_certs()) > 100)' | grep -x 'cpython by flag: True'
