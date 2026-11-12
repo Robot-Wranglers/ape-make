@@ -176,6 +176,13 @@ amk_now_ms (void)
   return (long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+/* strcpy is dispatched by cpu on x86_64, and taking its address in a table leaves the slot every direct call uses unset, so the table names this instead. */
+static char *
+tcc_strcpy (char *dst, const char *src)
+{
+  return strcpy (dst, src);
+}
+
 static void
 tcc_add_symbols (TCCState *s)
 {
@@ -183,7 +190,7 @@ tcc_add_symbols (TCCState *s)
     { "write", (const void *) write }, { "snprintf", (const void *) snprintf },
     { "printf", (const void *) printf }, { "puts", (const void *) puts },
     { "strlen", (const void *) strlen }, { "strcmp", (const void *) strcmp },
-    { "strncmp", (const void *) strncmp }, { "strcpy", (const void *) strcpy },
+    { "strncmp", (const void *) strncmp }, { "strcpy", (const void *) tcc_strcpy },
     { "strncpy", (const void *) strncpy }, { "strcat", (const void *) strcat },
     { "strchr", (const void *) strchr }, { "memcpy", (const void *) memcpy },
     { "memmove", (const void *) memmove }, { "memset", (const void *) memset },

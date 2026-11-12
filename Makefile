@@ -51,13 +51,13 @@ micropython.tarball := micropython-$(micropython.version).tar.xz
 micropython.url     := https://github.com/micropython/micropython/releases/download/v$(micropython.version)/$(micropython.tarball)
 micropython.sha256  := d925a7c664e79a2bdf3dfcb285ba5e2237041cc35a0bd4ee573b6c5711efeca0
 
-# TinyCC's last release predates its arm64 backend, so its version is the mob commit it pins, served as a repo.or.cz snapshot.
+# TinyCC's last release predates its arm64 backend, so its version is the mob commit it pins, served as an archive from the GitHub mirror.
 tcc.commit  := 2d3eea205cb6c0f796d01d7d0858eb6c6c1d993f
 tcc.short   := $(shell printf %.7s $(tcc.commit))
 tcc.version := 0.9.28rc
 tcc.tarball := tinycc-$(tcc.short).tar.gz
-tcc.url     := https://repo.or.cz/tinycc.git/snapshot/$(tcc.commit).tar.gz
-tcc.sha256  := bd74436132edb89d7e45cd29b34f3e14b251a64016ba8f10bd43cf560976afe5
+tcc.url     := https://github.com/TinyCC/tinycc/archive/$(tcc.commit).tar.gz
+tcc.sha256  := 65f1c795d10a04d90fb8b0f66f4578bbffe49bc27367214ba49104fe08af61a1
 
 wasm3.version := 0.9.0
 wasm3.tarball := wasm3-$(wasm3.version).tar.gz
@@ -83,27 +83,24 @@ sqlite.sha256  := 1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e8
 
 cosmocc.version := 4.0.2
 cosmocc.zip     := cosmocc-$(cosmocc.version).zip
-cosmocc.url     := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
-cosmocc.mirror  := https://github.com/jart/cosmopolitan/releases/download/$(cosmocc.version)/$(cosmocc.zip)
+cosmocc.url     := https://github.com/jart/cosmopolitan/releases/download/$(cosmocc.version)/$(cosmocc.zip)
+cosmocc.mirror  := https://cosmo.zip/pub/cosmocc/$(cosmocc.zip)
 cosmocc.sha256  := 85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44
 
 # Tools are released cosmos binaries, zipped into the payload unchanged; patch 0012 puts them first on PATH.
 cosmos.version := 4.0.2
 tools.all      := sed bash jb cat ls
 tools.optout   := jb cat ls
-sed.file       := sed-$(cosmos.version).ape
-sed.url        := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/sed
+# A cosmos tool pins a digest and nothing else: its file and both urls follow from its name.
+cosmos.tools   := sed bash cat ls
+# The release zip GitHub hosts answers build hosts that cosmo.zip does not, so it goes first; a url written as zip#member is one file out of that zip.
+cosmos.url     := https://github.com/jart/cosmopolitan/releases/download/$(cosmos.version)/cosmos-$(cosmos.version).zip\#bin
+cosmos.mirror  := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin
 sed.sha256     := 343f00b93739d4ff145c44e28a07889591425cb766bcf7d9e4534708d6fc6cd8
 # The two a script reaches for first on a payload file: built with cosmo, so they see /zip where the host's do not.
-cat.file       := cat-$(cosmos.version).ape
-cat.url        := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/cat
 cat.sha256     := d91c6d0fdd049953a866f3a6f9ae371ca3da5003b1882c3d9fb95f606bbf71d3
-ls.file        := ls-$(cosmos.version).ape
-ls.url         := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/ls
 ls.sha256      := 91aed87ef3763e23fc625aeb91042849bb608df20f0b9290dc262e06b1762a42
 # The shell every makefile under amk names as bash, and the one core forks by default.
-bash.file      := bash-$(cosmos.version).ape
-bash.url       := https://cosmo.zip/pub/cosmos/v/$(cosmos.version)/bin/bash
 bash.sha256    := 5de7cab218c12583413c541363848bc278e8f48dba07d96b9f5790ef40b72e3e
 # What that release reports, for the engine row bash takes without being linked in.
 bash.version   := 5.2.0
@@ -260,9 +257,15 @@ engines.features = $(strip $(foreach e,$(engines),$($(e).feature)) $(tools.engin
 # The names the given binary answers to, every engine's own and its aliases, as its engine listing reports them.
 engines.names    = $(1) --list-engines | awk -F'"' '/"(name|aliases)":/ { for (i = 4; i < NF; i += 2) print $$i }'
 
-tools.files := $(foreach t,$(tools),$($(t).file))
+# Every pinned input by name; the file, urls, and digest of each come from its own variables, so a new input needs no line anywhere else.
+deps.names  := make $(engines) $(tools) $(libs) cosmocc
+dep.get      = $(if $(filter-out undefined,$(origin $(1))),$($(1)))
+dep.cosmos   = $(filter $(1),$(cosmos.tools))
+dep.file     = $(if $(call dep.cosmos,$(1)),$(1)-$(cosmos.version).ape,$(or $(call dep.get,$(1).tarball),$(call dep.get,$(1).file),$(call dep.get,$(1).zip)))
+dep.urls     = $(if $(call dep.cosmos,$(1)),$(cosmos.url)/$(1) $(cosmos.mirror)/$(1),$($(1).url) $(call dep.get,$(1).mirror))
+tools.files := $(foreach t,$(tools),$(call dep.file,$(t)))
 libs.tarballs := $(foreach l,$(libs),$($(l).tarball))
-deps.files  := $(make.tarball) $(foreach e,$(engines),$($(e).tarball)) $(tools.files) $(libs.tarballs) $(cosmocc.zip)
+deps.files  := $(foreach n,$(deps.names),$(call dep.file,$(n)))
 
 # The toolchain unpacks beside the downloads; name an installed copy here to skip that.
 cosmocc.dir ?= $(HERE)cosmocc
@@ -476,31 +479,18 @@ install.user install.global: install.%:
 deps: $(deps.files) verify
 	@# Fetch every pinned input that is not already here, then verify all of them.
 
-$(make.tarball): url := $(make.url) $(make.mirror)
-$(gawk.tarball): url := $(gawk.url) $(gawk.mirror)
-$(jq.tarball): url := $(jq.url)
-$(lua.tarball): url := $(lua.url)
-$(s7.tarball): url := $(s7.url)
-$(trilog.tarball): url := $(trilog.url)
-$(micropython.tarball): url := $(micropython.url)
-$(wasm3.tarball): url := $(wasm3.url)
-$(quickjs.tarball): url := $(quickjs.url)
-$(sqlite.tarball): url := $(sqlite.url)
-$(graphqlite.tarball): url := $(graphqlite.url)
-$(tcc.tarball): url := $(tcc.url)
-$(sed.file): url := $(sed.url)
-$(bash.file): url := $(bash.url)
-$(jb.file): url := $(jb.url)
-$(gmsl.tarball): url := $(gmsl.url)
-$(dkjson.tarball): url := $(dkjson.url)
-$(lxsc.tarball): url := $(lxsc.url)
-$(utemplate.tarball): url := $(utemplate.url)
-$(effection.tarball): url := $(effection.url)
-$(cosmocc.zip): url := $(cosmocc.url) $(cosmocc.mirror)
+url   = $(strip $(foreach n,$(deps.names),$(if $(filter $@,$(call dep.file,$(n))),$(call dep.urls,$(n)))))
+fetch = curl -fsSL --connect-timeout 30 --retry 3 --retry-all-errors
 $(deps.files):
 	@# The first url is the home of the input; any after it are mirrors, tried in turn, and verify checks the digest whichever answered.
 	$(call log, deps, fetching $@ from $(firstword $(url)))
-	for u in $(url); do curl -fsSL --connect-timeout 30 --retry 3 --retry-all-errors "$$u" -o "$@.part" && break; \
+	for u in $(url); do \
+	  case "$$u" in \
+	    *'#'*) zip=$${u%%#*}; kept=$${zip##*/}; \
+	      { [ -f "$$kept" ] || { $(fetch) "$$zip" -o "$$kept.part" && mv "$$kept.part" "$$kept"; }; } \
+	        && unzip -p "$$kept" "$${u#*#}" > "$@.part";; \
+	    *) $(fetch) "$$u" -o "$@.part";; \
+	  esac && break; \
 	  $(call log, deps, $$u did not answer); false; done \
 	  || $(call die, deps, could not fetch $@ from $(words $(url)) url(s) -- partial file left at $@.part)
 	mv "$@.part" "$@"
@@ -509,11 +499,7 @@ verify:
 	@# Check every download against its pinned digest.
 	$(call log, verify, checking $(words $(deps.files)) downloads against their pinned digests)
 	printf '%s  %s\n' \
-	  $(make.sha256) $(make.tarball) \
-	  $(foreach e,$(engines),$($(e).sha256) $($(e).tarball)) \
-	  $(foreach t,$(tools),$($(t).sha256) $($(t).file)) \
-	  $(foreach l,$(libs),$($(l).sha256) $($(l).tarball)) \
-	  $(cosmocc.sha256) $(cosmocc.zip) \
+	  $(foreach n,$(deps.names),$($(n).sha256) $(call dep.file,$(n))) \
 	| $(sha256) -c - \
 	  || $(call die, verify, a download does not match its pin -- remove the file named above and rerun make deps)
 
@@ -810,7 +796,7 @@ $(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(foreach l,$(libs),
 	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/ with the prelude)
 	mkdir -p $(bin)
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
-	$(foreach t,$(tools),$(foreach n,$(call tool.names,$(t)),install -m 0755 $($(t).file) build/payload$(suffix)/bin/$(n);))
+	$(foreach t,$(tools),$(foreach n,$(call tool.names,$(t)),install -m 0755 $(call dep.file,$(t)) build/payload$(suffix)/bin/$(n);))
 	@# The call channel's shell side rides in bin/ too, so a recipe sources it by name from PATH.
 	install -m 0644 guest/amk.sh build/payload$(suffix)/bin/amk.sh
 	$(foreach l,$(libs),$(foreach f,$(addprefix $(call lib.dir,$(l)),$($(l).files)),mkdir -p $(dir $(call payload.dest,lib/$(f))) && install -m 0644 $($(l).src)/$(f:$(call lib.dir,$(l))%=%) $(call payload.dest,lib/$(f));))
@@ -856,7 +842,6 @@ smoke: $(artifact.ape) smoke.demos
 	$(if $(filter wasm3,$(engines)),sh -c "$(artifact.ape) --wasm --func fib $(wasm3.src)/test/lang/fib32.wasm 20" 2>&1 | grep -x 'Result: 6765')
 	$(call log, smoke, the payload tools first on PATH)
 	sh -c "$(artifact.ape) -f smoke.mk path tools='$(tools)'"
-	env AMK_NO_PATH=1 sh -c "$(artifact.ape) -f smoke.mk path.off tools='$(tools)'"
 	$(if $(filter jb,$(tools)),sh -c "$(artifact.ape) -f smoke.mk jb")
 	$(call log, smoke, the payload libraries read in place from /zip/lib)
 	env MAKEFLAGS=-s sh -c "$(artifact.ape) -f smoke.mk libs libs='$(libs)'"

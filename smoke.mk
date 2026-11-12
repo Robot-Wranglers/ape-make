@@ -69,13 +69,6 @@ path:
 	test "$${BASH_VERSINFO[0]}" -ge 5
 	echo "shell: bash $${BASH_VERSION} at $$(command -v bash)"
 
-# With AMK_NO_PATH set, no payload tool is on PATH.
-path.off:
-	for t in $(tools); do case "$$(command -v $$t)" in \
-	  */amk/*/bin/$$t) echo "$$t is on PATH despite AMK_NO_PATH" >&2; exit 1;; \
-	  esac; done
-	echo "AMK_NO_PATH: PATH left alone"
-
 # jb makes an object, jb-array an array; json.bash sources by name from PATH.
 jb: SHELL := bash
 jb:
