@@ -258,9 +258,9 @@ and verifies it, so a digest that moved upstream surfaces before it breaks a rel
 The [omnibus distribution](#distributions) is built on demand only. The `Omnibus` workflow
 runs by hand: it builds `dist=omnibus`, smokes it, and runs the unit suite and the same
 three hosts. No push, pull request, release, or weekly run builds it, so its pins are
-checked only when it runs. Started from a `v` tag that already has a release, with its
-publish input set, it adds `amk-omnibus` and `amk-omnibus.sha256` to that release and
-pushes the image as `<version>-omnibus` and `omnibus`.
+checked only when it runs. With its publish input set it also pushes the image as
+`omnibus` and adds `amk-omnibus` and `amk-omnibus.sha256` to the latest release. Started
+from a `v` tag, it uses that tag's release and adds the image tag `<version>-omnibus`.
 
 <a id="layout"></a>
 
