@@ -47,6 +47,10 @@ jobs:
         run: make patch dist="$DIST"
       - name: Build
         run: make build dist="$DIST"
+      # A guest's compile writes to a log of its own, which the run would otherwise end without showing.
+      - name: Show the guest build logs
+        if: failure()
+        run: tail -n 80 build/*/build.log || true
       - name: Smoke
         run: make smoke dist="$DIST"
       # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.

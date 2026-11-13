@@ -334,6 +334,7 @@ tcc.src := src/tinycc-$(tcc.short)
 # The archives of the linked libraries an engine needs and the build has, for its partial link; each library installs under a root of its own.
 needs.built    = $(foreach n,$(filter $(clibs),$($(1).needs)),build/$(n)-ape/.built)
 needs.archives = $(foreach n,$(filter $(clibs),$($(1).needs)),$(addprefix $(HERE)$($(n).root)/,$($(n).archives)))
+guest.archive  = $(call dep.get,$(1).archive)
 gmsl.src  := src/gmsl-$(gmsl.version)
 dkjson.src := src/dkjson-$(dkjson.version)
 lxsc.src := src/lxsc-$(lxsc.version)
@@ -521,8 +522,8 @@ cacert.url     := https://curl.se/ca/$(cacert.file)
 cacert.sha256  := 427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285
 cacert.dest    := usr/share/ssl/cert.pem
 
-# CPython cross-configures for cosmocc against a build python of its own, with its extension modules built in.
-cpython.configure = --build=$$($(HERE)$(cpython.src)/config.guess) --host=x86_64-pc-linux-gnu \
+# CPython cross-configures for cosmocc against a build python of its own, with its extension modules built in; the host's vendor field differs from any build machine's, so an x86_64 Linux builder cross-compiles too.
+cpython.configure = --build=$$($(HERE)$(cpython.src)/config.guess) --host=x86_64-cosmo-linux-gnu \
                     --with-build-python=$(HERE)$(cpython.hostpy) --disable-shared --disable-ipv6 \
                     --without-ensurepip --disable-test-modules MODULE_BUILDTYPE=static \
                     ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no $(cpython.zlib) \
@@ -896,10 +897,10 @@ $(guests.ape)/%.o: build/%-ape/.built
 	cd build/$*-ape \
 	  && $(cosmocc.dir)/bin/x86_64-linux-cosmo-ld -r $($*.ldflags) \
 	       $$(ls $(foreach d,$($*.objdirs),$(d)/*.o) | grep -vE 'conftest$($*.objskip)') \
-	       $(if $($*.archive),--whole-archive $($*.archive) --no-whole-archive) $(call needs.archives,$*) -o $(HERE)$@ \
+	       $(if $(call guest.archive,$*),--whole-archive $(call guest.archive,$*) --no-whole-archive) $(call needs.archives,$*) -o $(HERE)$@ \
 	  && $(cosmocc.dir)/bin/aarch64-linux-cosmo-ld -r $($*.ldflags) \
 	       $$(ls $(foreach d,$($*.objdirs),$(d)/.aarch64/*.o) | grep -vE 'conftest$($*.objskip)') \
-	       $(if $($*.archive),--whole-archive $(join $(dir $($*.archive)),$(addprefix .aarch64/,$(notdir $($*.archive)))) --no-whole-archive) \
+	       $(if $(call guest.archive,$*),--whole-archive $(join $(dir $(call guest.archive,$*)),$(addprefix .aarch64/,$(notdir $(call guest.archive,$*)))) --no-whole-archive) \
 	       $(foreach a,$(call needs.archives,$*),$(dir $(a)).aarch64/$(notdir $(a))) -o $(HERE)$(@D)/.aarch64/$*.o \
 	  && $(cosmocc.dir)/bin/x86_64-linux-cosmo-objcopy $($*.objrename) --localize-hidden $(HERE)$@ \
 	  && $(cosmocc.dir)/bin/aarch64-linux-cosmo-objcopy $($*.objrename) --localize-hidden $(HERE)$(@D)/.aarch64/$*.o
