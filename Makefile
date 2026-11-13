@@ -1121,40 +1121,31 @@ vscode:
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-# A release is a v-tag pushed from any branch; the Release workflow builds and publishes it.
-version ?=
+# A release is a push to main; the Release workflow chooses the next version, builds, and publishes it.
 release.remote ?= origin
-release.tag     = v$(version)
 release.branch  = $$(git branch --show-current)
 
 release: release.preflight
-	@# Tag the head commit v$(version), push the branch and then the tag, and watch the run when gh is on PATH.
-	$(call log, release, tagging $(release.tag) on $(release.branch))
-	git tag -a $(release.tag) -m "amk $(release.tag)"
-	git push $(release.remote) "$(release.branch)"
-	git push $(release.remote) $(release.tag)
-	$(call log, release, pushed $(release.tag) -- the Release workflow builds and publishes it)
-	if command -v gh >/dev/null; then $(MAKE) release.watch version=$(version); else $(call log, release, gh is not on PATH -- watch the run under Actions); fi
+	@# Push main and watch the Release run for the head commit when gh is on PATH.
+	git push $(release.remote) main
+	$(call log, release, pushed main -- the Release workflow numbers, builds, and publishes it)
+	if command -v gh >/dev/null; then $(MAKE) release.watch; else $(call log, release, gh is not on PATH -- watch the run under Actions); fi
 
 release.preflight:
-	@# The version is X.Y.Z, the tree is committed, and the tag is free both locally and on the remote.
-	printf '%s' '$(version)' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' \
-	  || $(call die, release, version=X.Y.Z is required -- got '$(version)')
+	@# The branch is main and the tree is committed.
+	[ "$(release.branch)" = main ] \
+	  || $(call die, release, a release is cut from main -- this is $(release.branch))
 	[ -z "$$(git status --porcelain --untracked-files=no)" ] \
 	  || { git status --short --untracked-files=no >&2; $(call die, release, the working tree has uncommitted changes); }
-	! git rev-parse -q --verify refs/tags/$(release.tag) >/dev/null \
-	  || $(call die, release, $(release.tag) already exists locally)
-	! git ls-remote --exit-code --tags $(release.remote) refs/tags/$(release.tag) >/dev/null 2>&1 \
-	  || $(call die, release, $(release.tag) already exists on $(release.remote))
-	$(call log, release, preflight ok -- $(release.tag) on $(release.branch) is committed and the tag is free)
+	$(call log, release, preflight ok -- main is committed)
 
 release.watch:
-	@# Stream the Release run for v$(version) to completion; rerun this alone to reattach.
-	rid=; for i in $$(seq 1 30); do \
-	  rid=$$(gh run list --workflow release.yml --branch $(release.tag) --limit 1 --json databaseId --jq '.[0].databaseId'); \
+	@# Stream the Release run for the head commit to completion; rerun this alone to reattach.
+	sha=$$(git rev-parse HEAD); rid=; for i in $$(seq 1 30); do \
+	  rid=$$(gh run list --workflow release.yml --commit $$sha --limit 1 --json databaseId --jq '.[0].databaseId'); \
 	  if [ -n "$$rid" ]; then break; fi; sleep 5; \
 	done; \
-	[ -n "$$rid" ] || $(call die, release, no Release run found for $(release.tag)); \
+	[ -n "$$rid" ] || $(call die, release, no Release run found for $$sha -- a commit that changes only docs or images starts none); \
 	$(call log, release, streaming run $$rid); gh run watch "$$rid" --exit-status
 
 clean:

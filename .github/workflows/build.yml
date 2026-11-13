@@ -7,6 +7,10 @@ on:
       dist:
         type: string
         default: ''
+      # The version to build as, when the caller has chosen one; empty reads it from the nearest v-tag.
+      version:
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -17,6 +21,7 @@ jobs:
     env:
       DIST: ${{ inputs.dist }}
       SUFFIX: ${{ inputs.dist && format('-{0}', inputs.dist) || '' }}
+      VERSION: ${{ inputs.version && format('amk.version={0}', inputs.version) || '' }}
     steps:
       # The Makefile reads the version from the nearest v-tag, so the checkout needs the tags and the history behind them.
       - name: Checkout
@@ -42,22 +47,22 @@ jobs:
             deps-${{ runner.os }}-${{ inputs.dist && format('{0}-', inputs.dist) || '' }}
             deps-${{ runner.os }}-
       - name: Fetch and verify inputs
-        run: make deps dist="$DIST"
+        run: make deps dist="$DIST" $VERSION
       - name: Unpack and patch
-        run: make patch dist="$DIST"
+        run: make patch dist="$DIST" $VERSION
       - name: Build
-        run: make build dist="$DIST"
+        run: make build dist="$DIST" $VERSION
       # A guest's compile writes to a log of its own, which the run would otherwise end without showing.
       - name: Show the guest build logs
         if: failure()
         run: tail -n 80 build/*/build.log || true
       - name: Smoke
-        run: make smoke dist="$DIST"
+        run: make smoke dist="$DIST" $VERSION
       # The image is the same artifact assimilated per arch; smoke runs inside it, so this proves the amd64 half, and release.yml publishes both.
       - name: Docker image
-        run: make build.docker dist="$DIST"
+        run: make build.docker dist="$DIST" $VERSION
       - name: Smoke the image
-        run: make smoke.docker dist="$DIST"
+        run: make smoke.docker dist="$DIST" $VERSION
       # A tarball, since upload-artifact drops the alias symlinks and the exec bits the context needs.
       - name: Pack the image context
         run: tar -C "build/docker$SUFFIX" -cf docker-context.tar amd64 arm64

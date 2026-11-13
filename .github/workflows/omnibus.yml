@@ -1,4 +1,4 @@
-# The omnibus distribution, on demand only: a manual run builds amk with CPython and OpenSSL through build.yml and tests it through test.yml, so no push, pull request, or release waits on it or fails for it.
+# The omnibus distribution, always in a run of its own: release.yml starts one from each new tag, and a manual run works too. It builds amk with CPython and OpenSSL through build.yml and tests it through test.yml, so no push, pull request, or release waits on it or fails for it.
 name: Omnibus
 on:
   workflow_dispatch:

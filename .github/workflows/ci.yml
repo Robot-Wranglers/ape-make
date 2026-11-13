@@ -1,10 +1,7 @@
-# Every push and pull request to main: build once, then test the binaries that build kept.
+# Every pull request to main: build once, then test the binaries that build kept; a push to main runs the same jobs in release.yml, which then publishes.
 name: CI
 on:
   workflow_dispatch: {}
-  push:
-    branches: [ "main" ]
-    paths-ignore: ['**.md', '**.png', '**.svg']
   pull_request:
     branches: [ "main" ]
     paths-ignore: ['**.md', '**.png', '**.svg']

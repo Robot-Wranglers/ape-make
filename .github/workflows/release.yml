@@ -1,28 +1,61 @@
-# A pushed v-prefixed tag builds amk through build.yml and tests it through test.yml, then publishes the binary and its digest as a GitHub Release and the image to ghcr.
+# Every push to main is a release, and a manual run on main is one too: the next version is chosen here, amk is built as it through build.yml and tested through test.yml and itest.yml, then the binary and its digest are published as a GitHub Release and the image to ghcr.
 name: Release
 on:
   workflow_dispatch: {}
   push:
-    tags: [ "v*" ]
+    branches: [ "main" ]
+    paths-ignore: ['**.md', '**.png', '**.svg']
 permissions:
   contents: read
+# One release at a time, so each run sees the tag the run before it made.
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
-  build:
-    uses: ./.github/workflows/build.yml
+  # No one names a version: it is the highest v-tag with its last number raised by one, and the tag is made only when the release is.
+  version:
+    name: Next version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Choose the next version
+        id: next
+        run: |
+          last="$(gh api "repos/${GITHUB_REPOSITORY}/tags" --paginate --jq '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          base="${last:-v0.0.0}"
+          base="${base#v}"
+          next="${base%.*}.$(( ${base##*.} + 1 ))"
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+          echo "highest tag ${last:-none}, releasing v${next}"
 
-  # Nothing publishes until the binaries pass the same tests ci.yml runs.
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  # Nothing publishes until the binaries pass the tests and the demos.
   test:
     needs: build
     uses: ./.github/workflows/test.yml
 
-  # The image for amd64 and arm64 from the context build.yml smoked; a manual run on a branch builds both and pushes nothing.
+  itest:
+    needs: build
+    uses: ./.github/workflows/itest.yml
+
+  # The image for amd64 and arm64 from the context build.yml smoked; a manual run on another branch builds both and pushes nothing.
   image:
     name: Publish image
-    needs: test
+    needs: [ version, test, itest ]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -36,7 +69,7 @@ jobs:
       - name: Set up buildx
         uses: docker/setup-buildx-action@v4
       - name: Log in to ghcr
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -44,29 +77,30 @@ jobs:
           password: ${{ github.token }}
       - name: Build and push
         env:
-          PUSH: ${{ startsWith(github.ref, 'refs/tags/v') && '--push' || '' }}
+          PUSH: ${{ github.ref == 'refs/heads/main' && '--push' || '' }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/amk"
-          version="${GITHUB_REF_NAME#v}"
           docker buildx build ${PUSH} \
             --platform linux/amd64,linux/arm64 \
             --target amk \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.version=${version}" \
-            -t "${image}:${version}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -t "${image}:${VERSION}" \
             -t "${image}:latest" \
             -f Dockerfile context
 
-  # A manual run on a branch is a dry run: it builds and tests, and this job is skipped.
+  # A manual run on another branch is a dry run: it builds and tests, and this job is skipped.
   publish:
     name: Publish release
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ version, test, itest ]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -74,9 +108,9 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: amk-default
-      # The binary's banner must name the tag it ships under; a mismatch means the build did not see the tag.
-      - name: Version matches the tag
-        run: sh ./amk --version | sed -n 2p | grep -E "\(amk ${GITHUB_REF_NAME#v}[ :]"
+      # The binary's banner must name the version it ships under; a mismatch means the build did not take the chosen one.
+      - name: Version matches the release
+        run: sh ./amk --version | sed -n 2p | grep -E "\(amk ${VERSION}[ :]"
       - name: Stage assets
         run: |
           mkdir -p dist
@@ -86,20 +120,25 @@ jobs:
       - name: Release notes
         run: |
           {
-            echo "amk ${GITHUB_REF_NAME}: one actually portable make with the guests linked in."
+            echo "amk v${VERSION}: one actually portable make with the guests linked in."
             echo
             echo '```bash'
-            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/amk"
-            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/amk.sha256"
+            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/amk"
+            echo "curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/amk.sha256"
             echo 'sha256sum -c amk.sha256 && chmod +x amk'
             echo '```'
             echo
             echo 'Inputs are pinned by version and digest in the Makefile at this tag.'
           } > notes.md
+      # Creating the release makes the tag, on the commit this run built.
       - name: Create release
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "amk ${GITHUB_REF_NAME}" \
+          gh release create "v${VERSION}" \
+            --target "${GITHUB_SHA}" \
+            --title "amk v${VERSION}" \
             --notes-file notes.md \
-            --verify-tag \
             dist/amk dist/amk.sha256
+      # The omnibus distribution follows in a run of its own, started from the new tag, so it adds to this release and can neither delay nor fail it.
+      - name: Start the omnibus run
+        continue-on-error: true
+        run: gh workflow run omnibus.yml --ref "v${VERSION}" -f publish=true

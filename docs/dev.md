@@ -231,36 +231,47 @@ leaves, so they say which amk version they apply to and are rebased when it move
 
 ## Releases
 
-A release is a pushed tag that starts with `v`, and the tag is the version: the Makefile
-reads `amk.version` from the nearest `v` tag with `git describe`, so the banner and
-`.AMK_VERSION` say `0.2.0` at the tag and something like `0.2.0-3-gabc1234-dirty` on a
-build past it. One command cuts a release from any branch:
+Every push to `main` is a release, and no one names its version. The `Release` workflow
+takes the highest `v` tag, raises its last number by one, and builds `amk` as that
+version. The tag is made with the release, after the tests pass, so a failed run uses no
+number. A commit that changes only docs or images starts no run.
 
 ```bash
-version=0.2.0 make release
+# push main and watch the run
+make release
+
+# release main again without a new commit
+gh workflow run release.yml --ref main
 ```
 
-It refuses to run unless the version is `X.Y.Z`, every tracked change is committed, and
-`v0.2.0` exists neither locally nor on `origin`. Then it tags the head, pushes the branch
-and the tag, and streams the workflow run when `gh` is installed; `make release.watch
-version=0.2.0` reattaches to a run. `release.remote=` names another remote.
+`make release` refuses to run off `main` or with tracked changes uncommitted, and streams
+the run when `gh` is installed; `make release.watch` reattaches to it. `release.remote=`
+names another remote. To jump further than one, push a tag such as `v0.2.0` by hand, and
+the next release counts on from it.
 
-The `Release` workflow builds `amk` from a clean tree on Linux, runs `make smoke`, checks
-that the banner names the tag, runs
-the built file on x86_64 Linux, arm64 Linux, and macOS without rebuilding it, and
-publishes `amk` and `amk.sha256` as a GitHub Release named after the tag, and the
-container image to `ghcr.io/robot-wranglers/amk` after smoking it on amd64. Running the
-workflow by hand on a branch is a dry run: it builds and checks, builds the image for both
-platforms, and pushes nothing. Every push and pull request runs the same build through the `Build` workflow and
-keeps the result as a workflow artifact. A weekly `Pins` workflow fetches every input cold
-and verifies it, so a digest that moved upstream surfaces before it breaks a release.
+A release build takes its version from the workflow. Any other build reads `amk.version`
+from the nearest `v` tag with `git describe`, so the banner and `.AMK_VERSION` say `0.2.0`
+at the tag and something like `0.2.0-3-gabc1234-dirty` past it.
 
-The [omnibus distribution](#distributions) is built on demand only. The `Omnibus` workflow
-runs by hand: it builds `dist=omnibus`, smokes it, and runs the unit suite and the same
-three hosts. No push, pull request, release, or weekly run builds it, so its pins are
-checked only when it runs. With its publish input set it also pushes the image as
-`omnibus` and adds `amk-omnibus` and `amk-omnibus.sha256` to the latest release. Started
-from a `v` tag, it uses that tag's release and adds the image tag `<version>-omnibus`.
+The workflow builds `amk` from a clean tree on Linux, runs `make smoke`, runs the unit
+suite, the integration suite and the demos, runs the built file on x86_64 Linux, arm64
+Linux, and macOS without rebuilding it, and checks that the banner names the version. It
+then publishes `amk` and `amk.sha256` as a GitHub Release, and the container image to
+`ghcr.io/robot-wranglers/amk` after smoking it on amd64. Releases run one at a time.
+Running the workflow by hand on another branch is a dry run: it builds and checks, builds
+the image for both platforms, and pushes nothing. A pull request runs the same build and
+tests through the `CI` workflow and publishes nothing. A weekly `Pins` workflow fetches
+every input cold and verifies it, so a digest that moved upstream surfaces before it
+breaks a release.
+
+The [omnibus distribution](#distributions) follows every release in a run of its own. Once
+a release is published, the `Release` workflow starts the `Omnibus` workflow from the new
+tag. That run builds `dist=omnibus`, smokes it, runs the unit suite and the same three
+hosts, then adds `amk-omnibus` and `amk-omnibus.sha256` to the release and pushes the
+image as `<version>-omnibus` and `omnibus`. It starts after the release exists, so it can
+neither delay a release nor fail one; a release whose omnibus run failed has no omnibus
+asset. The workflow also runs by hand, and with its publish input set from a branch it
+publishes to the latest release under the image tag `omnibus` alone.
 
 <a id="layout"></a>
 
