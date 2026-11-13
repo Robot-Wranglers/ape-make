@@ -526,10 +526,12 @@ cacert.dest    := usr/share/ssl/cert.pem
 cpython.configure = --build=$$($(HERE)$(cpython.src)/config.guess) --host=x86_64-cosmo-linux-gnu \
                     --with-build-python=$(HERE)$(cpython.hostpy) --disable-shared --disable-ipv6 \
                     --without-ensurepip --disable-test-modules MODULE_BUILDTYPE=static \
-                    ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no $(cpython.zlib) \
+                    ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no $(cpython.zlib) $(cpython.nopkg) \
                     $(if $(filter openssl,$(clibs)),--with-openssl=$(HERE)$(openssl.root) --with-openssl-rpath=no)
 # cosmo's libc carries zlib under a header directory of its own, so configure is told where the header is and that no further library is needed.
 cpython.zlib    = ZLIB_CFLAGS=-I$(cosmocc.dir)/include/third_party/zlib ZLIB_LIBS=-lc
+# The builder's pkg-config describes libraries for the builder's own libc, such as libffi, so configure gets none and finds only what cosmocc can compile against.
+cpython.nopkg  := PKG_CONFIG=false
 cpython.hostpy  = build/cpython-host/python$(if $(filter Darwin,$(os)),.exe)
 # The standard library less its tests, its gui, and what installs packages, as excludes on the copy into lib/python3.12/.
 cpython.libskip := test idlelib tkinter turtledemo ensurepip lib2to3 __pycache__
