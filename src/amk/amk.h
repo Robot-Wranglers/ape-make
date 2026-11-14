@@ -212,8 +212,12 @@ void amk_ns_version_bump (const char *ns);
 void amk_held_end (void);
 int amk_fd_is_pipe (const char *spec);
 int amk_write_all (int fd, const void *buf, size_t len);
-/* Color on stderr, and a warning line under amk's name that uses it.  */
+/* Color on stderr, and a warning line under amk's name that uses it; the usage lines take color on their own stream.  */
+int amk_color_for (FILE *to);
 int amk_color (void);
+void amk_usage_heading (FILE *to, const char *text);
+void amk_usage_flag (FILE *to, const char *flag, int len);
+void amk_usage_line (FILE *to, const char *line);
 const char *amk_red (void);
 const char *amk_color_off (void);
 void amk_warn (const char *fmt, ...);
@@ -326,6 +330,8 @@ struct amk_cli_ops
     unsigned int file:1;
     /* The engine's names join the payload's tools on PATH; only for a main that is the tool's whole command line.  */
     unsigned int tool:1;
+    /* The tool's whole command line, for a row whose main is not it: what the names on PATH run, and the flag once a double dash follows it.  */
+    int (*tool_main) (int, char **);
   };
 
 /* Every kept state: create gives a fresh opaque state, or null when the engine cannot make another; single marks an engine whose only state is main. Make owns every state and the namespace it belongs to; no guest sees a namespace name. */
@@ -376,6 +382,8 @@ extern const struct amk_engine amk_engines[];
 const struct amk_engine *amk_engine_by_name (const char *name);
 int amk_engine_called (const struct amk_engine *e, const char *word);
 int amk_engine_tool_line (int argc, char **argv);
+int amk_engine_run_name (const struct amk_engine *e, int argc, char **argv);
+int amk_engine_run_flag (const struct amk_engine *e, int argc, char **argv);
 void amk_engines_check (void);
 void amk_engines_json (FILE *out);
 void amk_engine_versions (void);
@@ -467,6 +475,7 @@ extern int trilog_update (void *state, struct amk_sink *out, const char *prog);
 extern int trilog_load (void *state, const char *text);
 extern int trilog_dump (void *state, struct amk_sink *out);
 extern int micropy_run_main (int argc, char **argv);
+extern int micropython_main (int argc, char **argv);
 extern void *micropy_create (void);
 extern int micropy_exec (void *state, struct amk_sink *out, const char *prog);
 extern int micropy_import (void *state, struct amk_sink *out, const char *prog);

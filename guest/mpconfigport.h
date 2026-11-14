@@ -68,8 +68,22 @@ mp_random_seed_init (void)
 /* Sockets as the unix port has them, polled through select. */
 #define MICROPY_PY_SOCKET                       (1)
 
-/* No terminal and no threads: nothing interactive; asyncio's Python half is read from the payload. */
-#define MICROPY_HELPER_REPL                     (0)
+/* The unix port's command line: its default path with the payload's modules added. */
+#define MICROPY_PY_SYS_PATH_DEFAULT             ".frozen:~/.micropython/lib:/usr/lib/micropython:/zip/lib/micropy"
+/* Compile-only runs as the unix port has them. */
+extern _Bool mp_compile_only;
+#define MICROPY_PYEXEC_COMPILE_ONLY             (1)
+/* A script's exit status as the unix port has it. */
+#define MICROPY_PYEXEC_ENABLE_EXIT_CODE_HANDLING (1)
+/* The verbose flag and its printers, as in the unix port. */
+#define MICROPY_DEBUG_PRINTERS                  (1)
+/* A module run by the command line's module option is the main module, as in the unix port. */
+#define MICROPY_MODULE_OVERRIDE_MAIN_IMPORT     (1)
+/* The port's state is the vm's, as in the unix port. */
+#define MP_STATE_PORT                           MP_STATE_VM
+
+/* A prompt that reads lines and no threads; asyncio's Python half is read from the payload. */
+#define MICROPY_HELPER_REPL                     (1)
 #define MICROPY_USE_READLINE                    (0)
 #define MICROPY_PY_BUILTINS_INPUT               (0)
 #define MICROPY_PY_BUILTINS_HELP                (0)

@@ -31,3 +31,7 @@ mp_hal_delay_us (mp_uint_t us)
   }
 
 void mp_hal_get_random (size_t n, uint8_t *buf);
+
+/* What the unix port's command line asks of a hal; no key interrupts a run here. */
+void mp_hal_set_interrupt_char (char c);
+#define CHAR_CTRL_C (3)

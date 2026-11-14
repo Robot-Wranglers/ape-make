@@ -492,7 +492,7 @@ amk_program_from_stdin (const struct amk_engine *e, int argc, char **argv)
   size_t len = 0, cap = 4096;
   struct stat st;
   int fd = STDIN_FILENO;
-  if (e->cli->argv || argc < 2)
+  if (e->cli->argv || argc < 2 || (e->cli->tool_main != NULL && strcmp (argv[1], "--") == 0))
     return;
   if (strcmp (argv[1], "-") != 0
       && (stat (argv[1], &st) != 0 || !S_ISREG (st.st_mode) || (fd = open (argv[1], O_RDONLY)) < 0))

@@ -48,14 +48,21 @@ write_all (int fd, const char *str, size_t len)
     }
 }
 
-static void
-stderr_print_strn (void *env, const char *str, size_t len)
+void
+mp_hal_set_interrupt_char (char c)
 {
-  (void) env;
-  write_all (2, str, len);
+  (void) c;
 }
 
-const mp_print_t mp_stderr_print = { NULL, stderr_print_strn };
+/* One byte of standard input, or the end-of-input key once there is no more. */
+int
+mp_hal_stdin_rx_chr (void)
+{
+  unsigned char c;
+  ssize_t r;
+  MP_HAL_RETRY_SYSCALL (r, read (0, &c, 1), {});
+  return r == 1 ? c : 4;
+}
 
 mp_uint_t
 mp_hal_stdout_tx_strn (const char *str, size_t len)
@@ -139,15 +146,6 @@ gc_collect (void)
   gc_collect_start ();
   gc_helper_collect_regs_and_stack ();
   gc_collect_end ();
-}
-
-/* An exception raised with no handler on the C stack, which run_chunk makes unreachable; leave through amk's exit rather than hang. */
-void
-nlr_jump_fail (void *val)
-{
-  (void) val;
-  fprintf (stderr, "micropy: exception raised outside the chunk\n");
-  exit (1);
 }
 
 /* A string make allocated, as a Python str, freed here; null becomes None. */

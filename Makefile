@@ -363,7 +363,7 @@ trilog.sources := $(addprefix src/kernel/,fmt.c heap.c unify.c term.c solve.c pa
                   src/io/io.c src/io/streams.c src/trilog.c src/platform/posix.c src/platform/libc.c
 trilog.includes := include src/kernel src/io src/platform
 # MicroPython compiles through its own makefiles, driven by guest/micropy.mk, and its objects land in these directories of the build tree.
-micropython.objdirs := . py extmod shared/runtime shared/libc shared/timeutils ports/unix extmod/mbedtls lib/mbedtls/library lib/mbedtls_errors
+micropython.objdirs := . py extmod shared/runtime shared/readline shared/libc shared/timeutils ports/unix extmod/mbedtls lib/mbedtls/library lib/mbedtls_errors
 # Python-side modules zipped as source under lib/micropy/, on micropython's path, as payload path and tarball path: asyncio's Python half, and ssl, requests, and mip from micropython-lib.
 micropython.pylib := $(foreach f,__init__ core event funcs lock stream task,asyncio/$(f).py:extmod/asyncio/$(f).py) \
   ssl.py:lib/micropython-lib/python-stdlib/ssl/ssl.py \
@@ -697,7 +697,7 @@ $(trilog.src): $(trilog.tarball) $(trilog.patches)
 	$(call apply.series,$@,$(trilog.patches),trilog $(trilog.short))
 	touch $@
 # The release tarball carries every port and vendored library; amk's port needs the core, the modules, the shared helpers, six in-tree libraries with mbedtls for ssl, and what it borrows from unix.
-micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c ports/unix/modsocket.c ports/unix/mbedtls lib/mbedtls lib/mbedtls_errors lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs $(filter-out extmod/%,$(foreach p,$(micropython.pylib),$(lastword $(subst :, ,$(p))))) LICENSE
+micropython.parts := py extmod shared ports/unix/modos.c ports/unix/modtime.c ports/unix/modsocket.c ports/unix/main.c ports/unix/input.c ports/unix/input.h ports/unix/stack_size.h ports/unix/mbedtls lib/mbedtls lib/mbedtls_errors lib/re1.5 lib/uzlib lib/crypto-algorithms lib/oofatfs $(filter-out extmod/%,$(foreach p,$(micropython.pylib),$(lastword $(subst :, ,$(p))))) LICENSE
 $(micropython.src): $(micropython.tarball)
 	$(call log, patch, unpacking $(words $(micropython.parts)) parts of $(micropython.tarball) into $@ unpatched)
 	mkdir -p src && tar xJf $(micropython.tarball) -C src $(addprefix micropython-$(micropython.version)/,$(micropython.parts)) && touch $@

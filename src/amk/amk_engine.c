@@ -48,7 +48,7 @@ static const struct amk_workspace_ops trilog_workspace = {
 };
 #endif
 #ifdef AMK_ENGINE_MICROPY
-static const struct amk_cli_ops micropy_cli = { .main = micropy_run_main };
+static const struct amk_cli_ops micropy_cli = { .main = micropy_run_main, .tool = 1, .tool_main = micropython_main };
 static const struct amk_state_ops micropy_state = {
   .kept = { .create = micropy_create, .single = 1 }, .exec = micropy_exec, .import = micropy_import, .hook = micropy_hook,
 };
@@ -166,7 +166,7 @@ const struct amk_engine amk_engines[] =
       .workspace = &trilog_workspace },
 #endif
 #ifdef AMK_ENGINE_MICROPY
-    { .name = "micropy", .language = "Python", .implementation = "MicroPython",
+    { .name = "micropy", .aliases = "micropython", .language = "Python", .implementation = "MicroPython",
       .version = AMK_STR (AMK_ENGINE_MICROPY), .cli = &micropy_cli, .state = &micropy_state, .deadline = "handle" },
 #endif
 #ifdef AMK_ENGINE_WASM3
@@ -595,7 +595,7 @@ amk_engine_called (const struct amk_engine *e, const char *word)
   return amk_engine_spelled (e, word, strlen (word));
 }
 
-/* Whether the line is a tool engine's own command line, by the name the binary runs under or by the engine's flag first; amk takes no option of its own from such a line.  */
+/* Whether the line is a tool engine's own command line, by the name the binary runs under or by the engine's flag first, which a row with a tool main apart from main needs a double dash after; amk takes no option of its own from such a line.  */
 int
 amk_engine_tool_line (int argc, char **argv)
 {
@@ -605,9 +605,37 @@ amk_engine_tool_line (int argc, char **argv)
   for (e = amk_engines; e->name; ++e)
     if (e->cli != NULL && e->cli->tool
         && (amk_engine_called (e, base)
-            || (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && amk_engine_called (e, argv[1] + 2))))
+            || (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && amk_engine_called (e, argv[1] + 2)
+                && (e->cli->tool_main == NULL || (argc >= 3 && strcmp (argv[2], "--") == 0)))))
       return 1;
   return 0;
+}
+
+/* A row's tool main over a line: the names are settled before the payload reaches the environment, so this run puts it there itself, as bash does.  */
+static int
+amk_engine_run_tool (const struct amk_engine *e, int argc, char **argv)
+{
+  amk_payload_path ();
+  return e->cli->tool_main (argc, argv);
+}
+
+/* The binary run under one of the row's names, with the whole line.  */
+int
+amk_engine_run_name (const struct amk_engine *e, int argc, char **argv)
+{
+  return e->cli->tool_main != NULL ? amk_engine_run_tool (e, argc, argv) : e->cli->main (argc, argv);
+}
+
+/* The binary run by the row's flag, with the line from the engine's name on: a double dash next hands the words after it to the tool main.  */
+int
+amk_engine_run_flag (const struct amk_engine *e, int argc, char **argv)
+{
+  if (e->cli->tool_main != NULL && argc >= 2 && strcmp (argv[1], "--") == 0)
+    {
+      argv[1] = argv[0];
+      return amk_engine_run_tool (e, argc - 1, argv + 1);
+    }
+  return e->cli->main (argc, argv);
 }
 
 /* The row that claims a file extension: the first in the table spelled that way, so registration order is preference order.  */

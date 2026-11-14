@@ -136,7 +136,7 @@ the profile, and answers a served request.
 +    N_("  --bundle-strip              Remove every payload member but the program's own and the tools under bin/.\n"),
 +    N_("  --out DEST, --in-place      Where a flag that changes the payload writes: a new copy, or this program itself.\n"),
 +    N_("  --preprocessor [FILE]       Print the makefile, or stdin, with its decorators rewritten, and do nothing else.\n"),
-+    N_("  --profile[=FILE]          Time every function, call macro and recursive variable by name; the table goes to FILE, or to stderr.\n"),
++    N_("  --profile[=FILE]            Time every function, call macro and recursive variable by name; the table goes to FILE, or to stderr.\n"),
 +    NULL
 +  };
 +
@@ -147,17 +147,17 @@ the profile, and answers a served request.
 +  const char *const *cpp;
 +  char flag[64];
 +
-+  fputs (_("\nOptions amk adds, each read ahead of the ones above:\n"), usageto);
++  amk_usage_heading (usageto, _("Options amk adds, each read ahead of the ones above:"));
 +  for (e = amk_engines; e->name; ++e)
 +    {
-+      sprintf (flag, "--%s ARGS...", e->name);
-+      fprintf (usageto, _("  %-27s Run the %s engine over the rest of the line"), flag, e->name);
++      amk_usage_flag (usageto, flag, sprintf (flag, "--%s ARGS...", e->name));
++      fprintf (usageto, _("Run the %s engine over the rest of the line"), e->name);
 +      if (e->aliases && *e->aliases)
 +        fprintf (usageto, _("; the same as the command %s"), e->aliases);
 +      fputs (".\n", usageto);
 +    }
 +  for (cpp = amk_usage; *cpp; ++cpp)
-+    fputs (_(*cpp), usageto);
++    amk_usage_line (usageto, _(*cpp));
 +}
 +
  /* Print a nice usage method and exit.  */
@@ -215,12 +215,12 @@ the profile, and answers a served request.
 +    for (e = amk_engines; e->name; ++e)
 +      {
 +        if (amk_engine_called (e, base))
-+          exit (e->cli->main (argc, argv));
++          exit (amk_engine_run_name (e, argc, argv));
 +        if (argc >= 2 && argv[1][0] == '-' && argv[1][1] == '-' && amk_engine_called (e, argv[1] + 2))
 +          {
 +            argv[1] = (char *) e->name;
 +            amk_program_from_stdin (e, argc - 1, argv + 1);
-+            exit (e->cli->main (argc - 1, argv + 1));
++            exit (amk_engine_run_flag (e, argc - 1, argv + 1));
 +          }
 +      }
 +    (void) base;

@@ -410,12 +410,33 @@ amk_payload_tools (void)
   free (dir);
 }
 
+/* A module path the caller set for micropython keeps the payload's modules after it, since that tool reads the variable in place of its default path.  */
+static void
+amk_payload_modules (void)
+{
+#ifdef AMK_ENGINE_MICROPY
+  static const char lib[] = ":/zip/lib/micropy";
+  const char *path = getenv ("MICROPYPATH");
+  size_t n = path != NULL ? strlen (path) : 0;
+  char *next;
+
+  if (n == 0 || (n >= sizeof lib - 1 && strcmp (path + n - (sizeof lib - 1), lib) == 0))
+    return;
+  next = xmalloc (n + sizeof lib);
+  memcpy (next, path, n);
+  memcpy (next + n, lib, sizeof lib);
+  setenv ("MICROPYPATH", next, 1);
+  free (next);
+#endif
+}
+
 /* A cosmo child maps the file this names as its own /zip, so a payload tool reads this payload in place; an inherited name goes before the first read of /zip, and the new one follows the change to PATH because it moves the environment main holds.  */
 void
 amk_payload_path (void)
 {
   unsetenv ("COSMOPOLITAN_INIT_ZIPOS");
   amk_payload_tools ();
+  amk_payload_modules ();
   setenv ("COSMOPOLITAN_INIT_ZIPOS", GetProgramExecutableName (), 1);
 }
 #else

@@ -6,11 +6,47 @@
 #include "amk.h"
 #include <stdarg.h>
 
-/* Whether stderr takes color: a terminal, unless NO_COLOR, or the same name without its underscore, is set.  */
+/* Whether a stream takes color: a terminal, unless NO_COLOR, or the same name without its underscore, is set.  */
+int
+amk_color_for (FILE *to)
+{
+  return getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (to));
+}
+
+/* Whether stderr takes color.  */
 int
 amk_color (void)
 {
-  return getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (stderr));
+  return amk_color_for (stderr);
+}
+
+/* The heading of amk's part of the usage, bold where the stream takes color.  */
+void
+amk_usage_heading (FILE *to, const char *text)
+{
+  int c = amk_color_for (to);
+  fprintf (to, "\n%s%s%s\n", c ? "\033[1m" : "", text, c ? "\033[0m" : "");
+}
+
+/* One flag of the usage, indented and padded to the description column, in cyan where the stream takes color.  */
+void
+amk_usage_flag (FILE *to, const char *flag, int len)
+{
+  int c = amk_color_for (to);
+  fprintf (to, "  %s%.*s%s%*s ", c ? "\033[36m" : "", len, flag, c ? "\033[0m" : "", len < 27 ? 27 - len : 0, "");
+}
+
+/* One line of the usage table: its flag column through amk_usage_flag, then its description as it is.  */
+void
+amk_usage_line (FILE *to, const char *line)
+{
+  const char *flag = line + 2, *end = strstr (flag, "  "), *desc;
+  if (end == NULL || end - flag > 27)
+    end = flag + 27;
+  for (desc = end; *desc == ' '; ++desc)
+    ;
+  amk_usage_flag (to, flag, (int) (end - flag));
+  fputs (desc, to);
 }
 
 /* The sequence that starts bold red on stderr, or nothing where stderr takes no color.  */

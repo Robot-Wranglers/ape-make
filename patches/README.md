@@ -68,7 +68,8 @@ upstream, in a module or a hook.
 ## The engine table
 
 `src/amk/amk.h` declares a row: the builtin name, which is also the feature word and the
-`--flag`, the multi-call names, the entry point, the argv shape, and the kept-state entries.
+`--flag`, the multi-call names, the entry point, the argv shape, a tool main apart from
+the entry point when the row has one, and the kept-state entries.
 The table lives in `amk_engine.c`, and everything that asks which engines exist reads it:
 the `$(name)` and `$(name.argv)` registration, `.FEATURES` and `.ENGINES`, the multi-call
 dispatch, and `--list-engines`. Each row sits behind `#ifdef AMK_ENGINE_<NAME>`, and its
@@ -95,7 +96,7 @@ Each of these guests departs from that recipe in one way:
   read-line keeps the newline and splits lines past 1023 bytes.
 - **MicroPython** is a port, not a program. `guest/micropy.mk`, with `mpconfigport.h` and
   `mphalport.h`, lays it out the way `ports/unix` is, and `guest/micropy_main.c` holds the
-  entry and the hal. The gc and non-local return go through `setjmp`, so one source serves
+  entry and the hal; that port's `main.c` is the row's tool main. The gc and non-local return go through `setjmp`, so one source serves
   both architectures. The unpack takes only the parts the build needs, and the version is
   passed in from the pin.
 - **QuickJS** is a library plus a cli. The guest build skips `qjs.c`, `qjsc.c` and the

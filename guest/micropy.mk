@@ -7,12 +7,16 @@ include $(TOP)/extmod/extmod.mk
 
 CFLAGS += -I. -I$(TOP) -I$(TOP)/ports/unix -I$(BUILD) -std=gnu99 -Wall -DNDEBUG $(CFLAGS_EXTRA)
 
-# The entry point and hal, the gc's stack scan, and the time helpers; py.mk and extmod.mk bring the rest, the in-tree libraries included by the modules that use them.
+# The entry point and hal, the gc's stack scan, the time helpers, and the unix port's own command line with what it runs code through; py.mk and extmod.mk bring the rest, the in-tree libraries included by the modules that use them.
 SRC_C += micropy_main.c \
 	shared/runtime/gchelper_generic.c \
+	shared/runtime/pyexec.c \
+	shared/readline/readline.c \
 	shared/timeutils/timeutils.c \
+	ports/unix/main.c \
+	ports/unix/input.c \
 	ports/unix/modsocket.c
-SRC_QSTR += micropy_main.c ports/unix/modsocket.c
+SRC_QSTR += micropy_main.c ports/unix/main.c shared/runtime/pyexec.c shared/readline/readline.c ports/unix/modsocket.c
 
 OBJ = $(PY_O) $(addprefix $(BUILD)/,$(SRC_C:.c=.o))
 

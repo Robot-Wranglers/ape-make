@@ -40,7 +40,7 @@ def test_the_command_line_answers_to_every_name(amk, tmp_path, engine, spelling)
     pytest.skip(f"{engine['name']} takes no program text")
   link = tmp_path / spelling
   link.symlink_to(amk)
-  for binary, args in [(link, d["args"]), (amk, [f"--{spelling}"] + d["args"])]:
+  for binary, args in [(link, d.get("name_args", d["args"])), (amk, [f"--{spelling}"] + d["args"])]:
     r = sh(binary, args, cwd=tmp_path, timeout=120)
     assert r.returncode == 0, f"{binary} {args}: " + r.stdout + r.stderr
     assert "hi" in r.stdout, f"{binary} {args}: " + r.stdout + r.stderr
