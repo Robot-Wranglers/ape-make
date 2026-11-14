@@ -1127,23 +1127,25 @@ vscode:
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-# A release is a push to main; the Release workflow chooses the next version, builds, and publishes it.
+# A release is a push to main, or a manual Release run on any other branch; the workflow chooses the next version, builds, and publishes it.
 release.remote ?= origin
 release.branch  = $$(git branch --show-current)
 
 release: release.preflight
-	@# Push main and watch the Release run for the head commit when gh is on PATH.
-	git push $(release.remote) main
-	$(call log, release, pushed main -- the Release workflow numbers, builds, and publishes it)
+	@# Push the branch, start the Release run on it unless it is main, and watch the run for the head commit when gh is on PATH.
+	git push $(release.remote) HEAD:refs/heads/$(release.branch)
+	if [ "$(release.branch)" = main ]; then $(call log, release, pushed main -- the Release workflow numbers and builds and publishes it); \
+	else command -v gh >/dev/null || $(call die, release, a release from $(release.branch) starts the workflow by hand and needs gh); \
+	  gh workflow run release.yml --ref $(release.branch) && $(call log, release, started the Release workflow on $(release.branch)); fi
 	if command -v gh >/dev/null; then $(MAKE) release.watch; else $(call log, release, gh is not on PATH -- watch the run under Actions); fi
 
 release.preflight:
-	@# The branch is main and the tree is committed.
-	[ "$(release.branch)" = main ] \
-	  || $(call die, release, a release is cut from main -- this is $(release.branch))
+	@# The branch is named and the tree is committed.
+	[ -n "$(release.branch)" ] \
+	  || $(call die, release, a detached head has no branch to release from)
 	[ -z "$$(git status --porcelain --untracked-files=no)" ] \
 	  || { git status --short --untracked-files=no >&2; $(call die, release, the working tree has uncommitted changes); }
-	$(call log, release, preflight ok -- main is committed)
+	$(call log, release, preflight ok -- $(release.branch) is committed)
 
 release.watch:
 	@# Stream the Release run for the head commit to completion; rerun this alone to reattach.

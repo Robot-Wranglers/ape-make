@@ -1,4 +1,4 @@
-# Every push to main is a release, and a manual run on main is one too: the next version is chosen here, amk is built as it through build.yml and tested through test.yml and itest.yml, then the binary and its digest are published as a GitHub Release and the image to ghcr.
+# Every push to main is a release, and a manual run on any branch is one too: the next version is chosen here, amk is built as it through build.yml and tested through test.yml and itest.yml, then the binary and its digest are published as a GitHub Release and the image to ghcr.
 name: Release
 on:
   workflow_dispatch: {}
@@ -46,7 +46,7 @@ jobs:
     needs: build
     uses: ./.github/workflows/itest.yml
 
-  # The image for amd64 and arm64 from the context build.yml smoked; a manual run on another branch builds both and pushes nothing.
+  # The image for amd64 and arm64 from the context build.yml smoked.
   image:
     name: Publish image
     needs: [ version, test, itest ]
@@ -69,18 +69,15 @@ jobs:
       - name: Set up buildx
         uses: docker/setup-buildx-action@v4
       - name: Log in to ghcr
-        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Build and push
-        env:
-          PUSH: ${{ github.ref == 'refs/heads/main' && '--push' || '' }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/amk"
-          docker buildx build ${PUSH} \
+          docker buildx build --push \
             --platform linux/amd64,linux/arm64 \
             --target amk \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
@@ -89,11 +86,9 @@ jobs:
             -t "${image}:latest" \
             -f Dockerfile context
 
-  # A manual run on another branch is a dry run: it builds and tests, and this job is skipped.
   publish:
     name: Publish release
     needs: [ version, test, itest ]
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
