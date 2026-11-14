@@ -6,11 +6,13 @@
 #include "amk.h"
 #include <stdarg.h>
 
-/* Whether a stream takes color: a terminal, unless NO_COLOR, or the same name without its underscore, is set.  */
+/* Whether a stream takes color: a terminal that is not dumb, unless NO_COLOR, or the same name without its underscore, is set.  */
 int
 amk_color_for (FILE *to)
 {
-  return getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL && isatty (fileno (to));
+  const char *term = getenv ("TERM");
+  return getenv ("NO_COLOR") == NULL && getenv ("NOCOLOR") == NULL
+    && !(term && strcmp (term, "dumb") == 0) && isatty (fileno (to));
 }
 
 /* Whether stderr takes color.  */
@@ -20,20 +22,26 @@ amk_color (void)
   return amk_color_for (stderr);
 }
 
+/* The sequence that starts a style on a stream, or nothing where that stream takes no color.  */
+const char *
+amk_style (FILE *to, enum amk_style style)
+{
+  static const char *const seq[] = { "\033[0m", "\033[1m", "\033[1;31m", "\033[36m" };
+  return amk_color_for (to) ? seq[style] : "";
+}
+
 /* The heading of amk's part of the usage, bold where the stream takes color.  */
 void
 amk_usage_heading (FILE *to, const char *text)
 {
-  int c = amk_color_for (to);
-  fprintf (to, "\n%s%s%s\n", c ? "\033[1m" : "", text, c ? "\033[0m" : "");
+  fprintf (to, "\n%s%s%s\n", amk_style (to, AMK_STYLE_BOLD), text, amk_style (to, AMK_STYLE_OFF));
 }
 
 /* One flag of the usage, indented and padded to the description column, in cyan where the stream takes color.  */
 void
 amk_usage_flag (FILE *to, const char *flag, int len)
 {
-  int c = amk_color_for (to);
-  fprintf (to, "  %s%.*s%s%*s ", c ? "\033[36m" : "", len, flag, c ? "\033[0m" : "", len < 27 ? 27 - len : 0, "");
+  fprintf (to, "  %s%.*s%s%*s ", amk_style (to, AMK_STYLE_CYAN), len, flag, amk_style (to, AMK_STYLE_OFF), len < 27 ? 27 - len : 0, "");
 }
 
 /* One line of the usage table: its flag column through amk_usage_flag, then its description as it is.  */
@@ -53,14 +61,14 @@ amk_usage_line (FILE *to, const char *line)
 const char *
 amk_red (void)
 {
-  return amk_color () ? "\033[1;31m" : "";
+  return amk_style (stderr, AMK_STYLE_RED);
 }
 
 /* The sequence that ends a color on stderr, or nothing where stderr takes no color.  */
 const char *
 amk_color_off (void)
 {
-  return amk_color () ? "\033[0m" : "";
+  return amk_style (stderr, AMK_STYLE_OFF);
 }
 
 /* One warning line on stderr under amk's name, in red where stderr takes color.  */

@@ -213,8 +213,10 @@ void amk_held_end (void);
 int amk_fd_is_pipe (const char *spec);
 int amk_write_all (int fd, const void *buf, size_t len);
 /* Color on stderr, and a warning line under amk's name that uses it; the usage lines take color on their own stream.  */
+enum amk_style { AMK_STYLE_OFF, AMK_STYLE_BOLD, AMK_STYLE_RED, AMK_STYLE_CYAN };
 int amk_color_for (FILE *to);
 int amk_color (void);
+const char *amk_style (FILE *to, enum amk_style style);
 void amk_usage_heading (FILE *to, const char *text);
 void amk_usage_flag (FILE *to, const char *flag, int len);
 void amk_usage_line (FILE *to, const char *line);
