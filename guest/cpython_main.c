@@ -389,6 +389,25 @@ cpython_run_main (int argc, char **argv)
   return rc;
 }
 
+/* CPython's own command line over the words as given, its home the payload unless the caller named one; nothing of amk is bound. */
+__attribute__ ((visibility ("default"))) int
+cpython_tool_main (int argc, char **argv)
+{
+  PyConfig config;
+  PyStatus status;
+
+  PyConfig_InitPythonConfig (&config);
+  status = PyConfig_SetBytesArgv (&config, argc, argv);
+  if (!PyStatus_Exception (status) && getenv ("PYTHONHOME") == NULL)
+    status = PyConfig_SetString (&config, &config.home, L"/zip");
+  if (!PyStatus_Exception (status))
+    status = Py_InitializeFromConfig (&config);
+  PyConfig_Clear (&config);
+  if (PyStatus_Exception (status))
+    Py_ExitStatusException (status);
+  return Py_RunMain ();
+}
+
 /* The create member: the one kept state, which make holds as main; a second create answers null, since the interpreter has one set of globals. */
 __attribute__ ((visibility ("default"))) void *
 cpython_create (void)

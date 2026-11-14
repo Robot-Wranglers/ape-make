@@ -382,8 +382,7 @@ struct amk_engine
 
 extern const struct amk_engine amk_engines[];
 const struct amk_engine *amk_engine_by_name (const char *name);
-int amk_engine_called (const struct amk_engine *e, const char *word);
-int amk_engine_tool_line (int argc, char **argv);
+int amk_engine_called (const struct amk_engine *e, const char *word);int amk_engine_tool_line (int argc, char **argv);
 int amk_engine_run_name (const struct amk_engine *e, int argc, char **argv);
 int amk_engine_run_flag (const struct amk_engine *e, int argc, char **argv);
 void amk_engines_check (void);
@@ -492,6 +491,7 @@ extern int js_exec (void *state, struct amk_sink *out, const char *prog);
 extern int js_import (void *state, struct amk_sink *out, const char *prog);
 extern void js_hook (void *state, const char *event, const char *target, const char *status, int exit_code, int exit_sig, long pid);
 extern int cpython_run_main (int argc, char **argv);
+extern int cpython_tool_main (int argc, char **argv);
 extern void *cpython_create (void);
 extern int cpython_exec (void *state, struct amk_sink *out, const char *prog);
 extern int cpython_import (void *state, struct amk_sink *out, const char *prog);

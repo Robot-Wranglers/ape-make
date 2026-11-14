@@ -72,7 +72,7 @@ static const struct amk_state_ops tcc_state = {
 };
 #endif
 #ifdef AMK_ENGINE_CPYTHON
-static const struct amk_cli_ops cpython_cli = { .main = cpython_run_main };
+static const struct amk_cli_ops cpython_cli = { .main = cpython_run_main, .tool = 1, .tool_main = cpython_tool_main };
 static const struct amk_state_ops cpython_state = {
   .kept = { .create = cpython_create, .single = 1 }, .exec = cpython_exec, .import = cpython_import, .hook = cpython_hook,
 };
@@ -190,7 +190,7 @@ const struct amk_engine amk_engines[] =
       .version = AMK_STR (AMK_ENGINE_TCC), .cli = &tcc_cli, .state = &tcc_state },
 #endif
 #ifdef AMK_ENGINE_CPYTHON
-    { .name = "cpython", .language = "Python", .implementation = "CPython",
+    { .name = "cpython", .aliases = "python3", .language = "Python", .implementation = "CPython",
       .version = AMK_STR (AMK_ENGINE_CPYTHON), .cli = &cpython_cli, .state = &cpython_state },
 #endif
 #ifdef AMK_ENGINE_BASH

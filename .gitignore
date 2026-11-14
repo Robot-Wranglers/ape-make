@@ -26,3 +26,4 @@ effection*.tgz
 lxsc-flat-0.14.lua
 /*.pem
 /amk-*
+.tkt/

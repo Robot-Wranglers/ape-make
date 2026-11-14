@@ -534,7 +534,7 @@ cpython.zlib    = ZLIB_CFLAGS=-I$(cosmocc.dir)/include/third_party/zlib ZLIB_LIB
 cpython.nopkg  := PKG_CONFIG=false
 cpython.hostpy  = build/cpython-host/python$(if $(filter Darwin,$(os)),.exe)
 # The standard library less its tests, its gui, and what installs packages, as excludes on the copy into lib/python3.12/.
-cpython.libskip := test idlelib tkinter turtledemo ensurepip lib2to3 __pycache__
+cpython.libskip := test idlelib tkinter turtledemo lib2to3 __pycache__
 
 # The per-guest hooks every engine carries. CPython names struct members main and links no main of its own, so its compile flags are the shared ones less the rename.
 cpython.objdirs    := .
@@ -542,7 +542,7 @@ cpython.objcheck   := libpython3.12.a
 cpython.ldflags    :=
 cpython.guestflags := -O2 -fno-common -fvisibility=hidden -Wno-implicit-function-declaration -Dexit=amk_exit
 # libpython marks its api visible, so everything but the entry point is localized by name.
-cpython.objrename  := $(addprefix --keep-global-symbol=cpython_,run_main create exec import hook)
+cpython.objrename  := $(addprefix --keep-global-symbol=cpython_,run_main tool_main create exec import hook)
 cpython.objskip    :=
 cpython.extra       =
 # Static libraries the partial link takes whole, beside the objects, since this guest's build ends in them; each has its aarch64 twin in .aarch64/ beside it.
@@ -551,6 +551,9 @@ cpython.archive := libpython3.12.a Modules/expat/libexpat.a Modules/_decimal/lib
 # What the artifact's payload gains: the standard library under lib/python3.12/ and the certificate bundle, with the top-level directories they land in.
 define optin.payload
 $(if $(filter cpython,$(engines)),mkdir -p $(call payload.dest,lib/python3.12) && tar cf - $(addprefix --exclude ,$(cpython.libskip)) -C $(cpython.src)/Lib . | tar xf - -C $(call payload.dest,lib/python3.12))
+$(if $(filter cpython,$(engines)),install -m 0644 build/cpython-ape/$$(cat build/cpython-ape/pybuilddir.txt)/_sysconfigdata_*.py $(call payload.dest,lib/python3.12/))
+$(if $(filter cpython,$(engines)),echo ../ensurepip/_bundled/$(notdir $(wildcard $(cpython.src)/Lib/ensurepip/_bundled/pip-*.whl)) >$(call payload.dest,lib/python3.12/site-packages/ensurepip-pip.pth))
+$(if $(filter cpython,$(engines)),$(foreach n,pip pip3,install -m 0755 build/cpython-ape/pip build/payload$(suffix)/bin/$(n);))
 $(if $(clibs.files),mkdir -p $(dir $(call payload.dest,$(cacert.dest))) && install -m 0644 $(cacert.file) $(call payload.dest,$(cacert.dest)))
 endef
 optin.payload.dirs = $(if $(filter cpython,$(engines)),lib) $(if $(clibs.files),usr)
@@ -584,12 +587,15 @@ build/cpython-ape/Makefile: $(cpython.src) build/cpython-host/.built $(cosmocc.d
 # libpython with every module built in, then the entry point against its headers; the archive is the partial link's input, whole.
 build/cpython-ape/.built: build/cpython-ape/Makefile guest/cpython_main.c guest/amk_guest.h
 	$(call log, guest, compiling cpython for cosmocc -- log at $(@D)/build.log)
-	cd $(@D) && env $(cosmocc.env) MAKEFLAGS=-s make -j$(jobs) EXTRA_CFLAGS='$(cpython.guestflags)' $(cpython.archive) >build.log 2>&1 \
+	cd $(@D) && env $(cosmocc.env) MAKEFLAGS=-s make -j$(jobs) EXTRA_CFLAGS='$(cpython.guestflags)' $(cpython.archive) pybuilddir.txt >build.log 2>&1 \
 	  || $(call die, guest, cpython did not compile -- see the tail of $(@D)/build.log)
 	cd $(@D) && env $(cosmocc.env) cosmocc $(cpython.guestflags) -I. -I$(HERE)$(cpython.src)/Include -I$(HERE)guest \
 	  -c $(HERE)guest/cpython_main.c -o cpython_main.o >>build.log 2>&1 \
 	  || $(call die, guest, cpython's entry point did not compile -- see the tail of $(@D)/build.log)
 	touch $@
+# The payload's pip and pip3: pip run by the python3 beside them, written once the guest has built.
+build/cpython-ape/pip: build/cpython-ape/.built
+	printf '%s\n' '#!/usr/bin/env bash' 'exec "$${0%/*}/python3" -m pip "$$@"' >$@ && chmod 0755 $@
 
 #░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -934,7 +940,7 @@ repack:
 	[ -x $(compiled.ape) ] || { $(call log, repack, no compiled engine at $(compiled.ape) -- run make build first); exit 1; }
 	$(MAKE) $(artifact.ape)
 
-$(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(clibs.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.lib) guest/amk.sh
+$(artifact.ape): $(compiled.ape) build/.libs $(tools.files) $(clibs.files) $(foreach l,$(libs),$($(l).src)) $(payload.files) $(payload.lib) guest/amk.sh $(if $(filter cpython,$(engines)),build/cpython-ape/pip)
 	$(call log, build, zipping $(tools) into the payload under bin/ and $(or $(libs),no library) under lib/ with the prelude)
 	mkdir -p $(bin)
 	rm -rf build/payload$(suffix) && mkdir -p build/payload$(suffix)/bin build/payload$(suffix)/lib
@@ -1040,7 +1046,7 @@ itest: $(artifact.ape)
 	$(call demos.run,itest,$(demos.integration))
 
 # The pytest suite under tests/ needs the binary and pytest, nothing else; pytest= names a runner that is not on PATH, and pytest.args= adds flags.
-pytest      ?= $(shell command -v pytest 2>/dev/null || echo python3 -m pytest)
+pytest      ?= $(or $(wildcard $(HERE).venv/bin/pytest),$(shell command -v pytest 2>/dev/null || echo python3 -m pytest))
 pytest.args ?=
 test: $(artifact.ape)
 	@# The pytest suite against the fat ape: the resident roles, the argv builtins, ape-unpack, and bundles.

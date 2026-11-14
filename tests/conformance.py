@@ -150,7 +150,7 @@ CLI = {
   "lua": {"prog": 'print("hi")', "args": ['print("hi")']},
   "s7": {"prog": '(display "hi")', "args": ['(display "hi")']},
   "micropy": {"prog": 'print("hi")', "args": ['print("hi")'], "name_args": ["-c", 'print("hi")']},
-  "cpython": {"prog": 'print("hi")', "args": ['print("hi")']},
+  "cpython": {"prog": 'print("hi")', "args": ['print("hi")'], "name_args": ["-c", 'print("hi")']},
   "js": {"prog": 'print("hi")', "args": ['print("hi")']},
   "sqlite": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
   "cypher": {"prog": "SELECT 'hi' AS x;", "args": ["--", "SELECT 'hi' AS x;"]},
