@@ -38,7 +38,19 @@ def test_only_the_tool_engines_are_linked(amk, engines, tools):
   links = sorted(n for n in os.listdir(tools) if os.path.islink(os.path.join(tools, n)))
   extra = (micropy_names if "micropy" in engines else []) + (cpython_names if "cpython" in engines else [])
   assert links == sorted(names + extra), links
-  assert all(os.readlink(os.path.join(tools, n)) == str(amk) for n in links)
+  assert all(os.readlink(os.path.join(tools, n)) == os.path.realpath(amk) for n in links)
+
+
+@pytest.mark.engines("cpython")
+def test_a_start_through_a_link_keeps_it_on_the_binary(amk, tmp_path):
+  env = {"XDG_CACHE_HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}
+  (tmp_path / "a.mk").write_text("all:\n\t@command -v python3\n")
+  r = sh(amk, ["-f", str(tmp_path / "a.mk")], env=env)
+  assert r.returncode == 0, r.stdout + r.stderr
+  link = r.stdout.strip()
+  r = sh(link, ["-c", "print('ok')"], env=env)
+  assert r.stdout.strip() == "ok", r.stdout + r.stderr
+  assert os.readlink(link) == os.path.realpath(amk)
 
 
 @pytest.mark.parametrize("name", names)

@@ -290,9 +290,14 @@ amk_ape_list (void)
 static void
 amk_payload_link (const char *dir, const char *name, size_t nl)
 {
+  char real[PATH_MAX];
   const char *self = GetProgramExecutableName ();
   char *dest = xmalloc (strlen (dir) + nl + 2), have[PATH_MAX];
   ssize_t r;
+
+  /* A start through one of these links names the link, so link to the file it resolves to.  */
+  if (realpath (self, real) != NULL)
+    self = real;
 
   sprintf (dest, "%s/%.*s", dir, (int) nl, name);
   r = readlink (dest, have, sizeof have - 1);

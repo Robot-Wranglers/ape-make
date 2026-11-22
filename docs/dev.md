@@ -237,15 +237,15 @@ version. The tag is made with the release, after the tests pass, so a failed run
 number. A commit that changes only docs or images starts no run.
 
 ```bash
-# push main and watch the run
+# push the branch and watch the run
 make release
 
 # release main again without a new commit
 gh workflow run release.yml --ref main
 ```
 
-`make release` refuses to run off `main` or with tracked changes uncommitted, and streams
-the run when `gh` is installed; `make release.watch` reattaches to it. `release.remote=`
+`make release` refuses to run with tracked changes uncommitted, starts the `Release`
+workflow by hand off `main`, and streams the run when `gh` is installed; `make release.watch` reattaches to it. `release.remote=`
 names another remote. To jump further than one, push a tag such as `v0.2.0` by hand, and
 the next release counts on from it.
 
